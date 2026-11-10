@@ -91,12 +91,18 @@ static inline bool Nso_PadBackPressed(int pad)
 #ifndef NSO_IMPLEMENTATION_ONCE
 #define NSO_IMPLEMENTATION_ONCE
 
+const char *GetDataPath(const char *relativePath);   /* main.c: base dir + rel */
+
 void Nso_PlatformInit(PlatformEntry *p)
 {
     if (!p || !p->imagePath) {
         return;
     }
-    Image img = LoadImage(p->imagePath);
+    /* Art is not shipped in the repo: no file -> no texture (name is drawn). */
+    if (!FileExists(GetDataPath(p->imagePath))) {
+        return;
+    }
+    Image img = LoadImage(GetDataPath(p->imagePath));
     if (!img.data) {
         return;
     }

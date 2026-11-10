@@ -9,14 +9,101 @@ cover is shown as a "?" placeholder.
 
 ## Build
 
-Requires a C compiler, Make, and [Raylib](https://www.raylib.com/).
+You need:
+
+- A C23 compiler: GCC 14+ or Clang 18+ (the Makefile uses `-std=c23`).
+- GNU Make.
+- [Raylib](https://www.raylib.com/) **6.0 or newer** (NSO uses `FileMove` and
+  `FileRemove`, which Raylib 5.5 and older do not have). The Makefile links
+  with plain `-lraylib -lm`, so the library must be on the default linker path.
+- At run time: `curl` (cover scraping) and `git` (repository downloads).
+
+Distro packages (compiler, make, curl, git, and what Raylib needs to build):
+
+| Distro | Command |
+| --- | --- |
+| Gentoo | `emerge --ask sys-devel/gcc dev-build/make net-misc/curl dev-vcs/git dev-build/cmake x11-libs/libX11 x11-libs/libXrandr x11-libs/libXinerama x11-libs/libXcursor x11-libs/libXi media-libs/mesa` |
+| Debian / Ubuntu | `sudo apt install build-essential curl git cmake libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev` |
+| Arch | `sudo pacman -S --needed base-devel curl git cmake libx11 libxrandr libxinerama libxcursor libxi mesa` (or `raylib` if the repo package is 6.0+) |
+| Fedora | `sudo dnf install gcc make curl git cmake libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel` |
+
+Most distros still ship Raylib 5.5, so build Raylib from source:
 
 ```
+git clone --depth 1 https://github.com/raysan5/raylib.git
+cmake -S raylib -B raylib/build -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF
+cmake --build raylib/build -j"$(nproc)"
+sudo cmake --install raylib/build     # installs to /usr/local
+sudo ldconfig                         # if /usr/local/lib64 is new to the loader
+```
+
+Then build and test NSO:
+
+```
+git clone https://github.com/Vulto/nso.git
+cd nso
 make
 make test
+./nso
 ```
 
-`make` writes the `nso` binary to the project root. Run it from that directory.
+`./nso` works from any directory: data paths are resolved next to the binary
+(override with `NSO_BASE_DIR=/path/to/nso`). NSO creates `assets/cache`,
+`assets/images/...`, `repos/`, `logs/`, `config/` and `saves/` as needed.
+
+## Usage
+
+| Action | Keyboard | Gamepad (Nintendo layout) |
+| --- | --- | --- |
+| Move | Arrow keys | D-pad / stick |
+| Confirm / start game | Enter | A (right face) or Start |
+| Back | B | B (bottom face) |
+| Move a game (hold to sort, arrows move it) | Y (hold) | Y |
+| Game details panel | X | X |
+| Save states of the selected game | S | (from the Details panel) |
+| Organization sidebar | O | |
+
+In supported ports (the patched SNES games) F5 saves a state without leaving
+and F12 (or Home) saves and returns to NSO.
+
+### Settings screen (gear icon)
+
+On the main menu press Down to select the gear, then Enter/A. Left/Right
+switches system (NES, SNES, Nintendo 64, GameCube).
+
+- **Image scraping:** "Missing box art" downloads covers that are not on disk;
+  "Replace box art" downloads all of them again. Covers come from
+  [libretro-thumbnails](https://github.com/libretro-thumbnails) (index via the
+  GitHub API, images from `thumbnails.libretro.com`); no account or API key is
+  needed. They are saved to `assets/images/systems/<system>/`.
+- **Repository download:** pick a port (or "Download all") to clone it into
+  `repos/<system>/...` and build it with `tools/repo_sync.sh`. The status column
+  shows progress; full logs are in `logs/repos/<name>.log`. Missing build tools
+  are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
+  long time to build.
+- **Language:** English / Português.
+
+### ROMs
+
+NSO never downloads ROMs. When a port needs one the status shows
+"ROM needed: <file>"; copy your own dump to the path shown (for example
+`repos/nes/smbvanilla/smb.nes`, `repos/snes/smw/smw.sfc`,
+`repos/n64/sm64ex/baserom.us.z64`) and run the download again to build it.
+Fire 'n Ice (OpenDana) takes the European *Solomon's Key 2* ROM dropped directly
+in `repos/nes/opendana/`; it is imported on first launch.
+
+### System images
+
+System art is not included. Without it the main menu and the system splash
+show the console name as text. To use your own art, save a 1920x1080 PNG at:
+
+- `assets/images/systems/nes/nes.png`
+- `assets/images/systems/snes/snes.png`
+- `assets/images/systems/n64/n64.png`
+- `assets/images/systems/gamecube/gamecube.png`
+
+The menu card shows a square centre crop of the image. The gear icon
+(`assets/images/ui/gear.png`, optional) falls back to a drawn gear.
 
 ## Supported projects
 

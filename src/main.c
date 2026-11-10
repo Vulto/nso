@@ -347,6 +347,9 @@ static Image LoadBoxartImage(const char *path) {
         return (Image){0};
     }
 
+    if (!FileExists(path)) {   /* quiet: missing covers are retried every frame */
+        return (Image){0};
+    }
     Image img = LoadImage(path);
     if (!img.data) {
         return img;
@@ -845,6 +848,8 @@ static void DrawMenuGear(float offsetX) {
 /* Draw the systems menu shifted by offsetX (used by the mosaic slide).
  * Every system card, plus the selection ring, sits inside a rectangle a
  * quarter of the screen (half width x half height) centred on screen. */
+static Font slotFont;   /* menu font, defined (and set in main) below */
+
 static void DrawSystemMenu(float offsetX) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
@@ -865,7 +870,16 @@ static void DrawSystemMenu(float offsetX) {
         const PlatformEntry *p = systems[i].platform;
         Rectangle dst = { x0 + (float)i * (card + gap), y, card, card };
 
-        DrawRectangleRounded(dst, MENU_CARD_ROUNDNESS, 16, p->bg);
+        /* No system art (not shipped in the repo): grey card + system name. */
+        DrawRectangleRounded(dst, MENU_CARD_ROUNDNESS, 16,
+                             p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF));
+        if (p->texture.id == 0 && slotFont.texture.id != 0 && p->name) {
+            float fs = card * 0.16f;
+            Vector2 m = MeasureTextEx(slotFont, p->name, fs, 1.0f);
+            if (m.x > card * 0.9f) { fs *= card * 0.9f / m.x; m = MeasureTextEx(slotFont, p->name, fs, 1.0f); }
+            DrawTextEx(slotFont, p->name, (Vector2){ dst.x + (card - m.x) * 0.5f, dst.y + (card - m.y) * 0.5f },
+                       fs, 1.0f, LIGHTGRAY);
+        }
 
         if (p->texture.id != 0) {
             /* Square centre crop of the 16:9 art. Draw it as a "+" of two
@@ -1144,16 +1158,17 @@ static void ScrapeMenu_Idle(int status)
 
 static int ScrapeMenu_SpawnCurl(const char *url, const char *outPath)
 {
-    char *argv[8];
+    char *argv[9];
     snprintf(scrapePart, sizeof(scrapePart), "%s", outPath);
     argv[0] = "curl";
     argv[1] = "-fsSL";
     argv[2] = "--max-time";
     argv[3] = "30";
-    argv[4] = "-o";
-    argv[5] = scrapePart;
-    argv[6] = (char *)url;
-    argv[7] = NULL;
+    argv[4] = "--create-dirs";   /* fresh clone: assets/images/systems/<id>/ is absent */
+    argv[5] = "-o";
+    argv[6] = scrapePart;
+    argv[7] = (char *)url;
+    argv[8] = NULL;
     scrapeProc = NsoSpawnArgv(NULL, argv);
     return NsoProcOk(scrapeProc);
 }
@@ -2464,9 +2479,18 @@ static void StartEnterMosaic(void) {
 /* Full-screen system art (letterboxed to fit, like the original menu). */
 static void DrawSystemArt(float offsetX) {
     Texture2D tex = ActiveSystem()->platform->texture;
-    if (tex.id == 0) return;
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
+    if (tex.id == 0) {
+        /* No system art (user-supplied, not in the repo): console name only. */
+        const char *name = ActiveSystem()->platform->name;
+        if (!name || slotFont.texture.id == 0) return;
+        float fs = sh * 0.08f;
+        Vector2 m = MeasureTextEx(slotFont, name, fs, 2.0f);
+        DrawTextEx(slotFont, name, (Vector2){ offsetX + (sw - m.x) * 0.5f, (sh - m.y) * 0.5f },
+                   fs, 2.0f, LIGHTGRAY);
+        return;
+    }
     float scale = fminf(sw / (float)tex.width, sh / (float)tex.height);
     float w = (float)tex.width * scale;
     float h = (float)tex.height * scale;
@@ -2632,7 +2656,8 @@ int main(void) {
     gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
 
     int Count = 0;
-    const char *FontPath = "assets/fonts/NotoSansCJKkr-Regular.otf";
+    char FontPath[2048];   /* base-dir relative, so ./nso works from any cwd */
+    snprintf(FontPath, sizeof(FontPath), "%s", GetDataPath("assets/fonts/NotoSansCJKkr-Regular.otf"));
     int *Codepoints = LoadCodepoints(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
