@@ -30,3 +30,7 @@ The launcher can clone, build, and launch the following source ports (see
 **N64:** sm64ex, Ship of Harkinian, 2 Ship 2 Harkinian, Perfect Dark, SpaghettiKart
 
 **GameCube:** Dusklight, melee-pc, Metroid Prime, Paper Cut
+
+## Third-party font
+
+`assets/fonts/NotoSansCJKkr-Regular.otf` is Noto Sans CJK by Google/Adobe, licensed under the SIL Open Font License 1.1 (see `assets/fonts/LICENSE-NotoSansCJK.txt`).
