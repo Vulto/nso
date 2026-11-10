@@ -809,8 +809,21 @@ static Color MenuGlow(void) {
 }
 
 /* Settings gear, bottom centre like the Switch home's bottom icon row. */
+/* No gear.png (art is not shipped in the repo): a solid gear made of three
+ * crossed bars (six teeth), a body disc and a hole in the background colour. */
+static void DrawFallbackGear(Vector2 c, float size, float angle, Color col, Color hole) {
+    float w = size * 0.2f, h = size * 0.96f;
+    for (int k = 0; k < 3; k++) {
+        DrawRectanglePro((Rectangle){ c.x, c.y, w, h }, (Vector2){ w * 0.5f, h * 0.5f },
+                         angle + 60.0f * (float)k, col);
+    }
+    DrawCircleV(c, size * 0.37f, col);
+    DrawCircleV(c, size * 0.16f, hole);
+}
+
+#define GEAR_FALLBACK_COLOR ((Color){ 172, 49, 49, 255 })   /* gear.png stroke */
+
 static void DrawMenuGear(float offsetX) {
-    if (gearTexture.id == 0) return;
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
     float d = sh * 0.075f;                       /* icon disc diameter */
@@ -818,8 +831,12 @@ static void DrawMenuGear(float offsetX) {
     float cy = sh - sh * 0.12f;
     float g = d * 0.72f;
     DrawCircleV((Vector2){ cx, cy }, d * 0.5f, WHITE);
-    DrawTexturePro(gearTexture, (Rectangle){ 0, 0, (float)gearTexture.width, (float)gearTexture.height },
-                   (Rectangle){ cx, cy, g, g }, (Vector2){ g * 0.5f, g * 0.5f }, 0.0f, WHITE);
+    if (gearTexture.id != 0) {
+        DrawTexturePro(gearTexture, (Rectangle){ 0, 0, (float)gearTexture.width, (float)gearTexture.height },
+                       (Rectangle){ cx, cy, g, g }, (Vector2){ g * 0.5f, g * 0.5f }, 0.0f, WHITE);
+    } else {
+        DrawFallbackGear((Vector2){ cx, cy }, g, 0.0f, GEAR_FALLBACK_COLOR, WHITE);
+    }
     if (menuFocus == 1) {
         DrawRing((Vector2){ cx, cy }, d * 0.5f + d * 0.05f, d * 0.5f + d * 0.11f, 0.0f, 360.0f, 48, MenuGlow());
     }
@@ -1647,10 +1664,11 @@ static void DrawSidebar(Color systemBg, Font font) {
     DrawRectangle(0, 0, sw, screenH, systemBg);
     SidebarHeader_Draw(font);
 
-    if (gearTexture.id != 0) {
+    {
+        /* Fallback gear uses the size gear.png (1024 px) would have. */
         float gearScale = 0.08f;
-        float gearW = gearTexture.width * gearScale;
-        float gearH = gearTexture.height * gearScale;
+        float gearW = (gearTexture.id != 0 ? (float)gearTexture.width : 1024.0f) * gearScale;
+        float gearH = (gearTexture.id != 0 ? (float)gearTexture.height : 1024.0f) * gearScale;
         float pad = GEAR_STRIP_PAD;
 
         /* Gear stays centered on the rail column. */
@@ -1676,10 +1694,15 @@ static void DrawSidebar(Color systemBg, Font font) {
         }
 
         /* Gear with spin (DrawTexturePro rotates around origin). */
-        Rectangle src = { 0, 0, (float)gearTexture.width, (float)gearTexture.height };
-        Rectangle dst = { gearCX, gearCY, gearW, gearH };
-        Vector2 origin = { gearW * 0.5f, gearH * 0.5f };
-        DrawTexturePro(gearTexture, src, dst, origin, gearSpinAngle, WHITE);
+        if (gearTexture.id != 0) {
+            Rectangle src = { 0, 0, (float)gearTexture.width, (float)gearTexture.height };
+            Rectangle dst = { gearCX, gearCY, gearW, gearH };
+            Vector2 origin = { gearW * 0.5f, gearH * 0.5f };
+            DrawTexturePro(gearTexture, src, dst, origin, gearSpinAngle, WHITE);
+        } else {
+            DrawFallbackGear((Vector2){ gearCX, gearCY }, gearW, gearSpinAngle,
+                             GEAR_FALLBACK_COLOR, WHITE);
+        }
     }
 }
 
