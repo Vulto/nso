@@ -1,0 +1,50 @@
+# Downloaded / built game trees and user ROMs
+repos/
+
+# Local runtime state
+saves/
+logs/
+config/
+assets/cache/
+
+# Test screenshots and Raylib captures
+.shots/
+screenshot*.png
+
+# Backups (files and dirs)
+*.bak*
+*.bak-*
+
+# Compiled binaries (root only; do not ignore *_test.c sources)
+/nso
+/nso.exe
+/*_test
+
+# Windows build output
+build-win/
+*.exe
+
+# Copyrighted / third-party art and fonts (user-supplied or scraped locally)
+assets/images/
+assets/fonts/
+
+# ROM and disc images, archives, and source-port asset packs (any path)
+*.sfc
+*.smc
+*.nes
+*.n64
+*.z64
+*.v64
+*.iso
+*.gcm
+*.rvz
+*.ciso
+*.wbfs
+*.zip
+*.7z
+*.o2r
+*.otr
+
+# Object files
+*.o
+*.obj
