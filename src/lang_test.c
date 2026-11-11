@@ -47,8 +47,35 @@ int main(void)
     FILE *f = fopen(path, "w");
     if (f) { fputs("language=\n", f); fclose(f); }
     CHECK(Lang_Load(path) == LANG_EN);
+    /* Other keys survive a language save and vice versa. */
+    CHECK(Cfg_SaveKey(path, "n64.rumble", "0"));
+    CHECK(Lang_Save(path, LANG_PT) && Lang_Load(path) == LANG_PT);
+    CHECK(Cfg_SaveKey(path, "n64.versions", "na_eu"));
+    {
+        char buf[512], v[32];
+        size_t n = 0;
+        FILE *g = fopen(path, "r");
+        if (g) { n = fread(buf, 1, sizeof(buf) - 1, g); fclose(g); }
+        buf[n] = '\0';
+        CHECK(Cfg_Get(buf, "n64.rumble", v, sizeof(v)) && strcmp(v, "0") == 0);
+        CHECK(Cfg_Get(buf, "n64.versions", v, sizeof(v)) && strcmp(v, "na_eu") == 0);
+        CHECK(Lang_Parse(buf) == LANG_PT);
+    }
     unlink(path);
     CHECK(rmdir(dir) == 0);
+
+    {
+        char out[128], v[32];
+        CHECK(!Cfg_Get(NULL, "a", v, sizeof(v)));
+        CHECK(!Cfg_Get("ab=1\n", "a", v, sizeof(v)));          /* prefix is not a match */
+        CHECK(Cfg_Get("x=1\r\na=hello \n", "a", v, sizeof(v)) && strcmp(v, "hello") == 0);
+        CHECK(Cfg_Put("", "a", "1", out, sizeof(out)) && strcmp(out, "a=1\n") == 0);
+        CHECK(Cfg_Put("# c\na=1\nb=2", "a", "9", out, sizeof(out))
+              && strcmp(out, "# c\na=9\nb=2\n") == 0);
+        CHECK(Cfg_Put("a=1\na=2\n", "a", "3", out, sizeof(out)) && strcmp(out, "a=3\n") == 0);
+        CHECK(Cfg_Put("b=2\n", "a", "1", out, sizeof(out)) && strcmp(out, "b=2\na=1\n") == 0);
+        CHECK(!Cfg_Put("b=2\n", "a", "1", out, 6));                 /* too small */
+    }
 
     NsoMsg m;
     char out[256];

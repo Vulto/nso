@@ -62,7 +62,7 @@ static const int ASSET_MAX_BOXART_W = 512;
 static const int ASSET_MAX_BOXART_H = 384;
 static const float SLIDE_SPEED = 100.0f;
 static const float SIDEBAR_RAIL_FRAC = 0.06f; // side bar size 
-static const float SIDEBAR_OPEN_FRAC = 0.40f;
+static const float SIDEBAR_OPEN_FRAC = 0.385f;   /* video: ~38.6% */
 static const float SIDEBAR_OVERSHOOT = 0.08f; /* past target, then settle */
 static const float SIDEBAR_WIDTH_LERP = 0.22f;
 /* 3 full rows + ~10% of a fourth so the user sees more games below */
@@ -623,9 +623,8 @@ static char scrapePart[2200];
 static char scrapeDest[2200];
 static NsoMsg scrapeMsg = { -1, 0, "" };
 
-/* Gear spin / strip morph from sidebar width progress (rail→open maps to 0→1). */
+/* Settings-icon spin / highlight morph from sidebar width progress (rail→open maps to 0→1). */
 static float gearSpinAngle = 0.0f;
-static const float GEAR_STRIP_PAD = 8.0f;
 static const float GEAR_STRIP_ROUNDNESS = 0.35f;
 
 /* Blur backdrop RTs + optional shader (recreated on resize). */
@@ -1366,18 +1365,6 @@ static void ScrapeMenu_Poll(void)
     }
 }
 
-/* Sidebar (organization mode) header only; the scrape rows moved to the
- * systems-menu panel below. */
-static void SidebarHeader_Draw(Font font)
-{
-    float x = SidebarRailWidth() + 28.0f;
-    if (!SidebarMenuSettled()) return;
-    BeginScissorMode(0, 0, (int)sidebarWidth, GetScreenHeight());
-    DrawTextEx(font, ActiveSystem()->platform->name, (Vector2){x, 56.0f},
-               (float)font.baseSize, 2.0f, WHITE);
-    EndScissorMode();
-}
-
 /* ---- Repository download (gear screen). One background job at a time:
  * tools/repo_sync.sh checks deps, clones or fast-forwards (only when the
  * remote moved), checks the ROM and builds; it writes logs/repos/<name>.log
@@ -1821,58 +1808,249 @@ static void Manage_Draw(Font font) {
     DrawInfoBarEx(font, scrapeBusy ? T(S_INFO_CANCEL) : T(S_MANAGE_INFO), 1.0f, 0.0f);
 }
 
+/* ---- In-system sidebar (grid rail + B/O menu), as in the reference video:
+ * four line icons (Single player, Play together, Play online, Settings),
+ * icon + label rows when open, and a Settings panel over the blurred grid.
+ * Icons are raylib primitives (no art). The first three have no function;
+ * the selected one loops a small animation. ---- */
+typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
+               SB_ITEM_COUNT } SidebarItem;
+enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_COUNT };
+
+/* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
+ * "<id>.show_controls"). Settings only: not passed to the emulators yet. */
+typedef struct { int versions; bool rumble; bool showControls; } SysSettings;
+static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
+
+static void SysSettings_LoadAll(void) {
+    char cfg[2112], text[4096], v[32];
+    size_t n = 0;
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    FILE *f = fopen(cfg, "r");
+    if (f) { n = fread(text, 1, sizeof(text) - 1, f); fclose(f); }
+    text[n] = '\0';
+    for (int i = 0; i < SYSTEM_COUNT; i++) {
+        const char *id = systems[i].platform->id;
+        char key[64];
+        SysSettings s = { 0, true, false };   /* defaults: NA, rumble on, controls hidden */
+        snprintf(key, sizeof(key), "%s.versions", id);
+        if (Cfg_Get(text, key, v, sizeof(v))) s.versions = strcmp(v, "na_eu") == 0 ? 1 : 0;
+        snprintf(key, sizeof(key), "%s.rumble", id);
+        if (Cfg_Get(text, key, v, sizeof(v))) s.rumble = strcmp(v, "0") != 0;
+        snprintf(key, sizeof(key), "%s.show_controls", id);
+        if (Cfg_Get(text, key, v, sizeof(v))) s.showControls = strcmp(v, "0") != 0;
+        sysSettings[i] = s;
+    }
+}
+
+static void SysSettings_Save(int sys) {
+    char dir[2048], cfg[2112], key[64];
+    const char *id = systems[sys].platform->id;
+    const SysSettings *s = &sysSettings[sys];
+    bool ok = true;
+    snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
+    MakeDirectory(dir);
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    snprintf(key, sizeof(key), "%s.versions", id);
+    ok &= Cfg_SaveKey(cfg, key, s->versions ? "na_eu" : "na");
+    snprintf(key, sizeof(key), "%s.rumble", id);
+    ok &= Cfg_SaveKey(cfg, key, s->rumble ? "1" : "0");
+    snprintf(key, sizeof(key), "%s.show_controls", id);
+    ok &= Cfg_SaveKey(cfg, key, s->showControls ? "1" : "0");
+    if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+}
+
+static int sidebarItem = SB_ITEM_SINGLE;
+static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
+static int sidebarSetRow = 0;
+static double sidebarItemSince = 0.0;    /* restarts the selected icon's loop */
+
+/* Polyline arc / ellipse of thickness th; angles in degrees (0 = right, 90 = down). */
+static void IconArc(Vector2 c, float rx, float ry, float a0, float a1, float th, Color col) {
+    int seg = 28;
+    Vector2 prev = { c.x + rx * cosf(a0 * DEG2RAD), c.y + ry * sinf(a0 * DEG2RAD) };
+    DrawCircleV(prev, th * 0.5f, col);
+    for (int k = 1; k <= seg; k++) {
+        float a = (a0 + (a1 - a0) * (float)k / (float)seg) * DEG2RAD;
+        Vector2 p = { c.x + rx * cosf(a), c.y + ry * sinf(a) };
+        DrawLineEx(prev, p, th, col);
+        DrawCircleV(p, th * 0.5f, col);
+        prev = p;
+    }
+}
+
+/* Head + shoulders outline in a box of height s centred at c; fill hides
+ * what is behind (used where people overlap). */
+static void IconPerson(Vector2 c, float s, float th, Color col, Color fill, bool solidFill) {
+    Vector2 head = { c.x, c.y - s * 0.22f };
+    float hr = s * 0.2f;
+    Rectangle body = { c.x - s * 0.34f, c.y + s * 0.06f, s * 0.68f, s * 0.42f };
+    if (solidFill) {
+        DrawRectangleRounded(body, 0.9f, 12, fill);
+        DrawCircleV(head, hr + th * 0.5f, fill);
+    }
+    DrawRectangleRoundedLinesEx(body, 0.9f, 12, th, col);
+    IconArc(head, hr, hr, 0.0f, 360.0f, th, col);
+}
+
+static float IconBump(float x) {   /* 0..1..0 over x in [0,1], 0 elsewhere */
+    return (x <= 0.0f || x >= 1.0f) ? 0.0f : sinf(x * PI);
+}
+
+static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill, float anim, float spin) {
+    float th = fmaxf(2.0f, s * 0.07f);
+    switch (item) {
+        case SB_ITEM_SINGLE: {   /* small hop */
+            float hop = anim >= 0.0f ? IconBump(fmodf(anim * 1.4f, 1.0f) * 1.6f) * s * 0.12f : 0.0f;
+            IconPerson((Vector2){ c.x, c.y - hop }, s * 0.95f, th, col, fill, false);
+        } break;
+        case SB_ITEM_TOGETHER: {   /* members pop in turn: left, right, front */
+            float ph = anim >= 0.0f ? fmodf(anim * 0.9f, 1.0f) * 4.0f : -1.0f;
+            Vector2 pos[3] = { { c.x - s * 0.27f, c.y - s * 0.16f }, { c.x + s * 0.27f, c.y - s * 0.16f },
+                               { c.x, c.y + s * 0.14f } };
+            for (int k = 0; k < 3; k++) {
+                float sc = 1.0f + 0.22f * IconBump(ph - (float)k);
+                IconPerson(pos[k], s * 0.55f * sc, th * 0.85f, col, fill, true);
+            }
+        } break;
+        case SB_ITEM_ONLINE: {   /* globe with a turning meridian, person in front */
+            Vector2 g = { c.x + s * 0.12f, c.y - s * 0.1f };
+            float r = s * 0.36f;
+            float turn = anim >= 0.0f ? anim * 2.2f : 0.6f;
+            IconArc(g, r, r, 0.0f, 360.0f, th, col);
+            DrawLineEx((Vector2){ g.x - r, g.y }, (Vector2){ g.x + r, g.y }, th * 0.8f, col);
+            IconArc(g, r, r * 0.45f, 180.0f, 360.0f, th * 0.7f, col);
+            IconArc(g, r * fabsf(cosf(turn)), r, -90.0f, 90.0f, th * 0.8f, col);
+            IconArc(g, r * fabsf(sinf(turn)) * 0.999f, r, 90.0f, 270.0f, th * 0.8f, col);
+            IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f }, s * 0.55f, th * 0.85f, col, fill, true);
+        } break;
+        default: {   /* gear: ring body, eight teeth, hole */
+            float rot = spin + (anim >= 0.0f ? anim * 45.0f : 0.0f);
+            float rb = s * 0.32f;
+            for (int k = 0; k < 8; k++) {
+                float a = rot + 45.0f * (float)k;
+                Vector2 o = { c.x + cosf(a * DEG2RAD) * rb * 1.12f, c.y + sinf(a * DEG2RAD) * rb * 1.12f };
+                DrawRectanglePro((Rectangle){ o.x, o.y, s * 0.2f, s * 0.15f },
+                                 (Vector2){ s * 0.1f, s * 0.075f }, a, col);
+            }
+            DrawCircleV(c, rb + th * 0.5f, col);
+            DrawCircleV(c, rb - th * 0.5f, fill);
+            IconArc(c, s * 0.12f, s * 0.12f, 0.0f, 360.0f, th, col);
+        } break;
+    }
+}
+
+static float SidebarRowY(int item) {
+    return (float)GetScreenHeight() * (0.590f + 0.085f * (float)item);
+}
+
+static void DrawFitText(Font font, const char *text, Vector2 at, float size, float maxW, Color col) {
+    Vector2 m = MeasureTextEx(font, text, size, 1.0f);
+    if (m.x > maxW && m.x > 0.0f) { size *= maxW / m.x; m = MeasureTextEx(font, text, size, 1.0f); }
+    DrawTextEx(font, text, (Vector2){ at.x, at.y - m.y * 0.5f }, size, 1.0f, col);
+}
+
+/* Settings panel (right of the open menu, over the blurred grid). */
+static void SidebarPanel_Draw(Font font, Color red) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    const SysSettings *st = &sysSettings[currentSystem];
+    float hx = sw * 0.449f, cx = sw * 0.46f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
+    float th = fmaxf(2.0f, sh * 0.0028f);
+    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;   /* video sizes */
+    struct { StrId head; float hy; } heads[] = {
+        { S_SET_VERSIONS, 0.212f }, { S_SET_RUMBLE, 0.500f }, { S_SET_CONTROLS, 0.696f } };
+    struct { StrId label; float y; bool radio; bool on; } rows[SB_SET_COUNT] = {
+        { S_SET_VER_NA, 0.280f, true, st->versions == 0 },
+        { S_SET_VER_NA_EU, 0.373f, true, st->versions == 1 },
+        { S_SET_ENABLED, 0.569f, false, st->rumble },
+        { S_SET_SHOW, 0.766f, false, st->showControls } };
+
+    for (int k = 0; k < 3; k++) {
+        DrawFitText(font, T(heads[k].head), (Vector2){ hx, sh * heads[k].hy }, hsize, sw - hx, WHITE);
+    }
+    for (int k = 0; k < SB_SET_COUNT; k++) {
+        float y = sh * rows[k].y;
+        bool cur = (k == sidebarSetRow);
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        DrawFitText(font, T(rows[k].label), (Vector2){ bx + sw * 0.0225f, y }, osize,
+                    bw - sw * 0.03f, cur ? red : WHITE);
+
+        float r = sh * 0.016f;
+        if (rows[k].radio) {
+            if (rows[k].on) {
+                DrawCircleV((Vector2){ cx, y }, r, WHITE);
+                DrawCircleV((Vector2){ cx, y }, r * 0.62f, red);
+            } else {
+                IconArc((Vector2){ cx, y }, r, r, 0.0f, 360.0f, th, WHITE);
+            }
+        } else {
+            Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
+            if (rows[k].on) {
+                DrawRectangleRec(cb, red);
+                DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f },
+                           th * 1.3f, WHITE);
+                DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f },
+                           th * 1.3f, WHITE);
+            } else {
+                DrawRectangleLinesEx(cb, th, WHITE);
+            }
+        }
+    }
+}
+
 static void DrawSidebar(Color systemBg, Font font) {
     /* Draw down to 1px width; hide only when thinner than 1px. */
     if (sidebarWidth < 1.0f) return;
 
-    int screenH = GetScreenHeight();
-    int sw = (int)sidebarWidth;
+    float sh = (float)GetScreenHeight();
+    float sw = (float)GetScreenWidth();
     float railW = SidebarRailWidth();
+    float t = SidebarExpandProgress();
+    Color pink = ColorLerp(systemBg, WHITE, 0.5f);
 
-    /* Blurred mosaic is drawn behind when expanded. */
-    DrawRectangle(0, 0, sw, screenH, systemBg);
-    SidebarHeader_Draw(font);
+    /* Blurred mosaic is drawn behind when expanded; dim it like the video. */
+    if (t > 0.0f) DrawRectangle((int)sidebarWidth, 0, (int)(sw - sidebarWidth) + 1, (int)sh, Fade(BLACK, 0.35f * t));
+    DrawRectangle(0, 0, (int)sidebarWidth, (int)sh, systemBg);
 
-    {
-        /* Fallback gear uses the size gear.png (1024 px) would have. */
-        float gearScale = 0.08f;
-        float gearW = (gearTexture.id != 0 ? (float)gearTexture.width : 1024.0f) * gearScale;
-        float gearH = (gearTexture.id != 0 ? (float)gearTexture.height : 1024.0f) * gearScale;
-        float pad = GEAR_STRIP_PAD;
+    float iconS = sh * 0.052f;
+    float boxS = sh * 0.066f;                        /* rail highlight square / row height */
+    float iconX = railW * 0.5f + (sw * 0.0645f - railW * 0.5f) * t;
+    float labelX = sw * 0.092f;
+    double now = GetTime();
+    bool settled = SidebarMenuSettled();
 
-        /* Gear stays centered on the rail column. */
-        float gearCX = railW * 0.5f;
-        float gearCY = (float)screenH - gearH * 0.5f - 72.0f;
-
-        float stripY = gearCY - gearH * 0.5f - pad;
-        float stripH = gearH + pad * 2.0f;
-
-        /* Morph: rail = padded rounded; open = full-width sharp (no pad). */
-        float t = SidebarExpandProgress();
-        float curPad = pad * (1.0f - t);
-        float roundness = GEAR_STRIP_ROUNDNESS * (1.0f - t);
-        float stripX = curPad;
-        float stripW = sidebarWidth - curPad * 2.0f;
-        if (stripW >= 1.0f) {
-            Rectangle strip = { stripX, stripY, stripW, stripH };
-            if (roundness < 0.001f) {
-                DrawRectangleRec(strip, WHITE);
-            } else {
-                DrawRectangleRounded(strip, roundness, 8, WHITE);
-            }
+    BeginScissorMode(0, 0, (int)sidebarWidth, (int)sh);
+    for (int i = 0; i < SB_ITEM_COUNT; i++) {
+        float y = SidebarRowY(i);
+        bool sel = (i == sidebarItem);
+        Color fg = WHITE, fill = systemBg;
+        if (sel) {
+            /* Morph like the old gear strip: rail = padded rounded square,
+             * open = full-width sharp bar (pink while the panel has focus). */
+            float pad = (railW - boxS) * 0.5f * (1.0f - t);
+            float roundness = GEAR_STRIP_ROUNDNESS * (1.0f - t);
+            Rectangle bar = { pad, y - boxS * 0.5f, boxS + (sidebarWidth - boxS) * t, boxS };
+            if (t <= 0.0f) bar.width = boxS;
+            Color bc = (sidebarPanelFocus && settled) ? pink : WHITE;
+            if (roundness < 0.001f) DrawRectangleRec(bar, bc);
+            else DrawRectangleRounded(bar, roundness, 8, bc);
+            fg = systemBg;
+            fill = bc;
         }
-
-        /* Gear with spin (DrawTexturePro rotates around origin). */
-        if (gearTexture.id != 0) {
-            Rectangle src = { 0, 0, (float)gearTexture.width, (float)gearTexture.height };
-            Rectangle dst = { gearCX, gearCY, gearW, gearH };
-            Vector2 origin = { gearW * 0.5f, gearH * 0.5f };
-            DrawTexturePro(gearTexture, src, dst, origin, gearSpinAngle, WHITE);
-        } else {
-            DrawFallbackGear((Vector2){ gearCX, gearCY }, gearW, gearSpinAngle,
-                             GEAR_FALLBACK_COLOR, WHITE);
+        float anim = (sel && settled && !sidebarPanelFocus) ? (float)(now - sidebarItemSince) : -1.0f;
+        DrawSidebarIcon(i, (Vector2){ iconX, y }, iconS, fg, fill, anim, gearSpinAngle);
+        if (t > 0.0f) {
+            static const StrId labels[SB_ITEM_COUNT] = { S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS };
+            DrawFitText(font, T(labels[i]), (Vector2){ labelX, y }, (float)font.baseSize * 1.2f,
+                        SidebarOpenWidth() - labelX - 12.0f, Fade(fg, t));
         }
-        Repo_GearDot((Vector2){ gearCX, gearCY }, gearW * 0.5f);
+    }
+    EndScissorMode();
+
+    if (settled && sidebarPanelFocus && sidebarItem == SB_ITEM_SETTINGS) {
+        SidebarPanel_Draw(font, systemBg);
     }
 }
 
@@ -2015,6 +2193,8 @@ static void CollapseSidebarToRail(void) {
     sidebarExpandPending = false;
     sidebarClosing = true;
     sidebarOpen = true; /* stay open until rail settle */
+    sidebarPanelFocus = false;
+    sidebarItem = SB_ITEM_SINGLE;   /* rail highlight rests on Single player (video) */
 
     float rail = SidebarRailWidth();
     float open = SidebarOpenWidth();
@@ -2037,6 +2217,8 @@ static void CollapseSidebarToRail(void) {
 /* Actually expand width + info bars (call after selected tile has shrunk). */
 static void ExpandSidebarMenu(void) {
     sidebarExpandPending = false;
+    sidebarPanelFocus = false;
+    sidebarItemSince = GetTime();
     sidebarClosing = false;
     sidebarOpen = true;
 
@@ -2118,6 +2300,40 @@ static void UpdateSidebarWidth(void) {
     }
 
     UpdateGearSpin();
+}
+
+/* Open menu input. Menu focus: Up/Down pick an item, A/Right on Settings
+ * enters its panel (the other three items have no function), B closes to
+ * the rail. Panel focus: Up/Down pick an option, A sets it (saved at once),
+ * B/Left return to the menu. */
+static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRight,
+                                bool gpConfirm, bool gpBack) {
+    bool up = IsKeyPressed(KEY_UP) || gpUp, down = IsKeyPressed(KEY_DOWN) || gpDown;
+    bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
+    bool back = IsKeyPressed(KEY_B) || gpBack;
+    if (sidebarPanelFocus) {
+        if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; return; }
+        if (up && sidebarSetRow > 0) sidebarSetRow--;
+        if (down && sidebarSetRow < SB_SET_COUNT - 1) sidebarSetRow++;
+        if (ok) {
+            SysSettings *st = &sysSettings[currentSystem];
+            if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
+            else if (sidebarSetRow == SB_SET_VER_NA_EU) st->versions = 1;
+            else if (sidebarSetRow == SB_SET_RUMBLE) st->rumble = !st->rumble;
+            else st->showControls = !st->showControls;
+            SysSettings_Save(currentSystem);
+        }
+        return;
+    }
+    if (back) { CollapseSidebarToRail(); return; }
+    if (up && sidebarItem > 0) { sidebarItem--; sidebarItemSince = GetTime(); }
+    if (down && sidebarItem < SB_ITEM_COUNT - 1) { sidebarItem++; sidebarItemSince = GetTime(); }
+    if (sidebarItem == SB_ITEM_SETTINGS && (ok || IsKeyPressed(KEY_RIGHT) || gpRight)) {
+        sidebarPanelFocus = true;
+        sidebarSetRow = 0;
+    } else if (ok) {
+        sidebarItemSince = GetTime();   /* no function: just replay the icon's loop */
+    }
 }
 
 static bool OverlayActive(void) {
@@ -2816,6 +3032,7 @@ int main(void) {
         Lang_ConfigPath(cfg, sizeof(cfg));
         Lang_Set(Lang_Load(cfg));
     }
+    SysSettings_LoadAll();
     Order_LoadAll();
 
     gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
@@ -3000,8 +3217,8 @@ int main(void) {
             }
         }
 
-        if (sidebarOpen && !sidebarClosing && sbWidthPhase == SB_WIDTH_IDLE) {
-            if (IsKeyPressed(KEY_B) || gpBack) CollapseSidebarToRail();
+        if (currentState == MOSAIC && SidebarMenuSettled()) {
+            Sidebar_HandleInput(gpUp, gpDown, gpLeft, gpRight, gpConfirm, gpBack);
         }
 
         ScrapeMenu_Poll();

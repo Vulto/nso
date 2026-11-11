@@ -38,6 +38,10 @@ typedef enum {
     /* details panel (grid X) */
     S_DET_SYSTEM, S_DET_SOURCE, S_DET_STATUS, S_DET_SAVES, S_DET_NO_SAVES,
     S_DET_INSTALLED, S_DET_NOT_INSTALLED, S_DET_UNAVAILABLE, S_DET_INFO,
+    /* in-system sidebar (grid B/O menu) and its Settings panel */
+    S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS,
+    S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
+    S_SET_CONTROLS, S_SET_SHOW,
     S_COUNT
 } StrId;
 
@@ -51,7 +55,15 @@ const char *T(StrId id);
 /* Config text -> language; anything missing / unknown = English. */
 NsoLang Lang_Parse(const char *text);
 NsoLang Lang_Load(const char *path);
-bool Lang_Save(const char *path, NsoLang lang);
+bool Lang_Save(const char *path, NsoLang lang);   /* keeps the file's other keys */
+
+/* config/nso.cfg is "key=value" lines. Cfg_Get copies key's value (false if
+ * absent); Cfg_Put writes text with key set (replaced in place or appended),
+ * keeping every other line (false if out is too small). Cfg_SaveKey does a
+ * read-modify-write of the file. */
+bool Cfg_Get(const char *text, const char *key, char *dst, size_t n);
+bool Cfg_Put(const char *text, const char *key, const char *value, char *out, size_t n);
+bool Cfg_SaveKey(const char *path, const char *key, const char *value);
 
 void Msg_Clear(NsoMsg *m);
 void Msg_Set(NsoMsg *m, int id, int n, const char *arg);
@@ -71,7 +83,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
     [LANG_EN] = {
         [S_RAW] = "%s",
         [S_MOSAIC_INFO] = "    🅨  Move (Press and hold to sort)      🅧 Details      🅐 Start      🅑 Back   ",
-        [S_SIDEBAR_INFO] = "    🅐 Accept      🅑 Back   ",
+        [S_SIDEBAR_INFO] = "    🅑 Back      🅐 OK   ",
         [S_INFO_CANCEL] = "    🅑 Cancel   ",
         [S_MANAGE_INFO] = "    🅐 Select      🅑 Back   ",
         [S_SCRAPE_DONE] = "Done",
@@ -149,11 +161,22 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_DET_NOT_INSTALLED] = "Not installed",
         [S_DET_UNAVAILABLE] = "Not available yet",
         [S_DET_INFO] = "    🅐 Open      🅑 Back   ",
+        [S_SB_SINGLE] = "Single player",
+        [S_SB_TOGETHER] = "Play together",
+        [S_SB_ONLINE] = "Play online",
+        [S_SB_SETTINGS] = "Settings",
+        [S_SET_VERSIONS] = "Playable versions",
+        [S_SET_VER_NA] = "North American versions",
+        [S_SET_VER_NA_EU] = "North American and European versions",
+        [S_SET_RUMBLE] = "Rumble",
+        [S_SET_ENABLED] = "Enabled",
+        [S_SET_CONTROLS] = "Show controls in game",
+        [S_SET_SHOW] = "Show",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
         [S_MOSAIC_INFO] = "    🅨  Mover (segure para ordenar)      🅧 Detalhes      🅐 Iniciar      🅑 Voltar   ",
-        [S_SIDEBAR_INFO] = "    🅐 Aceitar      🅑 Voltar   ",
+        [S_SIDEBAR_INFO] = "    🅑 Voltar      🅐 OK   ",
         [S_INFO_CANCEL] = "    🅑 Cancelar   ",
         [S_MANAGE_INFO] = "    🅐 Selecionar      🅑 Voltar   ",
         [S_SCRAPE_DONE] = "Concluído",
@@ -231,6 +254,17 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_DET_NOT_INSTALLED] = "Não instalado",
         [S_DET_UNAVAILABLE] = "Ainda não disponível",
         [S_DET_INFO] = "    🅐 Abrir      🅑 Voltar   ",
+        [S_SB_SINGLE] = "Um jogador",
+        [S_SB_TOGETHER] = "Jogar junto",
+        [S_SB_ONLINE] = "Jogar online",
+        [S_SB_SETTINGS] = "Configurações",
+        [S_SET_VERSIONS] = "Versões jogáveis",
+        [S_SET_VER_NA] = "Versões norte-americanas",
+        [S_SET_VER_NA_EU] = "Versões norte-americanas e europeias",
+        [S_SET_RUMBLE] = "Função de vibração",
+        [S_SET_ENABLED] = "Ativado",
+        [S_SET_CONTROLS] = "Mostrar controles no jogo",
+        [S_SET_SHOW] = "Mostrar",
     },
 };
 
@@ -280,9 +314,84 @@ NsoLang Lang_Load(const char *path)
 
 bool Lang_Save(const char *path, NsoLang lang)
 {
-    FILE *f = path ? fopen(path, "w") : NULL;
+    return Cfg_SaveKey(path, "language", lang == LANG_PT ? "pt-BR" : "en");
+}
+
+/* Length of line p (without '\n') with trailing CR / spaces trimmed. */
+static size_t cfg_line_len(const char *p, const char **next)
+{
+    const char *e = strchr(p, '\n');
+    size_t len = e ? (size_t)(e - p) : strlen(p);
+    *next = e ? e + 1 : NULL;
+    while (len && (p[len - 1] == '\r' || p[len - 1] == ' ')) len--;
+    return len;
+}
+
+static bool cfg_line_is(const char *p, size_t len, const char *key, size_t kl)
+{
+    return len > kl && strncmp(p, key, kl) == 0 && p[kl] == '=';
+}
+
+bool Cfg_Get(const char *text, const char *key, char *dst, size_t n)
+{
+    size_t kl = key ? strlen(key) : 0;
+    const char *p = text;
+    if (!kl || !dst || !n) return false;
+    while (p && *p) {
+        const char *next;
+        size_t len = cfg_line_len(p, &next);
+        if (cfg_line_is(p, len, key, kl)) {
+            size_t vl = len - kl - 1;
+            if (vl >= n) vl = n - 1;
+            memcpy(dst, p + kl + 1, vl);
+            dst[vl] = '\0';
+            return true;
+        }
+        p = next;
+    }
+    return false;
+}
+
+bool Cfg_Put(const char *text, const char *key, const char *value, char *out, size_t n)
+{
+    size_t kl = key ? strlen(key) : 0, used = 0;
+    bool done = false;
+    const char *p = text ? text : "";
+    if (!kl || !out || !n) return false;
+    out[0] = '\0';
+    while (*p) {
+        const char *next;
+        size_t len = cfg_line_len(p, &next);
+        int w;
+        if (cfg_line_is(p, len, key, kl)) {
+            if (done) { p = next ? next : ""; continue; }   /* drop duplicates */
+            w = snprintf(out + used, n - used, "%s=%s\n", key, value ? value : "");
+            done = true;
+        } else {
+            w = snprintf(out + used, n - used, "%.*s\n", (int)len, p);
+        }
+        if (w < 0 || (size_t)w >= n - used) return false;
+        used += (size_t)w;
+        p = next ? next : "";
+    }
+    if (!done) {
+        int w = snprintf(out + used, n - used, "%s=%s\n", key, value ? value : "");
+        if (w < 0 || (size_t)w >= n - used) return false;
+    }
+    return true;
+}
+
+bool Cfg_SaveKey(const char *path, const char *key, const char *value)
+{
+    char in[4096], out[4200];
+    size_t len = 0;
+    FILE *f = path ? fopen(path, "r") : NULL;
+    if (f) { len = fread(in, 1, sizeof(in) - 1, f); fclose(f); }
+    in[len] = '\0';
+    if (!Cfg_Put(in, key, value, out, sizeof(out))) return false;
+    f = path ? fopen(path, "w") : NULL;
     if (!f) return false;
-    bool ok = fprintf(f, "language=%s\n", lang == LANG_PT ? "pt-BR" : "en") > 0;
+    bool ok = fputs(out, f) >= 0;
     return (fclose(f) == 0) && ok;
 }
 
