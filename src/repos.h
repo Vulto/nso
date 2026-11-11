@@ -26,6 +26,14 @@ typedef enum {
     REPO_READY,
 } RepoLocalState;
 
+/* Install watch: what a disk-state change tells the user. */
+typedef enum {
+    REPO_NOTE_NONE,
+    REPO_NOTE_ROM_NEEDED,    /* downloaded, waits for the user's own ROM */
+    REPO_NOTE_INSTALLABLE,   /* everything on disk: one press builds it */
+    REPO_NOTE_INSTALLED,     /* binary appeared: launchable */
+} RepoNote;
+
 extern const RepoEntry nso_repos[];
 extern const int nso_repo_count;
 
@@ -39,6 +47,18 @@ StrId Repo_ExitStr(int code);
 int Repo_StatusKey(const char *key);
 /* True when the exit code means the game can be launched now. */
 bool Repo_ExitReady(int code);
+/* Can the build run now from what is on disk (cloned, ROM present if
+ * required, not built)? lastExit = last repo_sync exit for the repo, -1 if
+ * none: missing deps (21) or a failed build (2) is not offered again until
+ * the disk state changes. */
+bool Repo_CanInstall(RepoLocalState s, int lastExit);
+/* Exit code a saved status line stands for, so a failed build or missing
+ * deps from an earlier run is not offered again after a restart; -1 if the
+ * line says nothing against installing. */
+int Repo_StatusExit(const char *line);
+/* Notice for a disk-state change. The first sighting (known = false, e.g. at
+ * startup) never notifies; only transitions do. */
+RepoNote Repo_Transition(bool known, RepoLocalState prev, RepoLocalState now);
 
 #endif /* NSO_REPOS_H */
 
@@ -167,7 +187,7 @@ int Repo_StatusKey(const char *key)
         { "no_upstream", S_REPO_NO_UPSTREAM }, { "updating", S_REPO_UPDATING },
         { "update_failed", S_REPO_UPDATE_FAILED }, { "submodule_failed", S_REPO_SUBMODULE_FAILED },
         { "rom_needed", S_REPO_ROM_NEEDED }, { "up_to_date", S_REPO_UP_TO_DATE },
-        { "building", S_REPO_BUILDING }, { "build_failed", S_REPO_BUILD_FAILED },
+        { "building", S_REPO_BUILDING }, { "not_cloned", S_REPO_NOT_CLONED }, { "build_failed", S_REPO_BUILD_FAILED },
         { "build_no_binary", S_REPO_BUILD_NO_BINARY }, { "ready", S_REPO_READY },
     };
     if (!key) return -1;
@@ -180,6 +200,29 @@ int Repo_StatusKey(const char *key)
 bool Repo_ExitReady(int code)
 {
     return code == 0 || code == 10;
+}
+
+bool Repo_CanInstall(RepoLocalState s, int lastExit)
+{
+    return s == REPO_NOT_BUILT && lastExit != 21 && lastExit != 2;
+}
+
+int Repo_StatusExit(const char *line)
+{
+    if (!line) return -1;
+    if (strncmp(line, "build_failed", 12) == 0 || strncmp(line, "build_no_binary", 15) == 0) return 2;
+    if (strncmp(line, "missing_deps", 12) == 0) return 21;
+    return -1;
+}
+
+RepoNote Repo_Transition(bool known, RepoLocalState prev, RepoLocalState now)
+{
+    if (!known || prev == now) return REPO_NOTE_NONE;
+    if (now == REPO_ROM_NEEDED && prev == REPO_NOT_CLONED) return REPO_NOTE_ROM_NEEDED;
+    if (now == REPO_NOT_BUILT && (prev == REPO_ROM_NEEDED || prev == REPO_NOT_CLONED))
+        return REPO_NOTE_INSTALLABLE;
+    if (now == REPO_READY && prev != REPO_LOCAL_COPY) return REPO_NOTE_INSTALLED;
+    return REPO_NOTE_NONE;
 }
 
 #endif /* REPOS_IMPLEMENTATION_ONCE */

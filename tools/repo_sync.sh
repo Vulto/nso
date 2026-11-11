@@ -1,12 +1,14 @@
 #!/bin/sh
-# repo_sync.sh LOG STATUS DIR URL BINARY ROM DEPS BUILD
+# repo_sync.sh LOG STATUS DIR URL BINARY ROM DEPS BUILD [MODE]
 # Clone / fast-forward / build one source port. Runs in the background from
 # NSO; one-line progress goes to STATUS as "<key> [detail]" (stable English
 # keys, translated in NSO: src/repos.h Repo_StatusKey), full output to LOG.
 # ROM and DEPS may be "-". DEPS is comma separated; "pkg:x" = pkg-config.
 # Exit: 0 built, 10 up to date, 11 local copy (not git, left alone),
 #       20 ROM needed, 21 missing deps, 1 git failed, 2 build failed.
-log=$1 status=$2 dir=$3 url=$4 bin=$5 rom=$6 deps=$7 build=$8
+# MODE "build" (NSO's Install action) builds the checkout already on disk:
+# no clone, no fetch, no network. Default "sync" clones / updates first.
+log=$1 status=$2 dir=$3 url=$4 bin=$5 rom=$6 deps=$7 build=$8 mode=${9:-sync}
 mkdir -p "$(dirname "$log")" "$(dirname "$status")" || exit 1
 exec >"$log" 2>&1
 say() { printf '%s\n' "$*" > "$status"; echo "== $*"; }
@@ -24,6 +26,7 @@ fi
 if [ -n "$missing" ]; then say missing_deps $missing; exit 21; fi
 
 changed=0
+if [ "$mode" = build ] && [ ! -e "$dir" ]; then say not_cloned; exit 1; fi
 if [ ! -e "$dir" ]; then
     say cloning
     git clone --recursive "$url" "$dir" || { say clone_failed; exit 1; }
@@ -32,6 +35,8 @@ elif [ ! -d "$dir/.git" ]; then
     # Hand-made copy (patches, ROM, assets): never touch it.
     if [ -x "$dir/$bin" ]; then say local_ready; else say local_unbuilt; fi
     exit 11
+elif [ "$mode" = build ]; then
+    echo "build mode: using the checkout on disk (no fetch)"
 else
     say checking
     git -C "$dir" fetch --quiet || { say fetch_failed; exit 1; }

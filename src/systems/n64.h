@@ -46,8 +46,8 @@ GameEntry n64_games[] = {
     {
         .title = "Perfect Dark",
         .boxartPath = "assets/images/systems/n64/pd.png",
-        .dir = "repos/n64/perfect_dark/build",
-        .binary = "pd.x86_64",
+        .dir = "repos/n64/perfect_dark-src",
+        .binary = "build/pd.x86_64",
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

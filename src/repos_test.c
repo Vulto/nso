@@ -30,6 +30,26 @@ int main(void)
     CHECK(Repo_ExitStr(21) == S_REPO_MISSING_DEPS && Repo_ExitStr(10) == S_REPO_UP_TO_DATE);
     CHECK(Repo_ExitStr(99) == S_REPO_FAILED && Repo_StatusKey("nope") == -1);
 
+    /* Install watch: only transitions notify, never the first sighting. */
+    CHECK(Repo_Transition(false, REPO_NOT_CLONED, REPO_NOT_BUILT) == REPO_NOTE_NONE);
+    CHECK(Repo_Transition(true, REPO_NOT_BUILT, REPO_NOT_BUILT) == REPO_NOTE_NONE);
+    CHECK(Repo_Transition(true, REPO_NOT_CLONED, REPO_ROM_NEEDED) == REPO_NOTE_ROM_NEEDED);
+    CHECK(Repo_Transition(true, REPO_ROM_NEEDED, REPO_NOT_BUILT) == REPO_NOTE_INSTALLABLE);  /* ROM dropped in */
+    CHECK(Repo_Transition(true, REPO_NOT_CLONED, REPO_NOT_BUILT) == REPO_NOTE_INSTALLABLE);  /* cloned, no build */
+    CHECK(Repo_Transition(true, REPO_NOT_BUILT, REPO_READY) == REPO_NOTE_INSTALLED);
+    CHECK(Repo_Transition(true, REPO_NOT_CLONED, REPO_READY) == REPO_NOTE_INSTALLED);
+    CHECK(Repo_Transition(true, REPO_READY, REPO_ROM_NEEDED) == REPO_NOTE_NONE);   /* ROM removed */
+    CHECK(Repo_Transition(true, REPO_READY, REPO_NOT_BUILT) == REPO_NOTE_NONE);    /* binary removed */
+    CHECK(Repo_Transition(true, REPO_LOCAL_COPY, REPO_READY) == REPO_NOTE_NONE);
+    CHECK(Repo_Transition(true, REPO_NOT_BUILT, REPO_NOT_CLONED) == REPO_NOTE_NONE);
+    CHECK(Repo_CanInstall(REPO_NOT_BUILT, -1) && Repo_CanInstall(REPO_NOT_BUILT, 20));
+    CHECK(!Repo_CanInstall(REPO_NOT_BUILT, 21) && !Repo_CanInstall(REPO_NOT_BUILT, 2));
+    CHECK(!Repo_CanInstall(REPO_ROM_NEEDED, -1) && !Repo_CanInstall(REPO_READY, -1));
+    CHECK(!Repo_CanInstall(REPO_NOT_CLONED, -1) && !Repo_CanInstall(REPO_LOCAL_COPY, -1));
+    CHECK(Repo_StatusExit("build_failed") == 2 && Repo_StatusExit("build_no_binary out/x") == 2);
+    CHECK(Repo_StatusExit("missing_deps cmake ninja") == 21);
+    CHECK(Repo_StatusExit("rom_needed a.z64") == -1 && Repo_StatusExit("ready") == -1 && Repo_StatusExit(NULL) == -1);
+
     /* Every status key the script writes has a translation id. */
     {
         FILE *f = fopen("tools/repo_sync.sh", "r");
@@ -115,6 +135,16 @@ int main(void)
              "'mkdir -p out && printf \"#!/bin/sh\\n\" > out/game && chmod +x out/game'",
              tmp, tmp, tmp, tmp) == 0);
     CHECK(SH("test -x %s/work4/out/game && test -f %s/work4/out/rom.sfc", tmp, tmp) == 0);
+
+    /* Build mode (Install): never clones or fetches, builds what is on disk. */
+#define BUILD(dir) SH("sh tools/repo_sync.sh %s/log %s/status %s/" dir " file://%s/gone.git ./game - git " \
+        "'printf \"#!/bin/sh\\n\" > game && chmod +x game' build", tmp, tmp, tmp, tmp)
+    CHECK(BUILD("work5") == 1);                              /* nothing on disk: no clone */
+    CHECK(SH("test ! -e %s/work5 && grep -qx not_cloned %s/status", tmp, tmp) == 0);
+    CHECK(SH("git clone -q file://%s/up.git %s/work5 && mv %s/up.git %s/up-moved.git", tmp, tmp, tmp, tmp) == 0);
+    CHECK(BUILD("work5") == 0);                              /* upstream gone: still builds */
+    CHECK(SH("test -x %s/work5/game && grep -qx ready %s/status", tmp, tmp) == 0);
+    CHECK(BUILD("work5") == 10);                             /* built: nothing to do */
 
     SH("rm -rf %s", tmp);
     if (fails) return 1;

@@ -826,6 +826,8 @@ static void DrawFallbackGear(Vector2 c, float size, float angle, Color col, Colo
 
 #define GEAR_FALLBACK_COLOR ((Color){ 172, 49, 49, 255 })   /* gear.png stroke */
 
+static void Repo_GearDot(Vector2 gearCentre, float radius);   /* install badge */
+
 static void DrawMenuGear(float offsetX) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
@@ -843,6 +845,7 @@ static void DrawMenuGear(float offsetX) {
     if (menuFocus == 1) {
         DrawRing((Vector2){ cx, cy }, d * 0.5f + d * 0.05f, d * 0.5f + d * 0.11f, 0.0f, 360.0f, 48, MenuGlow());
     }
+    Repo_GearDot((Vector2){ cx, cy }, d * 0.5f);
 }
 
 /* Draw the systems menu shifted by offsetX (used by the mosaic slide).
@@ -1387,6 +1390,8 @@ static int repoQueueLen = 0;
 static int repoRunning = -1;
 static NsoProc repoProc;
 static int repoPollTick = 0;
+static bool repoBuildOnly[REPO_MAX];   /* queued as Install: build mode, no fetch */
+static int repoExitPlus1[REPO_MAX];    /* last repo_sync exit + 1; 0 = none */
 
 static void Repo_Paths(int i, char *log, size_t ln, char *st, size_t sn) {
     snprintf(log, ln, "%s/logs/repos/%s.log", GetBaseDirectory(), nso_repos[i].name);
@@ -1415,34 +1420,61 @@ static void Repo_SetFromStatus(int i, const char *line) {
     else Msg_Set(&repoMsg[i], id, 0, detail);
 }
 
-/* Disk-only state (no network) for repos without a job result yet. */
+/* Disk-only state (no network): a few stat() calls. */
+static RepoLocalState Repo_DiskState(int i, bool *binOut) {
+    const RepoEntry *r = &nso_repos[i];
+    char dir[2048], path[2304];
+    snprintf(dir, sizeof(dir), "%s/%s", GetBaseDirectory(), r->dir);
+    bool exists = DirectoryExists(dir);
+    snprintf(path, sizeof(path), "%s/.git", dir);
+    bool git = DirectoryExists(path);
+    snprintf(path, sizeof(path), "%s/%s", dir, r->binary);
+    bool bin = FileExists(path);
+    bool rom = false;
+    if (r->rom) {
+        snprintf(path, sizeof(path), "%s/%s", dir, r->rom);
+        rom = FileExists(path);
+    }
+    if (binOut) *binOut = bin;
+    return Repo_LocalState(exists, git, bin, r->rom != NULL, rom);
+}
+
+static bool Repo_Busy(int i) {
+    if (i == repoRunning) return true;
+    for (int q = 0; q < repoQueueLen; q++) if (repoQueue[q] == i) return true;
+    return false;
+}
+
+/* Install watch state (Repo_Watch below). */
+static RepoLocalState repoDisk[REPO_MAX];
+static bool repoDiskKnown[REPO_MAX];
+
+/* One press can build it now (badge, notice, Install button). */
+static bool Repo_Offer(int i) {
+    if (i < 0 || i >= nso_repo_count || i >= REPO_MAX || !repoDiskKnown[i] || Repo_Busy(i)) return false;
+    return Repo_CanInstall(repoDisk[i], repoExitPlus1[i] - 1);
+}
+
+static bool Repo_AnyOffer(void) {
+    for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) if (Repo_Offer(i)) return true;
+    return false;
+}
+
+/* Disk-only state for repos without a job result yet. */
 static void Repo_RefreshLocal(void) {
     for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) {
-        const RepoEntry *r = &nso_repos[i];
-        char dir[2048], path[2304];
-        if (i == repoRunning || repoHasResult[i]) continue;
-        bool queued = false;
-        for (int q = 0; q < repoQueueLen; q++) queued |= repoQueue[q] == i;
-        if (queued) continue;
-        snprintf(dir, sizeof(dir), "%s/%s", GetBaseDirectory(), r->dir);
-        bool exists = DirectoryExists(dir);
-        snprintf(path, sizeof(path), "%s/.git", dir);
-        bool git = DirectoryExists(path);
-        snprintf(path, sizeof(path), "%s/%s", dir, r->binary);
-        bool bin = FileExists(path);
-        bool rom = false;
-        if (r->rom) {
-            snprintf(path, sizeof(path), "%s/%s", dir, r->rom);
-            rom = FileExists(path);
-        }
-        RepoLocalState ls = Repo_LocalState(exists, git, bin, r->rom != NULL, rom);
-        Msg_Set(&repoMsg[i], (ls == REPO_LOCAL_COPY && bin) ? S_REPO_LOCAL_READY : Repo_LocalStr(ls), 0, NULL);
+        if (repoHasResult[i] || Repo_Busy(i)) continue;
+        bool bin = false;
+        RepoLocalState ls = Repo_DiskState(i, &bin);
+        int id = (ls == REPO_LOCAL_COPY && bin) ? S_REPO_LOCAL_READY : Repo_LocalStr(ls);
+        if (repoDiskKnown[i] && repoDisk[i] == ls && Repo_Offer(i)) id = S_REPO_INSTALLABLE;
+        Msg_Set(&repoMsg[i], id, 0, NULL);
     }
 }
 
 static void Repo_StartNext(void) {
-    static char a[9][2304];
-    char *argv[11];
+    static char a[10][2304];
+    char *argv[12];
     if (repoRunning >= 0 || repoQueueLen == 0) return;
     int i = repoQueue[0];
     memmove(repoQueue, repoQueue + 1, sizeof(int) * (size_t)(--repoQueueLen));
@@ -1455,9 +1487,10 @@ static void Repo_StartNext(void) {
     snprintf(a[6], sizeof(a[6]), "%s", r->rom ? r->rom : "-");
     snprintf(a[7], sizeof(a[7]), "%s", r->deps ? r->deps : "-");
     snprintf(a[8], sizeof(a[8]), "%s", r->build);
+    snprintf(a[9], sizeof(a[9]), "%s", repoBuildOnly[i] ? "build" : "sync");
     argv[0] = "sh";
-    for (int k = 0; k < 9; k++) argv[k + 1] = a[k];
-    argv[10] = NULL;
+    for (int k = 0; k < 10; k++) argv[k + 1] = a[k];
+    argv[11] = NULL;
     FileRemove(a[2]);
     repoProc = NsoSpawnArgv(NULL, argv);
     repoHasResult[i] = true;
@@ -1469,14 +1502,17 @@ static void Repo_StartNext(void) {
     Msg_Set(&repoMsg[i], S_REPO_CHECKING, 0, NULL);
 }
 
-static void Repo_Enqueue(int i) {
-    if (i < 0 || i >= nso_repo_count || i >= REPO_MAX || i == repoRunning) return;
-    for (int q = 0; q < repoQueueLen; q++) if (repoQueue[q] == i) return;
+/* buildOnly = Install: build the checkout on disk, never clone or fetch. */
+static void Repo_Enqueue(int i, bool buildOnly) {
+    if (i < 0 || i >= nso_repo_count || i >= REPO_MAX || Repo_Busy(i)) return;
+    repoBuildOnly[i] = buildOnly;
     repoQueue[repoQueueLen++] = i;
     repoHasResult[i] = true;
     Msg_Set(&repoMsg[i], S_REPO_QUEUED, 0, NULL);
     Repo_StartNext();
 }
+
+static bool repoWatchNow = true;   /* re-check disk state on the next frame */
 
 static void Repo_Poll(void) {
     int code = 1;
@@ -1494,8 +1530,125 @@ static void Repo_Poll(void) {
     } else {
         Msg_Set(&repoMsg[repoRunning], Repo_ExitStr(code), 0, NULL);
     }
+    repoExitPlus1[repoRunning] = code + 1;
     repoRunning = -1;
+    repoWatchNow = true;
     Repo_StartNext();
+}
+
+/* ---- Install watch. Disk-only (no network), every REPO_WATCH_SEC, when the
+ * window regains focus and right after a repo_sync job exits. A transition
+ * into "can build now" (downloaded, ROM present if needed, not built) shows
+ * a notice; A on it, the gear row or Details > Install runs repo_sync.sh in
+ * build mode. ROMs are never fetched: ROM needed only says where to put it. */
+#define REPO_WATCH_SEC 3.0
+static struct { int repo; RepoNote note; double until; } repoNotice = { -1, REPO_NOTE_NONE, 0.0 };
+
+/* Grid title of the game this repo builds (same system + dir), else its name. */
+static const char *Repo_Title(int i) {
+    for (int s = 0; s < SYSTEM_COUNT; s++) {
+        if (strcmp(systems[s].platform->id, nso_repos[i].system) != 0) continue;
+        for (int g = 0; g < *systems[s].gameCount; g++) {
+            const GameEntry *e = &systems[s].games[g];
+            if (e->dir && e->title && strcmp(e->dir, nso_repos[i].dir) == 0) return e->title;
+        }
+    }
+    return nso_repos[i].name;
+}
+
+static void Repo_Watch(void) {
+    static double next = 0.0;
+    static bool wasFocused = true;
+    bool focused = IsWindowFocused();
+    double now = GetTime();
+    if (focused && !wasFocused) repoWatchNow = true;
+    wasFocused = focused;
+    if (!repoWatchNow && now < next) return;
+    repoWatchNow = false;
+    next = now + REPO_WATCH_SEC;
+    for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) {
+        if (Repo_Busy(i)) continue;   /* mid-job: judge it when it exits */
+        if (!repoDiskKnown[i] && repoExitPlus1[i] == 0) {
+            char line[160];   /* earlier run's result (logs/repos/<name>.status) */
+            if (Repo_ReadStatus(i, line, sizeof(line))) repoExitPlus1[i] = Repo_StatusExit(line) + 1;
+        }
+        RepoLocalState st = Repo_DiskState(i, NULL);
+        RepoNote note = Repo_Transition(repoDiskKnown[i], repoDisk[i], st);
+        bool changed = repoDiskKnown[i] && repoDisk[i] != st;
+        repoDisk[i] = st;
+        repoDiskKnown[i] = true;
+        /* Disk moved on from the last job's message (ROM dropped in, binary
+         * deleted...): show the disk state. ROM needed / installed keep the
+         * job's more detailed line. */
+        if (changed && (note == REPO_NOTE_NONE || note == REPO_NOTE_INSTALLABLE)) repoHasResult[i] = false;
+        if (note == REPO_NOTE_INSTALLABLE) repoExitPlus1[i] = 0;   /* new state: offer again */
+        if (note == REPO_NOTE_NONE) continue;
+        repoNotice.repo = i;
+        repoNotice.note = note;
+        repoNotice.until = now + (note == REPO_NOTE_INSTALLABLE ? 10.0 : 7.0);
+    }
+    Repo_RefreshLocal();
+}
+
+/* The notice takes A only while it offers an install that is still valid. */
+static bool Repo_NoticeActionable(void) {
+    return repoNotice.repo >= 0 && repoNotice.note == REPO_NOTE_INSTALLABLE
+        && GetTime() < repoNotice.until && Repo_Offer(repoNotice.repo);
+}
+
+/* Top-centre toast, same look as the info bar. */
+static void Repo_NoticeDraw(Font font) {
+    int i = repoNotice.repo;
+    double left = repoNotice.until - GetTime();
+    if (i < 0 || left <= 0.0) return;
+    if (repoNotice.note == REPO_NOTE_INSTALLABLE && !Repo_Offer(i)) return;
+    char text[512];
+    const RepoEntry *r = &nso_repos[i];
+    if (repoNotice.note == REPO_NOTE_ROM_NEEDED) {
+        snprintf(text, sizeof(text), T(S_NOTE_ROM), Repo_Title(i), r->rom ? r->rom : "-", r->dir);
+    } else {
+        snprintf(text, sizeof(text), T(repoNotice.note == REPO_NOTE_INSTALLABLE ? S_NOTE_INSTALL
+                                                                              : S_NOTE_INSTALLED),
+                 Repo_Title(i));
+    }
+    float op = (float)fmin(1.0, fmin(left / 0.4, (GetTime() - (repoNotice.until
+                 - (repoNotice.note == REPO_NOTE_INSTALLABLE ? 10.0 : 7.0))) / 0.25));
+    if (op <= 0.0f) return;
+    float fs = (float)font.baseSize;
+    Vector2 m = MeasureTextEx(font, text, fs, 2.0f);
+    float w = m.x + 48.0f, h = 56.0f;   /* clears the gear screen's tabs */
+    float x = ((float)GetScreenWidth() - w) * 0.5f, y = 14.0f - (1.0f - op) * 20.0f;
+    DrawRectangleRounded((Rectangle){ x, y, w, h }, 0.35f, 8, Fade(BLACK, 0.85f * op));
+    DrawCircleV((Vector2){ x + 14.0f, y + h * 0.5f }, 5.0f,
+                Fade(repoNotice.note == REPO_NOTE_ROM_NEEDED ? ORANGE : (Color){ 0, 190, 255, 255 }, op));
+    DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
+}
+
+/* Repository entry that builds this game of the active system (same dir), or -1. */
+static int Game_Repo(const GameEntry *g) {
+    if (!g || !g->dir) return -1;
+    for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) {
+        if (strcmp(nso_repos[i].system, ActiveSystem()->platform->id) == 0
+            && strcmp(nso_repos[i].dir, g->dir) == 0) return i;
+    }
+    return -1;
+}
+
+/* Small "Install" pill / dot used on game tiles and the gear. */
+static void Repo_BadgeDraw(Font font, Rectangle tile) {
+    float fs = fmaxf(14.0f, fminf(24.0f, tile.height * 0.09f));
+    const char *t = T(S_DET_INSTALL);
+    Vector2 m = MeasureTextEx(font, t, fs, 1.0f);
+    Rectangle b = { tile.x + tile.width - m.x - 22.0f, tile.y + 8.0f, m.x + 14.0f, m.y + 6.0f };
+    DrawRectangleRounded(b, 0.5f, 8, (Color){ 0, 150, 220, 235 });
+    DrawTextEx(font, t, (Vector2){ b.x + 7.0f, b.y + 3.0f }, fs, 1.0f, WHITE);
+}
+
+static void Repo_GearDot(Vector2 gearCentre, float radius) {
+    if (!Repo_AnyOffer()) return;
+    Vector2 c = { gearCentre.x + radius * 0.72f, gearCentre.y - radius * 0.72f };
+    DrawCircleV(c, fmaxf(6.0f, radius * 0.24f) + 2.0f, WHITE);
+    DrawCircleV(c, fmaxf(6.0f, radius * 0.24f), (Color){ 0, 150, 220, 255 });
 }
 
 /* Repos of the active system, in list order. */
@@ -1546,11 +1699,12 @@ static void Manage_Activate(void) {
         scrapeRow = manageRow;
         ScrapeMenu_Start(manageRow == 1);
     } else if (manageRow < 2 + n) {
-        Repo_Enqueue(idx[manageRow - 2]);
+        int i = idx[manageRow - 2];
+        Repo_Enqueue(i, Repo_Offer(i));   /* "Ready to install": build only */
     } else if (n > 0 && manageRow == 2 + n) {
-        for (int k = 0; k < n; k++) Repo_Enqueue(idx[k]);
+        for (int k = 0; k < n; k++) Repo_Enqueue(idx[k], false);
     } else if (manageRow == Manage_RowCount() - 2) {
-        for (int k = 0; k < nso_repo_count; k++) Repo_Enqueue(k);   /* all systems */
+        for (int k = 0; k < nso_repo_count; k++) Repo_Enqueue(k, false);   /* all systems */
     } else {
         char dir[2048], cfg[2112];
         Lang_Set(Lang_Get() == LANG_EN ? LANG_PT : LANG_EN);
@@ -1718,6 +1872,7 @@ static void DrawSidebar(Color systemBg, Font font) {
             DrawFallbackGear((Vector2){ gearCX, gearCY }, gearW, gearSpinAngle,
                              GEAR_FALLBACK_COLOR, WHITE);
         }
+        Repo_GearDot((Vector2){ gearCX, gearCY }, gearW * 0.5f);
     }
 }
 
@@ -1789,6 +1944,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                            0.0f,
                            GameTint(i));
             DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, GameTint(i));
+            if (Repo_Offer(Game_Repo(&ActiveGames()[i])))
+                Repo_BadgeDraw(slotFont, (Rectangle){ox, oy, draw_w, draw_h});
         }
     }
 
@@ -1827,6 +1984,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                        GameTint(GameIdx));
         DrawMissingCover(images[GameIdx], (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h},
                          GameTint(GameIdx));
+        if (Repo_Offer(Game_Repo(&ActiveGames()[GameIdx])))
+            Repo_BadgeDraw(slotFont, (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
 
         float pulse = sinf((float)GetTime() * 5.6f) * 0.5f + 0.5f;
         unsigned char r = (unsigned char)(255 * (1.0f - pulse));
@@ -2289,15 +2448,7 @@ static void Details_Update(float dt) {
     else if (detailsT > target) detailsT = fmaxf(detailsT - step, target);
 }
 
-/* Repository entry that builds this game (same dir), or -1. */
-static int Details_Repo(const GameEntry *g) {
-    if (!g || !g->dir) return -1;
-    for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) {
-        if (strcmp(nso_repos[i].system, ActiveSystem()->platform->id) == 0
-            && strcmp(nso_repos[i].dir, g->dir) == 0) return i;
-    }
-    return -1;
-}
+static int Details_Repo(const GameEntry *g) { return Game_Repo(g); }
 
 static void Details_HandleInput(bool gpConfirm, bool gpBack) {
     bool gp = IsGamepadAvailable(0);
@@ -2309,6 +2460,12 @@ static void Details_HandleInput(bool gpConfirm, bool gpBack) {
     }
     if (GameIdx >= ActiveGameCount()) return;
     const GameEntry *g = &ActiveGames()[GameIdx];
+    bool confirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
+    int repo = Details_Repo(g);
+    if (Repo_Offer(repo)) {   /* Install is the highlighted row while offered */
+        if (confirm) Repo_Enqueue(repo, true);
+        return;
+    }
     if (g->stateDir && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm)) {
         detailsOpen = false;
         detailsT = 0.0f;
@@ -2381,7 +2538,15 @@ static void Details_Draw(Font font) {
     }
     y += 16.0f;
 
-    if (g->stateDir) {
+    bool install = Repo_Offer(repo);
+    if (install) {
+        DrawRectangleRounded((Rectangle){ cx - 14.0f, y - 6.0f, cw + 28.0f, 54.0f }, 0.35f, 8, WHITE);
+        DrawTextEx(font, T(S_DET_INSTALL), (Vector2){ cx, y + 4.0f }, fs, 2.0f, BLACK);
+        y += 62.0f;
+    }
+    if (g->stateDir && install) {
+        DrawTextEx(font, T(S_DET_SAVES), (Vector2){ cx, y + 4.0f }, fs, 2.0f, WHITE);
+    } else if (g->stateDir) {
         DrawRectangleRounded((Rectangle){ cx - 14.0f, y - 6.0f, cw + 28.0f, 54.0f }, 0.35f, 8, WHITE);
         DrawTextEx(font, T(S_DET_SAVES), (Vector2){ cx, y + 4.0f }, fs, 2.0f, BLACK);
     } else {
@@ -2841,9 +3006,22 @@ int main(void) {
 
         ScrapeMenu_Poll();
         Repo_Poll();
+        Repo_Watch();
         Details_Update(dt);
 
-        if (!screenSliding) {
+        /* A on an install notice builds that game (one press). Not while a
+         * game, the save states, Details, a scrape or a slide owns input. */
+        bool noticeTookInput = false;
+        if (Repo_NoticeActionable() && !screenSliding && !isLaunching && !waitingForGame
+            && !statesOpen && !detailsOpen && detailsT <= 0.0f && !scrapeBusy && !OverlayActive()
+            && currentState != LAUNCHING && currentState != SPLASH
+            && (IsKeyPressed(KEY_A) || gpConfirm)) {
+            Repo_Enqueue(repoNotice.repo, true);
+            repoNotice.repo = -1;
+            noticeTookInput = true;
+        }
+
+        if (!screenSliding && !noticeTookInput) {
             switch (currentState) {
                 case SYSTEMS:
                     /* O: shortcut to the gear screen. Down / Up: cards <-> gear. */
@@ -3023,6 +3201,8 @@ int main(void) {
 
         if (waitingForGame) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
+        } else if (!isLaunching) {
+            Repo_NoticeDraw(font);
         }
 
         EndDrawing();
