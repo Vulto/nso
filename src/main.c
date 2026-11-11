@@ -11,6 +11,7 @@
 
 #include "launch.h"
 #include "raylib.h"
+#include "rlgl.h"   /* blend factors: erase inside the sidebar icon texture */
 
 #define SCRAPE_IMPLEMENTATION
 #include "scrape.h"
@@ -1863,11 +1864,47 @@ static void SysSettings_Save(int sys) {
 static int sidebarItem = SB_ITEM_SINGLE;
 static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
 static int sidebarSetRow = 0;
-static double sidebarItemSince = 0.0;    /* restarts the selected icon's loop */
+/* One-shot icon animation per item: plays once when the item becomes
+ * selected (dir +1) and once, shorter and softer, when it loses selection
+ * (dir -1); then the icon rests. */
+static double sbAnimStart[SB_ITEM_COUNT] = { -100.0, -100.0, -100.0, -100.0 };
+static int sbAnimDir[SB_ITEM_COUNT];
+static const float SB_ANIM_ENTER_SEC = 0.55f;
+static const float SB_ANIM_LEAVE_SEC = 0.30f;
+
+static void SidebarAnim_Play(int item, int dir) {
+    sbAnimStart[item] = GetTime();
+    sbAnimDir[item] = dir;
+}
+
+static void Sidebar_Select(int item) {
+    if (item == sidebarItem) return;
+    SidebarAnim_Play(sidebarItem, -1);
+    sidebarItem = item;
+    SidebarAnim_Play(item, +1);
+}
+
+/* Progress 0..1 of the item's one-shot, or -1 when it is at rest. */
+static float SidebarAnim_Progress(int item) {
+    float dur = sbAnimDir[item] > 0 ? SB_ANIM_ENTER_SEC : SB_ANIM_LEAVE_SEC;
+    float p = (float)(GetTime() - sbAnimStart[item]) / dur;
+    return (p >= 0.0f && p < 1.0f) ? p : -1.0f;
+}
+
+/* Icon fills erase (alpha 0) inside the icon texture so overlapping people
+ * hide what is behind them without knowing the background colour. */
+static void IconErase(bool on) {
+    if (on) {
+        rlSetBlendFactors(RL_ONE, RL_ZERO, RL_FUNC_ADD);
+        BeginBlendMode(BLEND_CUSTOM);
+    } else {
+        EndBlendMode();
+    }
+}
 
 /* Polyline arc / ellipse of thickness th; angles in degrees (0 = right, 90 = down). */
 static void IconArc(Vector2 c, float rx, float ry, float a0, float a1, float th, Color col) {
-    int seg = 28;
+    int seg = 48;
     Vector2 prev = { c.x + rx * cosf(a0 * DEG2RAD), c.y + ry * sinf(a0 * DEG2RAD) };
     DrawCircleV(prev, th * 0.5f, col);
     for (int k = 1; k <= seg; k++) {
@@ -1886,10 +1923,12 @@ static void IconPerson(Vector2 c, float s, float th, Color col, Color fill, bool
     float hr = s * 0.2f;
     Rectangle body = { c.x - s * 0.34f, c.y + s * 0.06f, s * 0.68f, s * 0.42f };
     if (solidFill) {
-        DrawRectangleRounded(body, 0.9f, 12, fill);
+        IconErase(true);
+        DrawRectangleRounded(body, 0.9f, 24, fill);
         DrawCircleV(head, hr + th * 0.5f, fill);
+        IconErase(false);
     }
-    DrawRectangleRoundedLinesEx(body, 0.9f, 12, th, col);
+    DrawRectangleRoundedLinesEx(body, 0.9f, 24, th, col);
     IconArc(head, hr, hr, 0.0f, 360.0f, th, col);
 }
 
@@ -1897,26 +1936,54 @@ static float IconBump(float x) {   /* 0..1..0 over x in [0,1], 0 elsewhere */
     return (x <= 0.0f || x >= 1.0f) ? 0.0f : sinf(x * PI);
 }
 
-static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill, float anim, float spin) {
-    float th = fmaxf(2.0f, s * 0.07f);
+/* Video's settings gear as line art: six flat-topped teeth (one pointing
+ * up) with rounded corners, traced as one closed outline, plus a round hole. */
+static void IconGear(Vector2 c, float s, float th, float rotDeg, Color col) {
+    const int n = 240;
+    const float R = s * 0.40f, root = s * 0.315f;     /* tooth tip / valley radius */
+    const float aTop = 14.0f, aBase = 26.5f;          /* half-angles: tooth top / flank foot */
+    Vector2 prev = { 0 }, first = { 0 };
+    for (int k = 0; k <= n; k++) {
+        float a = 360.0f * (float)k / (float)n;
+        float d = fmodf(a, 60.0f);                    /* angle from the nearest tooth centre */
+        if (d > 30.0f) d = 60.0f - d;
+        float u = (d <= aTop) ? 1.0f : (d >= aBase) ? 0.0f : 1.0f - (d - aTop) / (aBase - aTop);
+        u = u * u * (3.0f - 2.0f * u);                /* smoothstep rounds tip and valley */
+        float r = root + (R - root) * u;
+        float ang = (a - 90.0f + rotDeg) * DEG2RAD;
+        Vector2 pt = { c.x + r * cosf(ang), c.y + r * sinf(ang) };
+        if (k == 0) first = pt;
+        else DrawLineEx(prev, k == n ? first : pt, th, col);
+        DrawCircleV(pt, th * 0.5f, col);
+        prev = pt;
+    }
+    IconArc(c, s * 0.135f, s * 0.135f, 0.0f, 360.0f, th, col);
+}
+
+/* p: one-shot progress 0..1 (or < 0 at rest); dir: +1 enter, -1 leave (softer). */
+static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill, float p, int dir) {
+    float th = fmaxf(2.0f, s * 0.065f);
+    float amp = dir < 0 ? 0.5f : 1.0f;
+    bool on = p >= 0.0f;
     switch (item) {
-        case SB_ITEM_SINGLE: {   /* small hop */
-            float hop = anim >= 0.0f ? IconBump(fmodf(anim * 1.4f, 1.0f) * 1.6f) * s * 0.12f : 0.0f;
+        case SB_ITEM_SINGLE: {   /* one small hop */
+            float hop = on ? IconBump(p) * s * 0.10f * amp : 0.0f;
             IconPerson((Vector2){ c.x, c.y - hop }, s * 0.95f, th, col, fill, false);
         } break;
-        case SB_ITEM_TOGETHER: {   /* members pop in turn: left, right, front */
-            float ph = anim >= 0.0f ? fmodf(anim * 0.9f, 1.0f) * 4.0f : -1.0f;
-            Vector2 pos[3] = { { c.x - s * 0.27f, c.y - s * 0.16f }, { c.x + s * 0.27f, c.y - s * 0.16f },
-                               { c.x, c.y + s * 0.14f } };
+        case SB_ITEM_TOGETHER: {   /* members pop once in turn: left, right, front */
+            Vector2 pos[3] = { { c.x - s * 0.2f, c.y - s * 0.12f }, { c.x + s * 0.2f, c.y - s * 0.12f },
+                               { c.x, c.y + s * 0.16f } };
             for (int k = 0; k < 3; k++) {
-                float sc = 1.0f + 0.22f * IconBump(ph - (float)k);
-                IconPerson(pos[k], s * 0.55f * sc, th * 0.85f, col, fill, true);
+                float sc = on ? 1.0f + 0.2f * amp * IconBump(p * 2.0f - (float)k * 0.5f) : 1.0f;
+                IconPerson(pos[k], s * (k == 2 ? 0.62f : 0.55f) * sc, th * 0.85f, col, fill, true);
             }
         } break;
-        case SB_ITEM_ONLINE: {   /* globe with a turning meridian, person in front */
+        case SB_ITEM_ONLINE: {   /* meridian turns half a revolution once, person in front */
             Vector2 g = { c.x + s * 0.12f, c.y - s * 0.1f };
             float r = s * 0.36f;
-            float turn = anim >= 0.0f ? anim * 2.2f : 0.6f;
+            float e = on ? sinf(p * PI * 0.5f) : 1.0f;             /* ease out */
+            float turn = 0.6f + (float)dir * e * PI * amp;
+            if (!on) turn = 0.6f;
             IconArc(g, r, r, 0.0f, 360.0f, th, col);
             DrawLineEx((Vector2){ g.x - r, g.y }, (Vector2){ g.x + r, g.y }, th * 0.8f, col);
             IconArc(g, r, r * 0.45f, 180.0f, 360.0f, th * 0.7f, col);
@@ -1924,20 +1991,52 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
             IconArc(g, r * fabsf(sinf(turn)) * 0.999f, r, 90.0f, 270.0f, th * 0.8f, col);
             IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f }, s * 0.55f, th * 0.85f, col, fill, true);
         } break;
-        default: {   /* gear: ring body, eight teeth, hole */
-            float rot = spin + (anim >= 0.0f ? anim * 45.0f : 0.0f);
-            float rb = s * 0.32f;
-            for (int k = 0; k < 8; k++) {
-                float a = rot + 45.0f * (float)k;
-                Vector2 o = { c.x + cosf(a * DEG2RAD) * rb * 1.12f, c.y + sinf(a * DEG2RAD) * rb * 1.12f };
-                DrawRectanglePro((Rectangle){ o.x, o.y, s * 0.2f, s * 0.15f },
-                                 (Vector2){ s * 0.1f, s * 0.075f }, a, col);
-            }
-            DrawCircleV(c, rb + th * 0.5f, col);
-            DrawCircleV(c, rb - th * 0.5f, fill);
-            IconArc(c, s * 0.12f, s * 0.12f, 0.0f, 360.0f, th, col);
+        default: {   /* gear turns one tooth (60 deg) once */
+            float e = on ? 1.0f - (1.0f - p) * (1.0f - p) : 0.0f;  /* ease out */
+            IconGear(c, s, th, (float)dir * 60.0f * amp * e, col);
         } break;
     }
+}
+
+/* Icons are drawn SB_ICON_SS x larger into a transparent texture, mipmapped,
+ * then drawn down with trilinear filtering: smooth edges on any background
+ * without touching the rest of the UI (no global MSAA). */
+#define SB_ICON_SS 4
+static RenderTexture2D sbIconRT[SB_ITEM_COUNT];
+static int sbIconRTSize = 0;
+static bool sbIconAtRest[SB_ITEM_COUNT];   /* texture holds the resting icon in sbIconCol */
+static Color sbIconCol[SB_ITEM_COUNT];
+
+static void SidebarIcons_Unload(void) {
+    for (int i = 0; i < SB_ITEM_COUNT; i++) {
+        if (sbIconRT[i].id) UnloadRenderTexture(sbIconRT[i]);
+        sbIconRT[i] = (RenderTexture2D){ 0 };
+        sbIconAtRest[i] = false;
+    }
+    sbIconRTSize = 0;
+}
+
+/* Renders item's icon (box = logical size in px) and returns its texture. */
+static Texture2D SidebarIcon_Render(int item, float box, float iconS, Color col, float p, int dir) {
+    int size = (int)ceilf(box) * SB_ICON_SS;
+    if (size != sbIconRTSize) {
+        SidebarIcons_Unload();
+        for (int i = 0; i < SB_ITEM_COUNT; i++) sbIconRT[i] = LoadRenderTexture(size, size);
+        sbIconRTSize = size;
+    }
+    RenderTexture2D *rt = &sbIconRT[item];
+    bool rest = p < 0.0f;
+    if (rest && sbIconAtRest[item] && ColorIsEqual(sbIconCol[item], col)) return rt->texture;
+    sbIconAtRest[item] = rest;   /* re-render only while animating or on a colour change */
+    sbIconCol[item] = col;
+    Color clear = { col.r, col.g, col.b, 0 };   /* same RGB: no dark fringe when filtered */
+    BeginTextureMode(*rt);
+    ClearBackground(clear);
+    DrawSidebarIcon(item, (Vector2){ size * 0.5f, size * 0.5f }, iconS * SB_ICON_SS, col, clear, p, dir);
+    EndTextureMode();
+    GenTextureMipmaps(&rt->texture);
+    SetTextureFilter(rt->texture, TEXTURE_FILTER_TRILINEAR);
+    return rt->texture;
 }
 
 static float SidebarRowY(int item) {
@@ -2018,14 +2117,21 @@ static void DrawSidebar(Color systemBg, Font font) {
     float boxS = sh * 0.066f;                        /* rail highlight square / row height */
     float iconX = railW * 0.5f + (sw * 0.0645f - railW * 0.5f) * t;
     float labelX = sw * 0.092f;
-    double now = GetTime();
     bool settled = SidebarMenuSettled();
+    float iconBox = iconS * 1.5f;
+
+    /* Icon textures first: render-texture passes cannot run inside the scissor. */
+    Texture2D iconTex[SB_ITEM_COUNT];
+    for (int i = 0; i < SB_ITEM_COUNT; i++) {
+        Color fg = (i == sidebarItem) ? systemBg : WHITE;
+        iconTex[i] = SidebarIcon_Render(i, iconBox, iconS, fg, SidebarAnim_Progress(i), sbAnimDir[i]);
+    }
 
     BeginScissorMode(0, 0, (int)sidebarWidth, (int)sh);
     for (int i = 0; i < SB_ITEM_COUNT; i++) {
         float y = SidebarRowY(i);
         bool sel = (i == sidebarItem);
-        Color fg = WHITE, fill = systemBg;
+        Color fg = WHITE;
         if (sel) {
             /* Morph like the old gear strip: rail = padded rounded square,
              * open = full-width sharp bar (pink while the panel has focus). */
@@ -2037,10 +2143,13 @@ static void DrawSidebar(Color systemBg, Font font) {
             if (roundness < 0.001f) DrawRectangleRec(bar, bc);
             else DrawRectangleRounded(bar, roundness, 8, bc);
             fg = systemBg;
-            fill = bc;
         }
-        float anim = (sel && settled && !sidebarPanelFocus) ? (float)(now - sidebarItemSince) : -1.0f;
-        DrawSidebarIcon(i, (Vector2){ iconX, y }, iconS, fg, fill, anim, gearSpinAngle);
+        {
+            float ts = (float)iconTex[i].width;
+            DrawTexturePro(iconTex[i], (Rectangle){ 0, 0, ts, -ts },   /* RT is upside down */
+                           (Rectangle){ iconX - iconBox * 0.5f, y - iconBox * 0.5f, iconBox, iconBox },
+                           (Vector2){ 0 }, 0.0f, WHITE);
+        }
         if (t > 0.0f) {
             static const StrId labels[SB_ITEM_COUNT] = { S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS };
             DrawFitText(font, T(labels[i]), (Vector2){ labelX, y }, (float)font.baseSize * 1.2f,
@@ -2194,7 +2303,7 @@ static void CollapseSidebarToRail(void) {
     sidebarClosing = true;
     sidebarOpen = true; /* stay open until rail settle */
     sidebarPanelFocus = false;
-    sidebarItem = SB_ITEM_SINGLE;   /* rail highlight rests on Single player (video) */
+    Sidebar_Select(SB_ITEM_SINGLE);   /* rail highlight rests on Single player (video) */
 
     float rail = SidebarRailWidth();
     float open = SidebarOpenWidth();
@@ -2218,7 +2327,7 @@ static void CollapseSidebarToRail(void) {
 static void ExpandSidebarMenu(void) {
     sidebarExpandPending = false;
     sidebarPanelFocus = false;
-    sidebarItemSince = GetTime();
+    SidebarAnim_Play(sidebarItem, +1);   /* the selected row plays once as it opens */
     sidebarClosing = false;
     sidebarOpen = true;
 
@@ -2326,13 +2435,13 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         return;
     }
     if (back) { CollapseSidebarToRail(); return; }
-    if (up && sidebarItem > 0) { sidebarItem--; sidebarItemSince = GetTime(); }
-    if (down && sidebarItem < SB_ITEM_COUNT - 1) { sidebarItem++; sidebarItemSince = GetTime(); }
+    if (up && sidebarItem > 0) Sidebar_Select(sidebarItem - 1);
+    if (down && sidebarItem < SB_ITEM_COUNT - 1) Sidebar_Select(sidebarItem + 1);
     if (sidebarItem == SB_ITEM_SETTINGS && (ok || IsKeyPressed(KEY_RIGHT) || gpRight)) {
         sidebarPanelFocus = true;
         sidebarSetRow = 0;
     } else if (ok) {
-        sidebarItemSince = GetTime();   /* no function: just replay the icon's loop */
+        SidebarAnim_Play(sidebarItem, +1);   /* no function: replay the one-shot */
     }
 }
 
@@ -3432,6 +3541,7 @@ int main(void) {
     UnloadFont(font);
     if (gearTexture.id) UnloadTexture(gearTexture);
     UnloadBlurResources();
+    SidebarIcons_Unload();
     UnloadSystems();
     CloseWindow();
 
