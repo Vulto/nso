@@ -69,7 +69,7 @@ $(B)/apu_%.o: $(SNDE)/nes_apu/%.cpp $(B)/api.ok
 	$(CXX) -std=c++17 -O2 $(PIC) -I$(SNDE)/nes_apu -c $< -o $@
 $(B)/smbmod_audio.o: smbmod_audio.cpp smbmod_audio.h $(B)/api.ok
 	$(CXX) -std=c++17 -O2 $(PIC) $(INC) -c $< -o $@
-$(B)/smbmod.o: smbmod.c smbmod.h smbmod_audio.h $(B)/api.ok
+$(B)/smbmod.o: smbmod.c smbmod.h ../nsomod.h smbmod_audio.h $(B)/api.ok
 	$(CC) -std=c11 -O2 -Wall -Wextra $(PIC) $(INC) -c $< -o $@
 
 $(B)/libsmbmod.so: $(OBJS)

@@ -22,13 +22,14 @@ PlatformEntry snes_platform = {
 };
 
 GameEntry snes_games[] = {
-    {
+    {   /* snesrev smw (repos/snes/smw) inside NSO's window: `make embed` */
         .title = "Super Mario World",
         .boxartPath = "assets/images/systems/snes/smw.png",
-        .dir = "repos/snes/smw",
-        .binary = "./smw",
+        .dir = "embed/smw",
+        .binary = "build/libsmwmod.so",
         .stateDir = "saves/snes/smw",
         .orient = SLOT_ORIENT_INHERIT,
+        .embedRomKey = "snes.smw_dir",   /* the port's dir: smw_assets.dat, saves/ */
     },
     {
         .title = "The Legend of Zelda: A Link to the Past",

@@ -31,7 +31,8 @@ typedef struct {
     int orient;           /* SLOT_ORIENT_INHERIT, SLOT_ORIENT_USA, or SLOT_ORIENT_JAPAN */
     const struct NsoRomImport *romImport; /* NULL = none; auto-import in launch.h */
     const char *embedRomKey; /* NULL = spawn binary; else dir/binary is an in-process
-                                module (embed.h), ROM path from this config key */
+                                module (embed.h), its game data path (ROM file
+                                or port dir) from this config key */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

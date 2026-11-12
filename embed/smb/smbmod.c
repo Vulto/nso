@@ -8,6 +8,7 @@
  *               -> the cb_* callbacks below
  */
 #include "smbmod.h"
+#include "../nsomod.h"
 #include "smbmod_audio.h"
 
 #include "smbcore/api.h"
@@ -144,3 +145,25 @@ static const SmbmodApi API = {
 
 __attribute__((visibility("default")))
 const SmbmodApi *smbmod_get_api(void) { return &API; }
+
+/* ---- nsomod.h: what NSO (src/embed.h) loads ---- */
+static bool nso_init(const NsomodConfig *cfg) {
+    if (!cfg) return false;
+    SmbmodConfig c = { .rom_path = cfg->data_path, .sample_rate = cfg->sample_rate };
+    return smbmod_init(&c);
+}
+
+static NsomodFrame nso_frame(const NsomodInput *p1) {
+    SmbmodInput in = { 0 };
+    if (p1) in = (SmbmodInput){ p1->up, p1->down, p1->left, p1->right, p1->a, p1->b, p1->select, p1->start };
+    SmbmodFrame f = smbmod_frame(&in, NULL);
+    return (NsomodFrame){ f.rgb24, f.width, f.height };
+}
+
+static const NsomodApi NSO_API = {
+    NSOMOD_API_VERSION, SMBMOD_FB_W, SMBMOD_FB_H, SMBMOD_NES_FPS, 1,
+    nso_init, nso_frame, smbmod_audio_pull_api, NULL, NULL, smbmod_shutdown,
+};
+
+__attribute__((visibility("default")))
+const NsomodApi *nsomod_get_api(void) { return &NSO_API; }

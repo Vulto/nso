@@ -1,5 +1,7 @@
 /* embed_test.c - embed.h's pure helpers: picture placement, frame pacing, menu easing. */
 #include "embed.h"
+
+#define NES_FPS (1789773.0 / 29780.5)
 #include <stdio.h>
 
 static int fails = 0;
@@ -13,28 +15,31 @@ static bool RectIs(Rectangle r, float x, float y, float w, float h)
 int main(void)
 {
     /* 1920x1080: Pixel Perfect = 4x (1024x960), 4:3 and CRT = 1440x1080. */
-    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 1920, 1080), 448, 60, 1024, 960));
-    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 1920, 1080), 240, 0, 1440, 1080));
-    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_CRT, 1920, 1080), 240, 0, 1440, 1080));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 1920, 1080, 256, 240), 448, 60, 1024, 960));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 1920, 1080, 256, 240), 240, 0, 1440, 1080));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_CRT, 1920, 1080, 256, 240), 240, 0, 1440, 1080));
     /* Narrow / tiny windows still fit and never scale below 1x. */
-    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 800, 1080), 0, 240, 800, 600));
-    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 100, 100), -78, -70, 256, 240));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 800, 1080, 256, 240), 0, 240, 800, 600));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 100, 100, 256, 240), -78, -70, 256, 240));
+    /* SNES 256x224: 4x in Pixel Perfect, same 4:3 frame otherwise */
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 1920, 1080, 256, 224), 448, 92, 1024, 896));
+    CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 1920, 1080, 256, 224), 240, 0, 1440, 1080));
 
     /* 60 FPS ticks give ~60.0988 game frames per second, never more than 2
      * per tick, and a stall is dropped instead of fast-forwarded. */
     double acc = 0.0;
     int frames = 0;
     for (int i = 0; i < 600; i++) {
-        int n = Embed_PaceFrames(&acc, 1.0 / 60.0);
+        int n = Embed_PaceFrames(&acc, 1.0 / 60.0, NES_FPS);
         CHECK(n >= 0 && n <= 2);
         frames += n;
     }
     CHECK(frames >= 600 && frames <= 602);
     acc = 0.0;
-    CHECK(Embed_PaceFrames(&acc, 5.0) == 2);
-    CHECK(acc < 1.0 / SMBMOD_NES_FPS);
+    CHECK(Embed_PaceFrames(&acc, 5.0, NES_FPS) == 2);
+    CHECK(acc < 1.0 / NES_FPS);
     acc = 0.0;
-    CHECK(Embed_PaceFrames(&acc, 0.001) == 0);
+    CHECK(Embed_PaceFrames(&acc, 0.001, NES_FPS) == 0);
 
     if (fails) return 1;
     /* menu ease: 0 -> 1, monotonic, clamped, ease-out (ahead of linear) */

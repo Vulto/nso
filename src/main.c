@@ -3179,8 +3179,9 @@ NsoProc LaunchGame(const GameEntry *game) {
     return proc;
 }
 
-/* Embedded card: module = dir/binary, ROM = config/nso.cfg <embedRomKey>
- * (NSO-relative or absolute path; never copied). */
+/* Embedded card: module = dir/binary, game data (SMB: the ROM, SMW: the port's
+ * directory) = config/nso.cfg <embedRomKey> (NSO-relative or absolute; never
+ * copied). A state picked in the grid's Save States resumes in the module. */
 static bool StartEmbeddedGame(const GameEntry *game) {
     char cfg[2112], text[4096], rom[1024], module[2304], romPath[2048];
     size_t n = 0;
@@ -3188,12 +3189,14 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     FILE *f = fopen(cfg, "r");
     if (f) { n = fread(text, 1, sizeof(text) - 1, f); fclose(f); }
     text[n] = '\0';
-    if (!Cfg_Get(text, game->embedRomKey, rom, sizeof(rom)) || !rom[0]) return false;
+    if (!Cfg_Get(text, game->embedRomKey, rom, sizeof(rom)) || !rom[0]) { stateLoadPath[0] = '\0'; return false; }
     snprintf(romPath, sizeof(romPath), "%s", rom[0] == '/' ? rom : GetDataPath(rom));
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
-    return Embed_Start(module, romPath);
+    bool ok = Embed_Start(module, romPath, stateLoadPath);
+    stateLoadPath[0] = '\0';
+    return ok;
 }
 
 static void SelectSystem(int direction) {
@@ -3867,13 +3870,12 @@ int main(void) {
             }
         }
 
-        if (isLaunching) {   /* every game: the card grows into the game's picture */
+        if (isLaunching) {   /* every game: the card grows into the 4:3 game frame */
             float t = launchFadeAnim.timer / launchFadeAnim.duration;
             float u = fminf(1.0f, fmaxf(0.0f, (t - 0.75f) / 0.25f));   /* then the rest goes black */
             float p = Embed_BackEase(t), sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
-            int mode = ActiveGames()[launchingGameIdx].embedRomKey ? sysSettings[currentSystem].screen
-                                                                    : EMBED_SCREEN_43;
-            Embed_DrawZoom((Texture2D){ 0 }, Embed_DestRect(mode, sw, sh), SelectedCardRect(animScales[GameIdx]),
+            /* Black meets the game's black first frame, so the end rect needs no exact size. */
+            Embed_DrawZoom((Texture2D){ 0 }, Embed_DestRect(EMBED_SCREEN_43, sw, sh, 4, 3), SelectedCardRect(animScales[GameIdx]),
                            p, 1.0f - (1.0f - t) * (1.0f - t), 0.35f * p + 0.65f * u * u * (3.0f - 2.0f * u));
         }
 

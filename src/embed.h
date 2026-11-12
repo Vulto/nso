@@ -1,10 +1,11 @@
 /* embed.h - games that run inside NSO's window instead of as a child process.
  *
  * A GameEntry with embedRomKey set names an in-process module (dir/binary,
- * e.g. embed/smb/build/libsmbmod.so, see embed/smb/Makefile). NSO dlopen()s
- * it, calls one game frame per NES frame from its own loop, uploads the
- * 256x240 RGB framebuffer to a texture drawn per "<system>.screen", feeds the
- * samples to a raylib AudioStream, and draws a pause menu on top (End or
+ * e.g. embed/smb/build/libsmbmod.so; API in embed/nsomod.h). NSO dlopen()s
+ * it, calls one game frame per console frame from its own loop, uploads the
+ * RGB framebuffer (NES 256x240, SNES 256x224) to a texture drawn per
+ * "<system>.screen", feeds the samples (mono or stereo) to a raylib
+ * AudioStream, and draws a pause menu on top (End or
  * the Guide button) laid out like Switch Online's: items right-aligned left
  * of a divider over the blurred, dimmed, frozen game frame.
  *
@@ -16,23 +17,23 @@
 #include <math.h>
 #include <stdbool.h>
 #include "raylib.h"
-#include "../embed/smb/smbmod.h"
+#include "../embed/nsomod.h"
 
 /* "<system>.screen" values, same order as main.c SCREEN_MODE_KEYS. */
 enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
 enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_RESTART, EMBED_MENU_QUIT, EMBED_MENU_COUNT };
 
-/* Where the 256x240 picture goes on a sw x sh screen.
- * Pixel Perfect: largest integer scale, square pixels (1080p: 4x, 1024x960).
+/* Where a fw x fh picture goes on a sw x sh screen.
+ * Pixel Perfect: largest integer scale, square pixels (1080p: 4x, NES 1024x960).
  * 4:3 and CRT: full height at 4:3 (1080p: 1440x1080). Centred, whole pixels. */
-static inline Rectangle Embed_DestRect(int mode, float sw, float sh)
+static inline Rectangle Embed_DestRect(int mode, float sw, float sh, int fw, int fh)
 {
     float w, h;
     if (mode == EMBED_SCREEN_PIXEL) {
-        int s = (int)fminf(sw / SMBMOD_FB_W, sh / SMBMOD_FB_H);
+        int s = (int)fminf(sw / fw, sh / fh);
         if (s < 1) s = 1;
-        w = (float)(SMBMOD_FB_W * s);
-        h = (float)(SMBMOD_FB_H * s);
+        w = (float)(fw * s);
+        h = (float)(fh * s);
     } else {
         h = sh;
         w = floorf(h * 4.0f / 3.0f);
@@ -41,12 +42,12 @@ static inline Rectangle Embed_DestRect(int mode, float sw, float sh)
     return (Rectangle){ floorf((sw - w) * 0.5f), floorf((sh - h) * 0.5f), w, h };
 }
 
-/* NSO draws at 60 FPS, the NES ran at ~60.0988: frames to run this tick from
- * an accumulator (seconds). At most 2 per tick; a longer stall is dropped
- * instead of fast-forwarding. */
-static inline int Embed_PaceFrames(double *acc, double dt)
+/* NSO draws at 60 FPS, the console ran at fps (NES/SNES ~60.0988): frames to
+ * run this tick from an accumulator (seconds). At most 2 per tick; a longer
+ * stall is dropped instead of fast-forwarding. */
+static inline int Embed_PaceFrames(double *acc, double dt, double fps)
 {
-    const double step = 1.0 / SMBMOD_NES_FPS;
+    const double step = 1.0 / fps;
     if (dt > 0.1) dt = 0.1;
     *acc += dt;
     int n = 0;
@@ -82,7 +83,8 @@ static inline Rectangle Embed_ZoomRect(Rectangle card, Rectangle game, float p)
                         card.width + (game.width - card.width) * p, card.height + (game.height - card.height) * p };
 }
 
-bool Embed_Start(const char *modulePath, const char *romPath);
+/* dataPath: the module's game data (nsomod.h); stateLoad: a state file to resume, or NULL. */
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad);
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
 /* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
@@ -114,7 +116,8 @@ void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, floa
 
 #if defined(_WIN32)
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
-bool Embed_Start(const char *modulePath, const char *romPath) { (void)modulePath; (void)romPath; return false; }
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad)
+{ (void)modulePath; (void)dataPath; (void)stateLoad; return false; }
 bool Embed_Update(float dt) { (void)dt; return false; }
 void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
 { (void)font; (void)screenMode; (void)items; (void)blur; (void)blurDirLoc; }
@@ -126,23 +129,25 @@ void Embed_Stop(void) {}
 
 #define EMBED_SAMPLE_RATE 48000
 #define EMBED_AUDIO_CHUNK 1024
-/* Menu backdrop: the frozen frame at half NES resolution plus a black
+/* Menu backdrop: the frozen frame at half resolution plus a black
  * margin (so the blur bleeds into the bars), blurred once per opening. */
-#define EMBED_BLUR_W (SMBMOD_FB_W / 2)
-#define EMBED_BLUR_H (SMBMOD_FB_H / 2)
+#define EMBED_BLUR_W (embed.fbw / 2)
+#define EMBED_BLUR_H (embed.fbh / 2)
 #define EMBED_BLUR_PAD 16
 
 static struct {
     bool active;
     void *so;
-    const SmbmodApi *api;
-    SmbmodConfig cfg;
-    char rom[2048];
+    const NsomodApi *api;
+    NsomodConfig cfg;
+    char data[2048], module[2048];
+    int fbw, fbh, channels;   /* the module's, kept even if a reload fails */
+    double fps;
     Texture2D tex;
     bool audio, ownAudioDevice;
     AudioStream stream;
-    int16_t pend[EMBED_AUDIO_CHUNK];
-    size_t pendN;
+    int16_t pend[2 * EMBED_AUDIO_CHUNK];   /* up to stereo */
+    size_t pendN;                          /* sample frames */
     double acc;
     bool menuOpen;
     int menuSel;
@@ -152,23 +157,30 @@ static struct {
     bool quitting;   /* To Game Selection: false once the menu exit ends */
 } embed;
 
-bool Embed_Start(const char *modulePath, const char *romPath)
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad)
 {
     if (embed.active) return false;
     memset(&embed, 0, sizeof(embed));
     embed.so = dlopen(modulePath, RTLD_NOW | RTLD_LOCAL);
     if (!embed.so) return false;
-    smbmod_get_api_fn get = (smbmod_get_api_fn)dlsym(embed.so, SMBMOD_ENTRY);
+    nsomod_get_api_fn get = (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY);
     embed.api = get ? get() : NULL;
-    snprintf(embed.rom, sizeof(embed.rom), "%s", romPath);
-    embed.cfg = (SmbmodConfig){ .rom_path = embed.rom, .sample_rate = EMBED_SAMPLE_RATE };
-    if (!embed.api || embed.api->version != SMBMOD_API_VERSION || !embed.api->init(&embed.cfg)) {
+    snprintf(embed.data, sizeof(embed.data), "%s", dataPath);
+    snprintf(embed.module, sizeof(embed.module), "%s", modulePath);
+    embed.cfg = (NsomodConfig){ .data_path = embed.data, .sample_rate = EMBED_SAMPLE_RATE };
+    if (!embed.api || embed.api->version != NSOMOD_API_VERSION || embed.api->fb_w <= 0 || embed.api->fb_h <= 0
+        || (embed.api->channels != 1 && embed.api->channels != 2) || !embed.api->init(&embed.cfg)) {
         dlclose(embed.so);
         memset(&embed, 0, sizeof(embed));
         return false;
     }
+    if (stateLoad && stateLoad[0] && embed.api->state_load) embed.api->state_load(stateLoad);
+    embed.fbw = embed.api->fb_w;
+    embed.fbh = embed.api->fb_h;
+    embed.channels = embed.api->channels;
+    embed.fps = embed.api->fps;
 
-    Image img = GenImageColor(SMBMOD_FB_W, SMBMOD_FB_H, BLACK);
+    Image img = GenImageColor(embed.fbw, embed.fbh, BLACK);
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
     embed.tex = LoadTextureFromImage(img);
     UnloadImage(img);
@@ -180,7 +192,7 @@ bool Embed_Start(const char *modulePath, const char *romPath)
     }
     if (IsAudioDeviceReady()) {
         SetAudioStreamBufferSizeDefault(EMBED_AUDIO_CHUNK);
-        embed.stream = LoadAudioStream(EMBED_SAMPLE_RATE, 16, 1);
+        embed.stream = LoadAudioStream(EMBED_SAMPLE_RATE, 16, (unsigned int)embed.channels);
         SetAudioStreamBufferSizeDefault(0);
         embed.audio = IsAudioStreamValid(embed.stream);
         if (embed.audio) PlayAudioStream(embed.stream);
@@ -194,24 +206,25 @@ bool Embed_Start(const char *modulePath, const char *romPath)
 void Embed_Stop(void)
 {
     if (!embed.active) return;
-    embed.api->shutdown();
+    if (embed.so) { embed.api->shutdown(); dlclose(embed.so); }
     if (embed.audio) UnloadAudioStream(embed.stream);
     if (embed.ownAudioDevice) CloseAudioDevice();
     UnloadTexture(embed.tex);
     if (embed.blurA.id) { UnloadRenderTexture(embed.blurA); UnloadRenderTexture(embed.blurB); }
-    dlclose(embed.so);
     SetExitKey(KEY_ESCAPE);
     memset(&embed, 0, sizeof(embed));
 }
 
-/* Keyboard: arrows, X = A, Z = B, Enter = Start, Right Shift = Select.
- * Gamepad: D-pad / left stick, Nintendo A / B (nso.h), Start, Select. */
-static SmbmodInput Embed_ReadPad(void)
+/* Keyboard: arrows, X = A, Z = B, Enter = Start, Right Shift = Select;
+ * SNES also S = X, A = Y, C = L, V = R (the smw port's own defaults).
+ * Gamepad: D-pad / left stick, Nintendo A / B / X / Y (nso.h), L1 / R1, Start, Select. */
+static NsomodInput Embed_ReadPad(void)
 {
-    SmbmodInput in = {
+    NsomodInput in = {
         .up = IsKeyDown(KEY_UP), .down = IsKeyDown(KEY_DOWN),
         .left = IsKeyDown(KEY_LEFT), .right = IsKeyDown(KEY_RIGHT),
-        .a = IsKeyDown(KEY_X), .b = IsKeyDown(KEY_Z),
+        .a = IsKeyDown(KEY_X), .b = IsKeyDown(KEY_Z), .x = IsKeyDown(KEY_S), .y = IsKeyDown(KEY_A),
+        .l = IsKeyDown(KEY_C), .r = IsKeyDown(KEY_V),
         .start = IsKeyDown(KEY_ENTER), .select = IsKeyDown(KEY_RIGHT_SHIFT),
     };
     if (IsGamepadAvailable(0)) {
@@ -223,6 +236,10 @@ static SmbmodInput Embed_ReadPad(void)
         in.right |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) || lx > 0.5f;
         in.a |= IsGamepadButtonDown(0, NSO_BTN_A);
         in.b |= IsGamepadButtonDown(0, NSO_BTN_B);
+        in.x |= IsGamepadButtonDown(0, NSO_BTN_X);
+        in.y |= IsGamepadButtonDown(0, NSO_BTN_Y);
+        in.l |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
+        in.r |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
         in.start |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_MIDDLE_RIGHT);
         in.select |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
     }
@@ -234,11 +251,32 @@ static void Embed_PumpAudio(void)
 {
     if (!embed.audio) return;
     for (;;) {
-        embed.pendN += embed.api->audio_pull(embed.pend + embed.pendN, EMBED_AUDIO_CHUNK - embed.pendN);
+        embed.pendN += embed.api->audio_pull(embed.pend + embed.pendN * embed.channels,
+                                             EMBED_AUDIO_CHUNK - embed.pendN);
         if (embed.pendN < EMBED_AUDIO_CHUNK || !IsAudioStreamProcessed(embed.stream)) return;
         UpdateAudioStream(embed.stream, embed.pend, EMBED_AUDIO_CHUNK);
         embed.pendN = 0;
     }
+}
+
+/* Reset Game: a fresh copy of the module, so no static of the port survives
+ * (smw cannot reset itself without a ROM). */
+static bool Embed_Reload(void)
+{
+    embed.api->shutdown();
+    dlclose(embed.so);
+    embed.so = dlopen(embed.module, RTLD_NOW | RTLD_LOCAL);
+    nsomod_get_api_fn get = embed.so ? (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY) : NULL;
+    const NsomodApi *api = get ? get() : NULL;
+    if (!api || api->version != NSOMOD_API_VERSION || api->fb_w != embed.fbw
+        || api->fb_h != embed.fbh || api->channels != embed.channels || !api->init(&embed.cfg)) {
+        if (embed.so) dlclose(embed.so);
+        embed.so = NULL;
+        return false;
+    }
+    embed.api = api;
+    embed.pendN = 0;
+    return true;
 }
 
 /* Opening pauses game and audio; both resume once the exit animation ends. */
@@ -277,9 +315,7 @@ bool Embed_Update(float dt)
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0)) {
             if (embed.menuSel == EMBED_MENU_QUIT) embed.quitting = true;
             if (embed.menuSel == EMBED_MENU_RESTART) {
-                embed.api->shutdown();
-                if (!embed.api->init(&embed.cfg)) return false;
-                embed.pendN = 0;
+                if (!Embed_Reload()) return false;
             }
             Embed_SetMenu(false);
         }
@@ -287,11 +323,11 @@ bool Embed_Update(float dt)
     }
     if (toggle) { Embed_SetMenu(true); return true; }
 
-    int n = Embed_PaceFrames(&embed.acc, dt);
+    int n = Embed_PaceFrames(&embed.acc, dt, embed.fps);
     if (n > 0) {
-        SmbmodInput p1 = Embed_ReadPad();
-        SmbmodFrame f = { 0 };
-        for (int i = 0; i < n; i++) f = embed.api->frame(&p1, NULL);
+        NsomodInput p1 = Embed_ReadPad();
+        NsomodFrame f = { 0 };
+        for (int i = 0; i < n; i++) f = embed.api->frame(&p1);
         UpdateTexture(embed.tex, f.rgb24);
     }
     Embed_PumpAudio();
@@ -329,7 +365,7 @@ static void Embed_BuildBlur(Shader sh, int loc)
     SetTextureFilter(embed.tex, TEXTURE_FILTER_BILINEAR);
     BeginTextureMode(embed.blurA);
     ClearBackground(BLACK);
-    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H },
+    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh },
                    (Rectangle){ EMBED_BLUR_PAD, EMBED_BLUR_PAD, EMBED_BLUR_W, EMBED_BLUR_H }, (Vector2){ 0 }, 0.0f, WHITE);
     EndTextureMode();
     SetTextureFilter(embed.tex, TEXTURE_FILTER_POINT);
@@ -347,12 +383,12 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float a = Embed_MenuOpacity();
     ClearBackground(BLACK);
-    Rectangle dst = Embed_DestRect(screenMode, sw, sh);
-    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H }, dst,
+    Rectangle dst = Embed_DestRect(screenMode, sw, sh, embed.fbw, embed.fbh);
+    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,
                    (Vector2){ 0 }, 0.0f, WHITE);
     if (screenMode == EMBED_SCREEN_CRT) {   /* a dark band under every NES line */
-        float lh = dst.height / SMBMOD_FB_H;
-        for (int y = 0; y < SMBMOD_FB_H; y++)
+        float lh = dst.height / embed.fbh;
+        for (int y = 0; y < embed.fbh; y++)
             DrawRectangleRec((Rectangle){ dst.x, dst.y + y * lh + lh * 0.6f, dst.width, fmaxf(1.0f, lh * 0.4f) },
                              Fade(BLACK, 0.35f * (1.0f - a)));
     }
@@ -390,7 +426,8 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
 void Embed_DrawBack(int screenMode, Rectangle card, float t)
 {
     if (!embed.active) return;
-    Rectangle a = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight());
+    Rectangle a = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight(),
+                                 embed.fbw, embed.fbh);
     float q = 1.0f - t;
     Embed_DrawZoom(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q);
 }

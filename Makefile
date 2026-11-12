@@ -3,7 +3,7 @@ CFLAGS := -std=c23 -Wall -Wextra -O2 -Isrc
 SRC := src/main.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
-	src/embed.h embed/smb/smbmod.h
+	src/embed.h embed/nsomod.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -24,9 +24,11 @@ linux: nso
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -o nso $(SRC) -lraylib -lm -ldl
 
-# In-process SMB Vanilla module (needs repos/nes/smbvanilla; never edits it)
+# In-process modules: SMB Vanilla (repos/nes/smbvanilla), smw (repos/snes/smw);
+# never edits them
 embed:
 	$(MAKE) -C embed/smb
+	$(MAKE) -C embed/smw
 
 windows:
 	$(WINCC) $(CFLAGS) -o nso.exe $(SRC) -lraylib -lopengl32 -lgdi32 -lwinmm -lpthread
@@ -34,7 +36,7 @@ windows:
 test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
-		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/smb/smbmod.h
+		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
 	$(CC) $(CFLAGS) -o savestate_test src/savestate_test.c
