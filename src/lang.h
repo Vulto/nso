@@ -42,6 +42,8 @@ typedef enum {
     S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS,
     S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
     S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_CTRL_DISPLAY,
+    /* embedded game pause menu (embed.h) */
+    S_EMB_CONTINUE, S_EMB_RESTART, S_EMB_QUIT,
     S_COUNT
 } StrId;
 
@@ -178,6 +180,9 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_PIXEL] = "Pixel Perfect",
         [S_SET_CRT] = "CRT Filter",
         [S_SET_CTRL_DISPLAY] = "Control Display",
+        [S_EMB_CONTINUE] = "Continue",
+        [S_EMB_RESTART] = "Restart",
+        [S_EMB_QUIT] = "Quit game",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -277,6 +282,9 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_PIXEL] = "Pixel Perfect",
         [S_SET_CRT] = "Filtro CRT",
         [S_SET_CTRL_DISPLAY] = "Exibição de controles",
+        [S_EMB_CONTINUE] = "Continuar",
+        [S_EMB_RESTART] = "Reiniciar",
+        [S_EMB_QUIT] = "Sair do jogo",
     },
 };
 

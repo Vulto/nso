@@ -30,6 +30,8 @@ typedef struct {
     const char *stateDir; /* NULL = no save states; else NSO-relative dir */
     int orient;           /* SLOT_ORIENT_INHERIT, SLOT_ORIENT_USA, or SLOT_ORIENT_JAPAN */
     const struct NsoRomImport *romImport; /* NULL = none; auto-import in launch.h */
+    const char *embedRomKey; /* NULL = spawn binary; else dir/binary is an in-process
+                                module (embed.h), ROM path from this config key */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

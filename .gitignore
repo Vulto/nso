@@ -50,3 +50,6 @@ assets/fonts/
 *.obj
 !assets/fonts/NotoSansCJKkr-Regular.otf
 !assets/fonts/LICENSE-NotoSansCJK.txt
+
+# In-process modules (embed/<game>/Makefile output)
+embed/*/build/

@@ -36,6 +36,8 @@
 #include "systems/n64.h"
 #define GAMECUBE_IMPLEMENTATION
 #include "systems/gamecube.h"
+#define EMBED_IMPLEMENTATION
+#include "embed.h"
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
@@ -565,6 +567,7 @@ typedef enum State {
     SYSTEMS,
     MOSAIC,
     MANAGE,     /* gear: box-art scraping + repository download */
+    EMBED,      /* in-process game drawn in this window (embed.h) */
 } State;
 
 static State currentState = SYSTEMS;
@@ -3198,6 +3201,21 @@ NsoProc LaunchGame(const GameEntry *game) {
     return proc;
 }
 
+/* Embedded card: module = dir/binary, ROM = config/nso.cfg <embedRomKey>
+ * (NSO-relative or absolute path; never copied). */
+static bool StartEmbeddedGame(const GameEntry *game) {
+    char cfg[2112], text[4096], rom[1024], module[2304], romPath[2048];
+    size_t n = 0;
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    FILE *f = fopen(cfg, "r");
+    if (f) { n = fread(text, 1, sizeof(text) - 1, f); fclose(f); }
+    text[n] = '\0';
+    if (!Cfg_Get(text, game->embedRomKey, rom, sizeof(rom)) || !rom[0]) return false;
+    snprintf(romPath, sizeof(romPath), "%s", rom[0] == '/' ? rom : GetDataPath(rom));
+    snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
+    return Embed_Start(module, romPath);
+}
+
 static void SelectSystem(int direction) {
     int next = currentSystem + direction;
     if (next >= 0 && next < SYSTEM_COUNT) currentSystem = next;
@@ -3597,8 +3615,16 @@ int main(void) {
         if (isLaunching) {
             UpdateScreenFadeAnimation(&launchFadeAnim, GetFrameTime());
             if (IsScreenFadeAnimationFinished(&launchFadeAnim)) {
-                gamePid = LaunchGame(&ActiveGames()[launchingGameIdx]);
-                if (NsoProcOk(gamePid)) {
+                const GameEntry *launched = &ActiveGames()[launchingGameIdx];
+                if (launched->embedRomKey) {
+                    isLaunching = false;
+                    if (StartEmbeddedGame(launched)) {
+                        currentState = EMBED;
+                    } else {
+                        currentState = MOSAIC;
+                        BeginMosaicEnterIntro();
+                    }
+                } else if (NsoProcOk(gamePid = LaunchGame(launched))) {
                     waitingForGame = true;
                     isLaunching = false;
                     MinimizeWindow();
@@ -3609,6 +3635,13 @@ int main(void) {
                 }
                 InitScreenFadeAnimation(&launchFadeAnim, 0.32f, 0.65f, 0.0f, 1.0f, BLACK);
             }
+        }
+
+        if (currentState == EMBED && !Embed_Update(dt)) {
+            Embed_Stop();
+            currentState = MOSAIC;
+            BeginMosaicEnterIntro();
+            overlayConsumedConfirm = true;   /* the Quit press must not relaunch */
         }
 
         if (currentState == MOSAIC && SidebarMenuSettled()) {
@@ -3632,7 +3665,7 @@ int main(void) {
         bool noticeTookInput = false;
         if (Repo_NoticeActionable() && !screenSliding && !isLaunching && !waitingForGame
             && !statesOpen && !detailsOpen && detailsT <= 0.0f && !scrapeBusy && !OverlayActive()
-            && currentState != LAUNCHING && currentState != SPLASH
+            && currentState != LAUNCHING && currentState != SPLASH && currentState != EMBED
             && (IsKeyPressed(KEY_A) || gpConfirm)) {
             Repo_Enqueue(repoNotice.repo, true);
             repoNotice.repo = -1;
@@ -3793,6 +3826,7 @@ int main(void) {
 
                 case LAUNCHING:
                 case SPLASH:
+                case EMBED:   /* embed.h reads its own input */
                     break;
             }
         }
@@ -3819,6 +3853,10 @@ int main(void) {
             if (introOpacity > 0.0f) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, introOpacity));
             }
+        } else if (currentState == EMBED) {
+            const char *const items[EMBED_MENU_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_RESTART), T(S_EMB_QUIT) };
+            Embed_Draw(font, sysSettings[currentSystem].screen, items);
+            DrawInfoBarEx(font, T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);
@@ -3833,13 +3871,14 @@ int main(void) {
 
         if (waitingForGame) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
-        } else if (!isLaunching) {
+        } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
         }
 
         EndDrawing();
     }
 
+    Embed_Stop();
     CoverLoader_Stop();
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
     States_Unload();

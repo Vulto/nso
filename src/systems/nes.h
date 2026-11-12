@@ -37,6 +37,14 @@ GameEntry nes_games[] = {
         .binary = "./smb",
         .orient = SLOT_ORIENT_INHERIT,
     },
+    {   /* SMB Vanilla (repos/nes/smbvanilla) inside NSO's window: `make embed` */
+        .title = "Super Mario Bros (SMB Vanilla)",
+        .boxartPath = "assets/images/systems/nes/smb.png",
+        .dir = "embed/smb",
+        .binary = "build/libsmbmod.so",
+        .orient = SLOT_ORIENT_INHERIT,
+        .embedRomKey = "nes.smb_rom",
+    },
     {
         .title = "The Wing of Madoola",
         .boxartPath = "assets/images/systems/nes/openmadoola.png",
