@@ -181,8 +181,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "CRT Filter",
         [S_SET_CTRL_DISPLAY] = "Control Display",
         [S_EMB_CONTINUE] = "Continue",
-        [S_EMB_RESTART] = "Restart",
-        [S_EMB_QUIT] = "Quit game",
+        [S_EMB_RESTART] = "Reset Game",
+        [S_EMB_QUIT] = "To Game Selection",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -283,8 +283,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "Filtro CRT",
         [S_SET_CTRL_DISPLAY] = "Exibição de controles",
         [S_EMB_CONTINUE] = "Continuar",
-        [S_EMB_RESTART] = "Reiniciar",
-        [S_EMB_QUIT] = "Sair do jogo",
+        [S_EMB_RESTART] = "Reiniciar jogo",
+        [S_EMB_QUIT] = "Voltar à seleção de jogos",
     },
 };
 

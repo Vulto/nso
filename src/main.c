@@ -3855,7 +3855,8 @@ int main(void) {
             }
         } else if (currentState == EMBED) {
             const char *const items[EMBED_MENU_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_RESTART), T(S_EMB_QUIT) };
-            Embed_Draw(font, sysSettings[currentSystem].screen, items);
+            if (Embed_MenuOpacity() > 0.0f) EnsureBlurResources(GetScreenWidth(), GetScreenHeight());
+            Embed_Draw(font, sysSettings[currentSystem].screen, items, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
             DrawInfoBarEx(font, T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);

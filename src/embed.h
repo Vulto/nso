@@ -4,7 +4,9 @@
  * e.g. embed/smb/build/libsmbmod.so, see embed/smb/Makefile). NSO dlopen()s
  * it, calls one game frame per NES frame from its own loop, uploads the
  * 256x240 RGB framebuffer to a texture drawn per "<system>.screen", feeds the
- * samples to a raylib AudioStream, and draws a pause menu on top.
+ * samples to a raylib AudioStream, and draws a pause menu on top (End or
+ * the Guide button) laid out like Switch Online's: items right-aligned left
+ * of a divider over the blurred, dimmed, frozen game frame.
  *
  * The inline helpers are pure (no raylib calls) and unit-tested in
  * embed_test.c; the rest is the EMBED_IMPLEMENTATION part main.c includes. */
@@ -53,10 +55,20 @@ static inline int Embed_PaceFrames(double *acc, double dt)
     return n;
 }
 
+/* Pause menu entry/exit, t = linear 0..1 over EMBED_MENU_ANIM_SEC:
+ * Switch Online's ease-out (fitted to its 60 fps capture). Exit runs it backwards. */
+#define EMBED_MENU_ANIM_SEC 0.22f
+static inline float Embed_MenuEase(float t)
+{
+    t = fminf(1.0f, fmaxf(0.0f, t));
+    return 1.0f - powf(1.0f - t, 1.6f);
+}
+
 bool Embed_Start(const char *modulePath, const char *romPath);
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT]);
+/* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
+void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
 
@@ -73,7 +85,8 @@ void Embed_Stop(void);
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
 bool Embed_Start(const char *modulePath, const char *romPath) { (void)modulePath; (void)romPath; return false; }
 bool Embed_Update(float dt) { (void)dt; return false; }
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT]) { (void)font; (void)screenMode; (void)items; }
+void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
+{ (void)font; (void)screenMode; (void)items; (void)blur; (void)blurDirLoc; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
 #else
@@ -81,10 +94,11 @@ void Embed_Stop(void) {}
 
 #define EMBED_SAMPLE_RATE 48000
 #define EMBED_AUDIO_CHUNK 1024
-/* Pause menu fade: picom's default fade, as the Details card (main.c). */
-#define EMBED_FADE_IN_STEP 0.028f
-#define EMBED_FADE_OUT_STEP 0.03f
-#define EMBED_FADE_DELTA_MS 10.0f
+/* Menu backdrop: the frozen frame at half NES resolution plus a black
+ * margin (so the blur bleeds into the bars), blurred once per opening. */
+#define EMBED_BLUR_W (SMBMOD_FB_W / 2)
+#define EMBED_BLUR_H (SMBMOD_FB_H / 2)
+#define EMBED_BLUR_PAD 16
 
 static struct {
     bool active;
@@ -101,6 +115,8 @@ static struct {
     bool menuOpen;
     int menuSel;
     float menuT;
+    RenderTexture2D blurA, blurB;
+    bool blurReady;
 } embed;
 
 bool Embed_Start(const char *modulePath, const char *romPath)
@@ -137,7 +153,7 @@ bool Embed_Start(const char *modulePath, const char *romPath)
         if (embed.audio) PlayAudioStream(embed.stream);
     }
 
-    SetExitKey(KEY_NULL);   /* ESC opens the pause menu instead of closing NSO */
+    SetExitKey(KEY_NULL);   /* ESC must not close NSO mid-game */
     embed.active = true;
     return true;
 }
@@ -149,6 +165,7 @@ void Embed_Stop(void)
     if (embed.audio) UnloadAudioStream(embed.stream);
     if (embed.ownAudioDevice) CloseAudioDevice();
     UnloadTexture(embed.tex);
+    if (embed.blurA.id) { UnloadRenderTexture(embed.blurA); UnloadRenderTexture(embed.blurB); }
     dlclose(embed.so);
     SetExitKey(KEY_ESCAPE);
     memset(&embed, 0, sizeof(embed));
@@ -191,25 +208,30 @@ static void Embed_PumpAudio(void)
     }
 }
 
+/* Opening pauses game and audio; both resume once the exit animation ends. */
 static void Embed_SetMenu(bool open)
 {
     embed.menuOpen = open;
+    if (!open) return;
     embed.menuSel = EMBED_MENU_CONTINUE;
-    if (!embed.audio) return;
-    if (open) PauseAudioStream(embed.stream);
-    else ResumeAudioStream(embed.stream);
+    embed.blurReady = false;
+    if (embed.audio) PauseAudioStream(embed.stream);
 }
 
 bool Embed_Update(float dt)
 {
     if (!embed.active) return false;
     bool gp = IsGamepadAvailable(0);
-    bool toggle = IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_F1)
-        || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+    bool toggle = IsKeyPressed(KEY_END) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
 
-    float st = dt * 1000.0f / EMBED_FADE_DELTA_MS;
-    embed.menuT = embed.menuOpen ? fminf(1.0f, embed.menuT + st * EMBED_FADE_IN_STEP)
-                                 : fmaxf(0.0f, embed.menuT - st * EMBED_FADE_OUT_STEP);
+    float st = dt / EMBED_MENU_ANIM_SEC;
+    if (embed.menuOpen) embed.menuT = fminf(1.0f, embed.menuT + st);
+    else if (embed.menuT > 0.0f) {   /* exit animation: still paused */
+        embed.menuT = fmaxf(0.0f, embed.menuT - st);
+        embed.acc = 0.0;
+        if (embed.menuT <= 0.0f && embed.audio) ResumeAudioStream(embed.stream);
+        return true;
+    }
 
     if (embed.menuOpen) {   /* paused: no game frames */
         embed.acc = 0.0;
@@ -242,12 +264,54 @@ bool Embed_Update(float dt)
     return true;
 }
 
-float Embed_MenuOpacity(void) { return embed.active ? embed.menuT : 0.0f; }
+float Embed_MenuOpacity(void) { return embed.active ? Embed_MenuEase(embed.menuT) : 0.0f; }
 
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT])
+static void Embed_BlurPass(RenderTexture2D dst, RenderTexture2D src, Shader sh, int loc, float dx, float dy)
+{
+    float dir[2] = { dx / dst.texture.width, dy / dst.texture.height };
+    BeginTextureMode(dst);
+    ClearBackground(BLACK);
+    BeginShaderMode(sh);
+    SetShaderValue(sh, loc, dir, SHADER_UNIFORM_VEC2);
+    DrawTexturePro(src.texture, (Rectangle){ 0, 0, (float)src.texture.width, -(float)src.texture.height },
+                   (Rectangle){ 0, 0, (float)dst.texture.width, (float)dst.texture.height }, (Vector2){ 0 }, 0.0f, WHITE);
+    EndShaderMode();
+    EndTextureMode();
+}
+
+/* Gaussian-ish, sigma ~ 3.7 half-res texels (~30 px at 1080p): 3 H/V pairs, wider each time. */
+static void Embed_BuildBlur(Shader sh, int loc)
+{
+    int w = EMBED_BLUR_W + 2 * EMBED_BLUR_PAD, h = EMBED_BLUR_H + 2 * EMBED_BLUR_PAD;
+    if (!embed.blurA.id) {
+        embed.blurA = LoadRenderTexture(w, h);
+        embed.blurB = LoadRenderTexture(w, h);
+        RenderTexture2D *rt[2] = { &embed.blurA, &embed.blurB };
+        for (int i = 0; i < 2; i++) {
+            SetTextureFilter(rt[i]->texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureWrap(rt[i]->texture, TEXTURE_WRAP_CLAMP);
+        }
+    }
+    SetTextureFilter(embed.tex, TEXTURE_FILTER_BILINEAR);
+    BeginTextureMode(embed.blurA);
+    ClearBackground(BLACK);
+    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H },
+                   (Rectangle){ EMBED_BLUR_PAD, EMBED_BLUR_PAD, EMBED_BLUR_W, EMBED_BLUR_H }, (Vector2){ 0 }, 0.0f, WHITE);
+    EndTextureMode();
+    SetTextureFilter(embed.tex, TEXTURE_FILTER_POINT);
+    if (sh.id > 0 && loc >= 0)
+        for (int k = 1; k <= 3; k++) {
+            Embed_BlurPass(embed.blurB, embed.blurA, sh, loc, (float)k, 0.0f);
+            Embed_BlurPass(embed.blurA, embed.blurB, sh, loc, 0.0f, (float)k);
+        }
+    embed.blurReady = true;
+}
+
+void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
 {
     if (!embed.active) return;
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float a = Embed_MenuOpacity();
     ClearBackground(BLACK);
     Rectangle dst = Embed_DestRect(screenMode, sw, sh);
     DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H }, dst,
@@ -256,24 +320,36 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
         float lh = dst.height / SMBMOD_FB_H;
         for (int y = 0; y < SMBMOD_FB_H; y++)
             DrawRectangleRec((Rectangle){ dst.x, dst.y + y * lh + lh * 0.6f, dst.width, fmaxf(1.0f, lh * 0.4f) },
-                             Fade(BLACK, 0.35f));
+                             Fade(BLACK, 0.35f * (1.0f - a)));
     }
-
-    float a = embed.menuT;
     if (a <= 0.0f) return;
-    /* Details card colours (main.c Details_Draw): light panel, dark ink. */
-    const Color ink = { 44, 49, 50, 255 }, panel = { 240, 245, 244, 255 }, sel = { 0, 190, 255, 255 };
-    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * a));
-    float fs = (float)font.baseSize, rowH = roundf(sh * 0.074f), gap = roundf(sh * 0.012f);
-    float pw = roundf(sw * 0.26f), ph = rowH * EMBED_MENU_COUNT + gap * (EMBED_MENU_COUNT + 1);
-    Rectangle card = { roundf((sw - pw) * 0.5f), roundf((sh - ph) * 0.5f), pw, ph };
-    DrawRectangleRounded(card, 2.0f * sh * 0.012f / fminf(card.width, card.height), 12, Fade(panel, a));
+
+    /* Backdrop: blurred frame cross-faded in, then dimmed to ~65%. */
+    if (!embed.blurReady) Embed_BuildBlur(blur, blurDirLoc);
+    float px = dst.width / EMBED_BLUR_W * EMBED_BLUR_PAD, py = dst.height / EMBED_BLUR_H * EMBED_BLUR_PAD;
+    DrawTexturePro(embed.blurA.texture,
+                   (Rectangle){ 0, 0, (float)embed.blurA.texture.width, -(float)embed.blurA.texture.height },
+                   (Rectangle){ dst.x - px, dst.y - py, dst.width + 2.0f * px, dst.height + 2.0f * py },
+                   (Vector2){ 0 }, 0.0f, Fade(WHITE, a));
+    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.35f * a));
+
+    /* Switch Online layout at 1080p, scaled by height; slides in 28 px from the left.
+     * Text at 1.5x the 36 px atlas: the reference's widths with this font. */
+    const Color panel = { 240, 245, 244, 255 }, selInk = { 246, 80, 59, 255 };
+    float k = sh / 1080.0f, ox = roundf(-28.0f * k * (1.0f - a));
+    float fs = roundf(54.0f * k), divX = roundf(978.0f * k) + ox;
+    DrawRectangleRec((Rectangle){ divX, roundf(40.0f * k), fmaxf(1.0f, roundf(2.0f * k)), roundf(1000.0f * k) },
+                     Fade(panel, a));
     for (int i = 0; i < EMBED_MENU_COUNT; i++) {
-        Rectangle r = { card.x + gap, card.y + gap + i * (rowH + gap), card.width - 2.0f * gap, rowH };
-        if (i == embed.menuSel) DrawRectangleRoundedLinesEx(r, 0.25f, 8, 4.0f, Fade(sel, a));
-        Vector2 m = MeasureTextEx(font, items[i], fs, 2.0f);
-        DrawTextEx(font, items[i], (Vector2){ r.x + (r.width - m.x) * 0.5f, r.y + (r.height - m.y) * 0.5f },
-                   fs, 2.0f, Fade(ink, a));
+        float cy = roundf((300.0f + 92.0f * i) * k);
+        bool sel = (i == embed.menuSel);
+        if (sel) {
+            float bx = roundf(240.0f * k) + ox;
+            DrawRectangleRec((Rectangle){ bx, cy - roundf(36.0f * k), divX - bx, roundf(72.0f * k) }, Fade(panel, a));
+        }
+        Vector2 m = MeasureTextEx(font, items[i], fs, 0.0f);
+        DrawTextEx(font, items[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
+                   fs, 0.0f, Fade(sel ? selInk : WHITE, a));
     }
 }
 #endif /* _WIN32 */

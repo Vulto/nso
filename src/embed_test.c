@@ -1,4 +1,4 @@
-/* embed_test.c - embed.h's pure helpers: picture placement and frame pacing. */
+/* embed_test.c - embed.h's pure helpers: picture placement, frame pacing, menu easing. */
 #include "embed.h"
 #include <stdio.h>
 
@@ -37,6 +37,10 @@ int main(void)
     CHECK(Embed_PaceFrames(&acc, 0.001) == 0);
 
     if (fails) return 1;
+    /* menu ease: 0 -> 1, monotonic, clamped, ease-out (ahead of linear) */
+    CHECK(Embed_MenuEase(0.0f) == 0.0f && Embed_MenuEase(1.0f) == 1.0f);
+    CHECK(Embed_MenuEase(-1.0f) == 0.0f && Embed_MenuEase(2.0f) == 1.0f);
+    CHECK(Embed_MenuEase(0.5f) > 0.5f && Embed_MenuEase(0.5f) < Embed_MenuEase(0.6f));
     puts("embed_test: ok");
     return 0;
 }
