@@ -41,7 +41,7 @@ typedef enum {
     /* in-system sidebar (grid B/O menu) and its Settings panel */
     S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS,
     S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
-    S_SET_CONTROLS, S_SET_SHOW,
+    S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_CTRL_DISPLAY,
     S_COUNT
 } StrId;
 
@@ -173,6 +173,11 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_ENABLED] = "Enabled",
         [S_SET_CONTROLS] = "Show controls in game",
         [S_SET_SHOW] = "Show",
+        [S_SET_SCREEN] = "Game Screen",
+        [S_SET_43] = "4:3",
+        [S_SET_PIXEL] = "Pixel Perfect",
+        [S_SET_CRT] = "CRT Filter",
+        [S_SET_CTRL_DISPLAY] = "Control Display",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -267,6 +272,11 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_ENABLED] = "Ativado",
         [S_SET_CONTROLS] = "Mostrar controles no jogo",
         [S_SET_SHOW] = "Mostrar",
+        [S_SET_SCREEN] = "Tela do jogo",
+        [S_SET_43] = "4:3",
+        [S_SET_PIXEL] = "Pixel Perfect",
+        [S_SET_CRT] = "Filtro CRT",
+        [S_SET_CTRL_DISPLAY] = "Exibição de controles",
     },
 };
 

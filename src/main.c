@@ -1854,8 +1854,10 @@ typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SET
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_COUNT };
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
- * "<id>.show_controls"). Settings only: not passed to the emulators yet. */
-typedef struct { int versions; bool rumble; bool showControls; } SysSettings;
+ * "<id>.show_controls"; NES/SNES also "<id>.screen" = 4:3|pixel|crt).
+ * Settings only: not passed to the emulators yet. */
+typedef struct { int versions; bool rumble; bool showControls; int screen; } SysSettings;
+static const char *const SCREEN_MODE_KEYS[3] = { "4:3", "pixel", "crt" };
 static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
 
 static void SysSettings_LoadAll(void) {
@@ -1868,13 +1870,16 @@ static void SysSettings_LoadAll(void) {
     for (int i = 0; i < SYSTEM_COUNT; i++) {
         const char *id = systems[i].platform->id;
         char key[64];
-        SysSettings s = { 0, true, false };   /* defaults: NA, rumble on, controls hidden */
+        SysSettings s = { 0, true, false, 1 };   /* defaults: NA, rumble on, controls hidden, pixel */
         snprintf(key, sizeof(key), "%s.versions", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.versions = strcmp(v, "na_eu") == 0 ? 1 : 0;
         snprintf(key, sizeof(key), "%s.rumble", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.rumble = strcmp(v, "0") != 0;
         snprintf(key, sizeof(key), "%s.show_controls", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.showControls = strcmp(v, "0") != 0;
+        snprintf(key, sizeof(key), "%s.screen", id);
+        if (Cfg_Get(text, key, v, sizeof(v)))
+            for (int m = 0; m < 3; m++) if (strcmp(v, SCREEN_MODE_KEYS[m]) == 0) s.screen = m;
         sysSettings[i] = s;
     }
 }
@@ -1893,6 +1898,10 @@ static void SysSettings_Save(int sys) {
     ok &= Cfg_SaveKey(cfg, key, s->rumble ? "1" : "0");
     snprintf(key, sizeof(key), "%s.show_controls", id);
     ok &= Cfg_SaveKey(cfg, key, s->showControls ? "1" : "0");
+    if (strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0) {
+        snprintf(key, sizeof(key), "%s.screen", id);
+        ok &= Cfg_SaveKey(cfg, key, SCREEN_MODE_KEYS[s->screen >= 0 && s->screen < 3 ? s->screen : 1]);
+    }
     if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
@@ -2084,8 +2093,165 @@ static void DrawFitText(Font font, const char *text, Vector2 at, float size, flo
     DrawTextEx(font, text, (Vector2){ at.x, at.y - m.y * 0.5f }, size, 1.0f, col);
 }
 
+/* ---- NES / SNES Settings panel (video frame 000484): "Game Screen" with
+ * 4:3 / Pixel Perfect / CRT Filter cards, each with a small game-screen
+ * thumbnail, then "Control Display". N64 keeps SidebarPanel_Draw as is. ---- */
+static bool SysIsRetro(int sys) {
+    const char *id = systems[sys].platform->id;
+    return strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0;
+}
+
+/* Optional local screenshot (never shipped; assets/images/ is gitignored):
+ * assets/images/settings_<id>.png. Loaded once; code-drawn scene otherwise. */
+static Texture2D retroShot[2];
+static bool retroShotTried[2];
+
+static Texture2D RetroShot(bool snes) {
+    int k = snes ? 1 : 0;
+    if (!retroShotTried[k]) {
+        retroShotTried[k] = true;
+        const char *p = GetDataPath(snes ? "assets/images/settings_snes.png" : "assets/images/settings_nes.png");
+        if (FileExists(p)) {
+            retroShot[k] = LoadTexture(p);
+            if (retroShot[k].id) SetTextureFilter(retroShot[k], TEXTURE_FILTER_BILINEAR);
+        }
+    }
+    return retroShot[k];
+}
+
+static void RetroShots_Unload(void) {
+    for (int k = 0; k < 2; k++) {
+        if (retroShot[k].id) UnloadTexture(retroShot[k]);
+        retroShot[k] = (Texture2D){ 0 };
+        retroShotTried[k] = false;
+    }
+}
+
+/* Generic platformer scene on a 64 x 48 cell canvas: sky, clouds, blocks,
+ * a pipe, bushes, ground and a status bar. NES palette or a richer SNES one. */
+static void DrawRetroScene(Rectangle r, bool snes) {
+    float u = r.width / 64.0f, v = r.height / 48.0f;
+#define RS_CELL(cx, cy, cw, chh, col) DrawRectangleRec((Rectangle){ r.x + (cx) * u, r.y + (cy) * v, (cw) * u, (chh) * v }, col)
+    if (snes) {
+        DrawRectangleGradientV((int)r.x, (int)r.y, (int)r.width, (int)(r.height * 0.8f),
+                               (Color){ 96, 160, 248, 255 }, (Color){ 200, 232, 255, 255 });
+        DrawCircleV((Vector2){ r.x + 14 * u, r.y + 37 * v }, 11 * u, (Color){ 72, 176, 96, 255 });
+        DrawCircleV((Vector2){ r.x + 44 * u, r.y + 38 * v }, 14 * u, (Color){ 48, 152, 80, 255 });
+        DrawCircleV((Vector2){ r.x + 12 * u, r.y + 34 * v }, 3 * u, (Color){ 120, 208, 128, 255 });
+    } else {
+        RS_CELL(0, 0, 64, 39, ((Color){ 164, 228, 252, 255 }));
+    }
+    Color cloud = WHITE;
+    RS_CELL(6, 5, 7, 3, cloud); RS_CELL(8, 4, 3, 1, cloud);
+    RS_CELL(44, 3, 8, 3, cloud); RS_CELL(46, 2, 4, 1, cloud);
+    Color blk = snes ? (Color){ 248, 200, 40, 255 } : (Color){ 228, 160, 72, 255 };
+    Color blkD = snes ? (Color){ 176, 112, 16, 255 } : (Color){ 136, 80, 24, 255 };
+    RS_CELL(18, 12, 8, 4, blkD); RS_CELL(18.5f, 12.5f, 7, 3, blk);
+    RS_CELL(7, 22, 8, 4, blkD); RS_CELL(7.5f, 22.5f, 7, 3, blk);
+    /* hero */
+    Color hat = snes ? (Color){ 232, 40, 40, 255 } : (Color){ 200, 56, 32, 255 };
+    RS_CELL(28, 9, 4, 2, hat); RS_CELL(28, 11, 4, 2, ((Color){ 252, 188, 148, 255 }));
+    RS_CELL(28, 13, 4, 3, (snes ? (Color){ 40, 72, 216, 255 } : hat));
+    /* big blocks */
+    RS_CELL(30, 18, 10, 20, ((Color){ 152, 184, 248, 255 }));
+    RS_CELL(22, 25, 10, 13, ((Color){ 248, 200, 192, 255 }));
+    RS_CELL(40, 19, 1.5f, 19, ((Color){ 24, 24, 24, 255 }));
+    /* pipe */
+    Color pipe = snes ? (Color){ 24, 200, 72, 255 } : (Color){ 56, 168, 40, 255 };
+    Color pipeD = snes ? (Color){ 8, 120, 40, 255 } : (Color){ 24, 104, 16, 255 };
+    RS_CELL(48, 24, 10, 3, pipeD); RS_CELL(49, 27, 8, 11, pipe); RS_CELL(50, 27, 1.5f, 11, ((Color){ 160, 240, 160, 255 }));
+    /* bushes */
+    for (int k = 0; k < 3; k++) {
+        DrawCircleV((Vector2){ r.x + (4.5f + k * 4.0f) * u, r.y + 36.5f * v }, 2.0f * u, pipe);
+    }
+    /* ground + status bar */
+    RS_CELL(0, 38, 64, 3, (snes ? (Color){ 216, 160, 88, 255 } : (Color){ 228, 200, 120, 255 }));
+    for (int k = 0; k < 16; k++) RS_CELL(k * 4.0f, 38.5f, 2, 1, ((Color){ 96, 64, 24, 255 }));
+    RS_CELL(0, 41, 64, 7, ((Color){ 16, 16, 16, 255 }));
+    RS_CELL(2, 42, 36, 5, ((Color){ 232, 232, 232, 255 })); RS_CELL(3, 43, 34, 3, ((Color){ 24, 24, 24, 255 }));
+    for (int k = 0; k < 3; k++) { RS_CELL(42 + k * 7.0f, 42, 6, 5, ((Color){ 232, 232, 232, 255 }));
+                                  RS_CELL(43 + k * 7.0f, 43, 4, 3, ((Color){ 176, 216, 216, 255 })); }
+#undef RS_CELL
+}
+
+/* One thumbnail as the option would show it: 4:3 fills the frame, Pixel
+ * Perfect is narrower with dark side bars, CRT adds scanlines. */
+static void DrawRetroThumb(Rectangle r, bool snes, int mode) {
+    Rectangle img = r;
+    if (mode == 1) {   /* square pixels: 8:7 inside a 4:3 frame -> ~0.82 wide */
+        float w = r.width * 0.82f;
+        DrawRectangleRec(r, (Color){ 66, 68, 68, 255 });
+        img = (Rectangle){ r.x + (r.width - w) * 0.5f, r.y, w, r.height };
+    }
+    Texture2D shot = RetroShot(snes);
+    if (shot.id) {
+        DrawTexturePro(shot, (Rectangle){ 0, 0, (float)shot.width, (float)shot.height }, img,
+                       (Vector2){ 0 }, 0.0f, WHITE);
+    } else {
+        BeginScissorMode((int)img.x, (int)img.y, (int)ceilf(img.width), (int)ceilf(img.height));
+        DrawRetroScene(img, snes);
+        EndScissorMode();
+    }
+    if (mode == 2) {
+        float step = fmaxf(2.0f, img.height / 48.0f);
+        for (float y = img.y; y < img.y + img.height; y += step)
+            DrawRectangleRec((Rectangle){ img.x, y, img.width, step * 0.45f }, Fade((Color){ 40, 60, 70, 255 }, 0.28f));
+    }
+}
+
+static void SidebarPanelRetro_Draw(Font font, Color red) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    const SysSettings *st = &sysSettings[currentSystem];
+    bool snes = strcmp(systems[currentSystem].platform->id, "snes") == 0;
+    float hx = sw * 0.446f, cx = sw * 0.455f, bx = sw * 0.481f, bw = sw * 0.390f;
+    float th = fmaxf(2.0f, sh * 0.0028f);
+    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;
+    Color pink = { 238, 139, 144, 255 }, curFill = { 223, 233, 231, 255 };
+
+    DrawFitText(font, T(S_SET_SCREEN), (Vector2){ hx, sh * 0.092f }, hsize, sw - hx, WHITE);
+    DrawFitText(font, T(S_SET_CTRL_DISPLAY), (Vector2){ hx, sh * 0.774f }, hsize, sw - hx, WHITE);
+
+    static const StrId labels[3] = { S_SET_43, S_SET_PIXEL, S_SET_CRT };
+    static const float tops[3] = { 0.132f, 0.326f, 0.521f };
+    float ch = sh * 0.155f, r = sh * 0.016f;
+    for (int k = 0; k < 3; k++) {
+        Rectangle card = { bx, sh * tops[k], bw, ch };
+        float y = card.y + ch * 0.5f;
+        bool cur = (k == sidebarSetRow);
+        if (cur) DrawRectangleRec(card, curFill);
+        Rectangle thumb = { card.x + th, card.y + th, sw * 0.112f, ch - 2.0f * th };
+        DrawRetroThumb(thumb, snes, k);
+        DrawRectangleLinesEx(card, th * 0.6f, WHITE);
+        DrawFitText(font, T(labels[k]), (Vector2){ sw * 0.617f, y }, osize, bx + bw - sw * 0.625f,
+                    cur ? pink : WHITE);
+        if (st->screen == k) {
+            DrawCircleV((Vector2){ cx, y }, r, WHITE);
+            DrawCircleV((Vector2){ cx, y }, r * 0.78f, (Color){ 235, 75, 55, 255 });
+        } else {
+            IconArc((Vector2){ cx, y }, r, r, 0.0f, 360.0f, th * 0.7f, WHITE);
+        }
+    }
+
+    /* Control Display: one checkbox row (same box as the N64 panel). */
+    float y = sh * 0.844f, bh = sh * 0.069f;
+    bool cur = (sidebarSetRow == SB_SET_CONTROLS);
+    Rectangle box = { bx, y - bh * 0.5f, bw * 0.99f, bh };
+    if (cur) DrawRectangleRec(box, curFill);
+    else DrawRectangleLinesEx(box, th * 0.6f, WHITE);
+    DrawFitText(font, T(S_SET_CONTROLS), (Vector2){ sw * 0.504f, y }, osize, bw - sw * 0.03f, cur ? pink : WHITE);
+    Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
+    if (st->showControls) {
+        DrawRectangleRec(cb, red);
+        DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f }, th * 1.3f, WHITE);
+        DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f }, th * 1.3f, WHITE);
+    } else {
+        DrawRectangleLinesEx(cb, th * 0.7f, WHITE);
+    }
+}
+
 /* Settings panel (right of the open menu, over the blurred grid). */
 static void SidebarPanel_Draw(Font font, Color red) {
+    if (SysIsRetro(currentSystem)) { SidebarPanelRetro_Draw(font, red); return; }
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     const SysSettings *st = &sysSettings[currentSystem];
     float hx = sw * 0.449f, cx = sw * 0.46f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
@@ -2498,7 +2664,9 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         if (down && sidebarSetRow < SB_SET_COUNT - 1) sidebarSetRow++;
         if (ok) {
             SysSettings *st = &sysSettings[currentSystem];
-            if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
+            if (SysIsRetro(currentSystem) && sidebarSetRow < SB_SET_CONTROLS) st->screen = sidebarSetRow;
+            else if (SysIsRetro(currentSystem)) st->showControls = !st->showControls;
+            else if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
             else if (sidebarSetRow == SB_SET_VER_NA_EU) st->versions = 1;
             else if (sidebarSetRow == SB_SET_RUMBLE) st->rumble = !st->rumble;
             else st->showControls = !st->showControls;
@@ -3678,6 +3846,7 @@ int main(void) {
     UnloadAllBoxarts();
     UnloadFont(font);
     if (gearTexture.id) UnloadTexture(gearTexture);
+    RetroShots_Unload();
     UnloadBlurResources();
     SidebarIcons_Unload();
     UnloadSystems();
