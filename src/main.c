@@ -73,7 +73,12 @@ static const float INFO_BAR_FADE_SEC = 0.4f;
 static const float INFO_BAR_SLIDE_PX = 13.0f;
 static const float MOSAIC_SELECT_SCALE = 1.18f;
 static const float MOSAIC_LIFT_SCALE = 1.30f;   /* Y Move: lifted tile */
-static const float DETAILS_SLIDE_SEC = 0.20f;   /* video: ~12 frames at 60 fps */
+/* Details fade = picom's default fade (the user runs `picom -fc`, no config):
+ * linear, fade-in-step 0.028 / fade-out-step 0.03 every fade-delta 10 ms,
+ * i.e. ~0.36 s in and ~0.33 s out, time-based. */
+static const float DETAILS_FADE_IN_STEP = 0.028f;
+static const float DETAILS_FADE_OUT_STEP = 0.03f;
+static const float DETAILS_FADE_DELTA_MS = 10.0f;
 
 
 static char baseDir[1024] = {0};
@@ -2767,7 +2772,8 @@ static void Details_Close(void) {
 
 static void Details_Update(float dt) {
     float target = detailsOpen ? 1.0f : 0.0f;
-    float step = dt / DETAILS_SLIDE_SEC;
+    float step = dt * 1000.0f / DETAILS_FADE_DELTA_MS
+               * (detailsOpen ? DETAILS_FADE_IN_STEP : DETAILS_FADE_OUT_STEP);
     if (detailsT < target) detailsT = fminf(detailsT + step, target);
     else if (detailsT > target) detailsT = fmaxf(detailsT - step, target);
 }
@@ -2833,15 +2839,13 @@ static void Details_GlowRect(Rectangle r, float rad, float th, float alpha) {
 static void Details_Draw(Font font) {
     if (detailsT <= 0.0f || GameIdx >= ActiveGameCount()) return;
     const GameEntry *g = &ActiveGames()[GameIdx];
-    float e = 1.0f - powf(1.0f - detailsT, 3.0f);   /* ease-out cubic */
+    float a = detailsT;   /* linear opacity; the card never moves or resizes */
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
-    float a = fminf(1.0f, fmaxf(0.0f, (e - 0.25f) / 0.75f));   /* card fades in after the wash */
     const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 }, body = { 85, 90, 91, 255 };
     const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 }, rule = { 205, 211, 213, 255 };
 
-    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * e));
-    DrawRectangle(0, 0, (int)sw, (int)sh, Fade((Color){ 232, 237, 239, 255 }, 0.6f * sinf(PI * e)));
+    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * a));
 
     Rectangle card = { sw * 0.042f, sh * 0.047f, sw * 0.916f, sh * 0.905f };
     float rad = sh * 0.012f, lw = sw * 0.259f;
@@ -2913,7 +2917,7 @@ static void Details_Draw(Font font) {
         ry += rh + sh * 0.012f;
     }
 
-    DrawInfoBarEx(font, T(S_DET_INFO), e, (1.0f - e) * INFO_BAR_SLIDE_PX);
+    DrawInfoBarEx(font, T(S_DET_INFO), a, 0.0f);
 }
 
 NsoProc LaunchGame(const GameEntry *game) {
@@ -3067,10 +3071,10 @@ static void DrawMosaic(Color background, Font font) {
             DrawMosaicSlots(background);
             EndTextureMode();
             DrawBlurredMosaicBackdrop(background);
-            /* Details: the sharp grid dissolves into the blur as the card comes in. */
-            if (!SidebarWantsBlur() && detailsT < 0.5f)
+            /* Details: the sharp grid dissolves into the blur in step with the card. */
+            if (!SidebarWantsBlur() && detailsT < 1.0f)
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
-                       Fade(WHITE, 1.0f - detailsT * 2.0f));
+                       Fade(WHITE, 1.0f - detailsT));
         } else {
             DrawMosaicSlots(background);
         }
