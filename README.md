@@ -118,6 +118,32 @@ The launcher can clone, build, and launch the following source ports (see
 
 **GameCube:** Dusklight, melee-pc, Metroid Prime, Paper Cut
 
+### Static recompilations
+
+Also built from source (never prebuilt releases), from the static
+recompilations listed on
+[retroreversing.com](https://www.retroreversing.com/source-code/decompiled-retail-console-games)
+that document a Linux build. Each needs your own ROM dump: put it in the
+game's `repos/<system>/<game>-recomp/` folder under the name the gear screen
+shows (NES ones need no ROM to build and ask for it when the game starts).
+
+**SNES:** F-Zero, Go Go Ackman, Kirby Super Star, Super Mario All-Stars,
+Super Mario RPG, Mega Man X2, Mega Man X3, Star Fox
+
+**NES:** Dr. Mario, Faxanadu, The Legend of Zelda, Mega Man 3, Metroid
+
+**N64:** Bomberman 64, Bomberman Hero, Chameleon Twist, Donkey Kong 64,
+Dr. Mario 64, Duke Nukem: Zero Hour, Extreme-G, Harvest Moon 64, Mystical
+Ninja Starring Goemon, Quest 64, Snowboard Kids, Snowboard Kids 2, Space
+Station Silicon Valley, Mega Man 64, Sin and Punishment, BattleTanx: Global
+Assault, Battlezone: Rise of the Black Dogs, Turok: Rage Wars, Yoshi's Story,
+Pilotwings 64, Body Harvest, Hybrid Heaven, Wave Race 64, GoldenEye 007, Jet
+Force Gemini, Conker's Bad Fur Day, Banjo-Tooie
+
+Most N64 ones need `clang`, `lld` (`ld.lld`), `cmake`, `ninja`, SDL2 and
+GTK 3; GoldenEye 007 also needs `xdelta3`. A missing tool is reported in the
+gear screen before anything is built.
+
 ## Third-party font
 
 `assets/fonts/NotoSansCJKkr-Regular.otf` is Noto Sans CJK by Google/Adobe, licensed under the SIL Open Font License 1.1 (see `assets/fonts/LICENSE-NotoSansCJK.txt`).

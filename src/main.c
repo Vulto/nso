@@ -1386,7 +1386,7 @@ static void ScrapeMenu_Poll(void)
  * tools/repo_sync.sh checks deps, clones or fast-forwards (only when the
  * remote moved), checks the ROM and builds; it writes logs/repos/<name>.log
  * and a one-line logs/repos/<name>.status. ---- */
-#define REPO_MAX 32
+#define REPO_MAX NSO_REPO_MAX
 static NsoMsg repoMsg[REPO_MAX];
 static bool repoHasResult[REPO_MAX];
 static int repoQueue[REPO_MAX];
@@ -1719,6 +1719,11 @@ static void Manage_Activate(void) {
     }
 }
 
+/* Gear screen scroll: long repo lists (static recompilations) do not fit,
+ * so the page follows the selected row. Content-space y of that row. */
+static float manageScroll = 0.0f;
+static float manageSelY = 0.0f;
+
 static void Manage_DrawRow(Font font, Rectangle sec, float *y, int row, const char *left,
                            const char *right) {
     float size = (float)font.baseSize;
@@ -1726,6 +1731,7 @@ static void Manage_DrawRow(Font font, Rectangle sec, float *y, int row, const ch
     float x = sec.x + 28.0f;
     Color fg = WHITE;
     if (row == manageRow) {
+        manageSelY = *y;
         DrawRectangleRounded((Rectangle){ x - 14.0f, *y - 6.0f, sec.width - 28.0f, rowH },
                              0.35f, 8, WHITE);
         fg = BLACK;
@@ -1754,6 +1760,8 @@ static void Manage_Draw(Font font) {
     int n = Manage_Repos(idx, REPO_MAX);
 
     ClearBackground(MENU_BG);
+    rlPushMatrix();
+    rlTranslatef(0.0f, -manageScroll, 0.0f);
 
     /* System tabs (Left / Right). */
     float tabGap = 14.0f, tabW = (w - tabGap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT, tabH = 54.0f;
@@ -1821,6 +1829,17 @@ static void Manage_Draw(Font font) {
     DrawTextEx(font, T(S_MANAGE_SETTINGS), (Vector2){ x0 + 28.0f, ry }, size, 2.0f, GRAY);
     ry += size + 18.0f;
     Manage_DrawRow(font, s3, &ry, Manage_RowCount() - 1, T(S_MANAGE_LANGUAGE), T(S_LANG_NAME));
+    y += h3;
+    rlPopMatrix();
+
+    /* Keep the selected row between the top margin and the info bar. */
+    float top = sh * 0.08f, bottom = sh - 100.0f, rowH = 62.0f;
+    if (manageRow == 0) manageScroll = 0.0f;
+    if (manageSelY - manageScroll < top) manageScroll = manageSelY - top;
+    if (manageSelY + rowH - manageScroll > bottom) manageScroll = manageSelY + rowH - bottom;
+    float maxScroll = y + 24.0f - bottom;
+    if (manageScroll > maxScroll) manageScroll = maxScroll;
+    if (manageScroll < 0.0f) manageScroll = 0.0f;
 
     DrawInfoBarEx(font, scrapeBusy ? T(S_INFO_CANCEL) : T(S_MANAGE_INFO), 1.0f, 0.0f);
 }

@@ -34,6 +34,9 @@ typedef enum {
     REPO_NOTE_INSTALLED,     /* binary appeared: launchable */
 } RepoNote;
 
+/* Upper bound of nso_repos (main.c sizes its per-repo state with it). */
+#define NSO_REPO_MAX 96
+
 extern const RepoEntry nso_repos[];
 extern const int nso_repo_count;
 
@@ -79,8 +82,40 @@ RepoNote Repo_Transition(bool known, RepoLocalState prev, RepoLocalState now);
 #define GCN_MELEE_DEPS "git,cmake,ninja,gcc,g++"
 #define GCN_PAPER_DEPS "git,cmake,ninja,clang,lld,python3,pkg-config"
 
-/* Source ports only (decomps / source ports), never recompilations or
- * binary releases. New NES/N64/GameCube checkouts use *-src / unique dirs so
+/* Static recompilations (N64Recomp / snesrecomp / nesrecomp): built from the
+ * upstream sources against the user's own ROM; nothing prebuilt is fetched. */
+#define N64RECOMP_DEPS "git,cmake,ninja,clang,clang++,ld.lld,python3,pkg:sdl2,pkg:gtk+-3.0"
+#define N64RECOMP_VK_DEPS N64RECOMP_DEPS ",pkg:vulkan"
+/* tools/build_linux.sh repos: their own clang pick, no lld (patches prebuilt). */
+#define N64RECOMP_DG_DEPS "git,cmake,ninja,clang,clang++,python3,bash,pkg:sdl2,pkg:gtk+-3.0"
+#define N64RECOMP_GE_DEPS N64RECOMP_DEPS ",xdelta3"
+#define N64RECOMP_BT_DEPS N64RECOMP_DEPS ",pkg:freetype2,pkg:dbus-1"
+#define SNESRECOMP_DEPS "git,cmake,ninja,cc,c++,python3,bash"
+#define MSTAN_DEPS "git,cmake,cc,c++,python3,bash,file"
+/* N64Recomp + RSPRecomp from the repo's own submodule (or upstream when the
+ * pinned runtime has none); the .toml files then read the ROM in the repo. */
+#define N64RECOMP_TOOLS \
+    "T=lib/N64ModernRuntime/N64Recomp; [ -f $T/CMakeLists.txt ] || T=N64Recomp; " \
+    "[ -f $T/CMakeLists.txt ] || { [ -d build-tools-src ] || git clone --recursive https://github.com/N64Recomp/N64Recomp.git build-tools-src; T=build-tools-src; }; " \
+    "cmake -S $T -B build-tools -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++" \
+    " && cmake --build build-tools --target N64RecompCLI RSPRecomp -j\"$(nproc)\""
+#define N64RECOMP_CMAKE(target) \
+    "cmake -S . -B build-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++" \
+    " && cmake --build build-cmake --target " target " -j\"$(nproc)\""
+/* wootbeer repos: N64Recomp is a target of the game's own CMake project. */
+#define WOOT_BUILD(toml, target) \
+    "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++" \
+    " && cmake --build build --target N64RecompCLI -j\"$(nproc)\"" \
+    " && R=$(find build -type f -name N64Recomp -perm -u+x | head -n 1) && [ -n \"$R\" ] && \"$R\" " toml \
+    " && cmake -S . -B build && cmake --build build --target " target " -j\"$(nproc)\"" \
+    " && { [ -x build/" target " ] || command /bin/cp -f \"$(find build -type f -name " target " -perm -u+x | head -n 1)\" build/; }"
+/* mstan snesrecomp / nesrecomp repos: their own Linux script, no AppImage. */
+#define MSTAN_BUILD(flags, target) \
+    "bash tools/build-linux.sh " flags \
+    " && { [ -x build-linux-prod/" target " ] || command /bin/cp -f \"$(find build-linux-prod -type f -name " target " -perm -u+x | head -n 1)\" build-linux-prod/; }"
+
+/* Source ports (decomps / source ports) and static recompilations, always
+ * built from source, never binary releases. New NES/N64/GameCube checkouts use *-src / unique dirs so
  * existing AppImage and hand-made installs are never touched. */
 const RepoEntry nso_repos[] = {
     { "snes", "smw",    "https://github.com/snesrev/smw.git",    "repos/snes/smw",
@@ -89,6 +124,39 @@ const RepoEntry nso_repos[] = {
       "./zelda3", "zelda3.sfc", SNESREV_DEPS, "make -j\"$(nproc)\"" },
     { "snes", "sm",     "https://github.com/snesrev/sm.git",     "repos/snes/sm",
       "./sm",     "sm.smc",     SNESREV_DEPS, "make -j\"$(nproc)\"" },
+    /* snes: static recompilations (retroreversing.com list). */
+    { "snes", "F-Zero", "https://github.com/craigshaw/FZeroRecomp.git",
+      "repos/snes/fzero-recomp", "build/fzero_recomp", "fzero_usa_reference.sfc",
+      SNESRECOMP_DEPS,
+      "sh tools/apply_snesrecomp_patches.sh && python3 snesrecomp/tools/v2_sync_funcs_h.py --cfg-dir config --out config/funcs.h && python3 snesrecomp/tools/v2_emit.py --rom fzero_usa_reference.sfc --cfg-dir config --out-dir generated --cfg-roots && sh build.sh" },
+    { "snes", "Go Go Ackman", "https://github.com/catmidori/gogoackman1recomp.git",
+      "repos/snes/ackman-recomp", "build/AckmanRecomp", "gogoackman.jp.sfc",
+      SNESRECOMP_DEPS,
+      "python3 scripts/regen.py --rom gogoackman.jp.sfc && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel" },
+    { "snes", "Kirby Super Star", "https://github.com/NVDEMU/KirbySuperStarPC.git",
+      "repos/snes/kss-recomp", "build/KirbySuperStarSNESRecomp", "kss.us.sfc",
+      SNESRECOMP_DEPS,
+      "bash tools/regen.sh --rom kss.us.sfc && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j\"$(nproc)\"" },
+    { "snes", "Super Mario All-Stars", "https://github.com/TanookiStudios/SuperMarioAllStarsRecomp.git",
+      "repos/snes/smas-recomp", "build/SuperMarioAllStarsRecomp", "rom/smas.sfc",
+      SNESRECOMP_DEPS,
+      "sh ./setup.sh && bash tools/regen.sh && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build" },
+    { "snes", "Super Mario RPG: Legend of the Seven Stars", "https://github.com/mstan/SuperMarioRPGRecomp.git",
+      "repos/snes/smrpg-recomp", "build-linux-prod/SuperMarioRPGSNESRecomp", "smrpg.sfc",
+      MSTAN_DEPS,
+      MSTAN_BUILD("--regen --no-package", "SuperMarioRPGSNESRecomp") },
+    { "snes", "Mega Man X2", "https://github.com/mstan/MegaManX2Recomp.git",
+      "repos/snes/mmx2-recomp", "build-linux-prod/MegaManX2SNESRecomp", "mmx2.sfc",
+      MSTAN_DEPS,
+      MSTAN_BUILD("--regen --no-package", "MegaManX2SNESRecomp") },
+    { "snes", "Mega Man X3", "https://github.com/mstan/MegamanX3SNESRecomp.git",
+      "repos/snes/mmx3-recomp", "build-linux-prod/MegaManX3SNESRecomp", "mmx3.sfc",
+      MSTAN_DEPS,
+      MSTAN_BUILD("--regen --no-package", "MegaManX3SNESRecomp") },
+    { "snes", "Star Fox", "https://github.com/mstan/StarFoxSNESRecomp.git",
+      "repos/snes/starfox-recomp", "build-linux-prod/StarFoxSNESRecomp", "starfox.sfc",
+      MSTAN_DEPS,
+      MSTAN_BUILD("--regen --no-package", "StarFoxSNESRecomp") },
 
     { "nes", "SMB Vanilla", "https://codeberg.org/dannysp/SMB-Vanilla.git",
       "repos/nes/smbvanilla", "build/src/platform/smbvanilla", "smb.nes",
@@ -101,6 +169,27 @@ const RepoEntry nso_repos[] = {
     { "nes", "OpenDana", "https://github.com/dvilelaf/opendana.git",
       "repos/nes/opendana", "build/opendana", NULL,
       NES_CMAKE_SDL2, "bash build.sh" },
+    /* nes: static recompilations (retroreversing.com list). */
+    { "nes", "Dr. Mario", "https://github.com/mstan/DrMarioNesRecomp.git",
+      "repos/nes/drmario-recomp", "build-linux-prod/DrMarioRecomp", NULL,
+      MSTAN_DEPS,
+      MSTAN_BUILD("--no-package", "DrMarioRecomp") },
+    { "nes", "Faxanadu", "https://github.com/mstan/FaxanaduRecomp.git",
+      "repos/nes/faxanadu-recomp", "build-linux-prod/FaxanaduRecomp", NULL,
+      MSTAN_DEPS,
+      MSTAN_BUILD("--no-package", "FaxanaduRecomp") },
+    { "nes", "The Legend of Zelda", "https://github.com/mstan/LegendOfZeldaNESRecomp.git",
+      "repos/nes/zelda1-recomp", "build-linux-prod/LegendOfZeldaNESRecomp", NULL,
+      MSTAN_DEPS,
+      MSTAN_BUILD("--no-package", "LegendOfZeldaNESRecomp") },
+    { "nes", "Mega Man 3", "https://github.com/mstan/Megaman3NESRecomp.git",
+      "repos/nes/mm3-recomp", "build-linux-prod/MegaMan3Recomp", NULL,
+      MSTAN_DEPS,
+      MSTAN_BUILD("--no-package", "MegaMan3Recomp") },
+    { "nes", "Metroid", "https://github.com/mstan/MetroidNESRecomp.git",
+      "repos/nes/metroid-recomp", "build-linux-prod/MetroidNESRecomp", NULL,
+      MSTAN_DEPS,
+      MSTAN_BUILD("--no-package", "MetroidNESRecomp") },
 
     { "n64", "sm64ex", "https://github.com/sm64pc/sm64ex.git",
       "repos/n64/sm64ex", "build/us_pc/sm64.us.f3dex2e", "baserom.us.z64",
@@ -121,6 +210,115 @@ const RepoEntry nso_repos[] = {
       "repos/n64/spaghettikart", "build-cmake/Spaghettify", "mk64.z64",
       N64_HM_DEPS,
       "cmake -H. -Bbuild-cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release && cmake --build build-cmake --target ExtractAssets && cmake --build build-cmake" },
+    /* n64: static recompilations (retroreversing.com list). */
+    { "n64", "Bomberman 64", "https://github.com/RevoSucks/BM64Recomp.git",
+      "repos/n64/bm64-recomp", "build-cmake/BM64Recompiled", "bm64.decomp.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp bm64.us.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("BM64Recompiled") },
+    { "n64", "Bomberman Hero", "https://github.com/RevoSucks/BMHeroRecomp.git",
+      "repos/n64/bmhero-recomp", "build-cmake/BMHeroRecompiled", "bmhero.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp bmhero.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("BMHeroRecompiled") },
+    { "n64", "Chameleon Twist", "https://github.com/Rainchus/ChameleonTwist1-JP-Recomp.git",
+      "repos/n64/ct1-recomp", "build-cmake/ChameleonTwistJPRecompiled", "baserom.jp.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp jp.rev0.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("ChameleonTwistJPRecompiled") },
+    { "n64", "Donkey Kong 64", "https://github.com/Rainchus/Donkey-Kong-64-Recompiled.git",
+      "repos/n64/dk64-recomp", "build-cmake/DK64Recompiled", "donkeykong64.decompressed.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.toml && build-tools/RSPRecomp n_aspMain.toml && " N64RECOMP_CMAKE("DK64Recompiled") },
+    { "n64", "Dr. Mario 64", "https://github.com/theboy181/drmario64_recomp_plus.git",
+      "repos/n64/drmario64-recomp", "build-cmake/drmario64_recomp", "drmario64_uncompressed.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp drmario64.us.toml && build-tools/RSPRecomp aspMain.us.toml && " N64RECOMP_CMAKE("drmario64_recomp") },
+    { "n64", "Duke Nukem: Zero Hour", "https://github.com/sonicdcer/DNZHRecomp.git",
+      "repos/n64/dnzh-recomp", "build-cmake/DNZHRecompiled", "dnzh.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.toml && build-tools/RSPRecomp aspMain.us.toml && " N64RECOMP_CMAKE("DNZHRecompiled") },
+    { "n64", "Extreme-G", "https://gitlab.com/sonicdcer/ExtremeGRecomp.git",
+      "repos/n64/extremeg-recomp", "build-cmake/ExtremeGRecompiled", "extremeg.us.uncompressed.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.toml && build-tools/RSPRecomp aspMain.us.toml && " N64RECOMP_CMAKE("ExtremeGRecompiled") },
+    { "n64", "Harvest Moon 64", "https://github.com/HarvestMoon64Recomp/HarvestMoon64Recomp.git",
+      "repos/n64/hm64-recomp", "build-cmake/HarvestMoon64Recompiled", "hm64.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp hm64.us.toml && build-tools/RSPRecomp n_aspMain.toml && " N64RECOMP_CMAKE("HarvestMoon64Recompiled") },
+    { "n64", "Mystical Ninja Starring Goemon", "https://github.com/klorfmorf/Goemon64Recomp.git",
+      "repos/n64/goemon64-recomp", "build-cmake/Goemon64Recompiled", "mnsg.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp mnsg.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("Goemon64Recompiled") },
+    { "n64", "Quest 64", "https://github.com/Rainchus/Quest64-Recomp.git",
+      "repos/n64/quest64-recomp", "build-cmake/Quest64Recompiled", "quest64.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.rev0.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("Quest64Recompiled") },
+    { "n64", "Snowboard Kids", "https://github.com/cdlewis/snowboardkids-recomp.git",
+      "repos/n64/sk1-recomp", "build-cmake/SnowboardKidsRecompiled", "snowboardkids.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.toml && build-tools/RSPRecomp aspMain.us.toml && " N64RECOMP_CMAKE("SnowboardKidsRecompiled") },
+    { "n64", "Snowboard Kids 2", "https://github.com/cdlewis/snowboardkids2-recomp.git",
+      "repos/n64/sk2-recomp", "build-cmake/SnowboardKids2Recompiled", "snowboardkids2.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.toml && build-tools/RSPRecomp aspMain.us.toml && " N64RECOMP_CMAKE("SnowboardKids2Recompiled") },
+    { "n64", "Space Station Silicon Valley", "https://github.com/Cellenseres/SSSV_Recomp.git",
+      "repos/n64/sssv-recomp", "build-cmake/SSSVRecompiled", "sssv.us.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp sssv.us.toml && build-tools/RSPRecomp aspMain.toml && " N64RECOMP_CMAKE("SSSVRecompiled") },
+    { "n64", "Mega Man 64", "https://github.com/MegaMan64Recomp/MegaMan64Recompiled.git",
+      "repos/n64/mm64-recomp", "build-cmake/MegaMan64Recompiled", "MegaMan64.us.rev1.z64",
+      N64RECOMP_DEPS,
+      N64RECOMP_TOOLS " && build-tools/N64Recomp us.rev1.toml && build-tools/RSPRecomp aspMain.us.rev1.toml && " N64RECOMP_CMAKE("MegaMan64Recompiled") },
+    { "n64", "Sin and Punishment", "https://github.com/wootbeer/snprecomp.git",
+      "repos/n64/snp-recomp", "build/SnPRecompiled", "Tsumi to Batsu - Hoshi no Keishousha (Japan).z64",
+      N64RECOMP_VK_DEPS,
+      WOOT_BUILD("snp.jp.toml", "SnPRecompiled") },
+    { "n64", "BattleTanx: Global Assault", "https://github.com/wootbeer/btgarecomp.git",
+      "repos/n64/btga-recomp", "build/BattleTanxGARecompiled", "BattleTanx Global Assault (USA).z64",
+      N64RECOMP_VK_DEPS,
+      WOOT_BUILD("battletanxga.us.rev0.toml", "BattleTanxGARecompiled") },
+    { "n64", "Battlezone: Rise of the Black Dogs", "https://github.com/wootbeer/bzrecomp.git",
+      "repos/n64/bz-recomp", "build/BattlezoneRecompiled", "Battlezone - Rise of the Black Dogs (USA).z64",
+      N64RECOMP_VK_DEPS,
+      WOOT_BUILD("battlezone.us.rev0.toml", "BattlezoneRecompiled") },
+    { "n64", "Turok: Rage Wars", "https://github.com/wootbeer/PaxDino.git",
+      "repos/n64/turokrw-recomp", "build/PaxDino", "turokrw.us.z64",
+      N64RECOMP_VK_DEPS,
+      WOOT_BUILD("turokrw.us.toml", "PaxDino") },
+    { "n64", "Yoshi's Story", "https://github.com/wootbeer/dinotale.git",
+      "repos/n64/yoshisstory-recomp", "build/DinoTale", "yoshisstory.us.z64",
+      N64RECOMP_VK_DEPS,
+      WOOT_BUILD("yoshisstory.us.toml", "DinoTale") },
+    { "n64", "Pilotwings 64", "https://github.com/danielgomesvieira2000/pilotwings-64-recomp.git",
+      "repos/n64/pw64-recomp", "build-linux/Pilotwings64Recomp", "pilotwings64.us.z64",
+      N64RECOMP_DG_DEPS,
+      "bash tools/build_linux.sh pilotwings64.us.z64" },
+    { "n64", "Body Harvest", "https://github.com/danielgomesvieira2000/body-harvest-recomp.git",
+      "repos/n64/bodyharvest-recomp", "build-linux/body-harvest-recomp", "bodyharvest.us.z64",
+      N64RECOMP_DG_DEPS,
+      "bash tools/build_linux.sh bodyharvest.us.z64" },
+    { "n64", "Hybrid Heaven", "https://github.com/danielgomesvieira2000/hybrid-heaven-recomp.git",
+      "repos/n64/hybridheaven-recomp", "build-linux/hybrid-heaven-recomp", "hybridheaven.us.z64",
+      N64RECOMP_DG_DEPS,
+      "bash tools/build_linux.sh hybridheaven.us.z64" },
+    { "n64", "Wave Race 64", "https://github.com/danielgomesvieira2000/wave-race-64-recomp.git",
+      "repos/n64/waverace64-recomp", "build-linux/WaveRace64Recomp", "waverace64.us.revA.z64",
+      N64RECOMP_DG_DEPS,
+      "bash tools/build_linux.sh waverace64.us.revA.z64" },
+    { "n64", "GoldenEye 007", "https://github.com/cblock85/GoldenEye64Recomp.git",
+      "repos/n64/ge007-recomp", "build/GoldenRecomp", "baserom.u.z64",
+      N64RECOMP_GE_DEPS,
+      "bash ./build_linux.sh" },
+    { "n64", "Jet Force Gemini", "https://github.com/VibinToast/JetForceGemini-Recomp.git",
+      "repos/n64/jfg-recomp", "bin/JetForceGeminiRecompiled", "baserom.us.z64",
+      N64RECOMP_VK_DEPS,
+      "bash ./build_linux.sh" },
+    { "n64", "Conker's Bad Fur Day", "https://github.com/sciaschi/CBFD-Recompiled.git",
+      "repos/n64/conker-recomp", "host/build/ConkerRecomp", "conker/baserom.us.z64",
+      N64RECOMP_DEPS,
+      "sh ./build.sh" },
+    { "n64", "Banjo-Tooie", "https://github.com/Vidanox/BanjoTooieRecompiled.git",
+      "repos/n64/bt-recomp", "build-cmake/BanjoTooieRecompiled", NULL,
+      N64RECOMP_BT_DEPS,
+      "python3 tools/setup_deps.py && " N64RECOMP_CMAKE("BanjoTooieRecompiled") },
 
     { "gamecube", "Dusklight", "https://github.com/TwilitRealm/dusklight.git",
       "repos/gamecube/dusklight", "build/linux-default-relwithdebinfo/dusklight", NULL,

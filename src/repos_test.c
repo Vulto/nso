@@ -76,9 +76,23 @@ int main(void)
         CHECK(strcmp(r->system, "nes") == 0 || strcmp(r->system, "snes") == 0
               || strcmp(r->system, "n64") == 0 || strcmp(r->system, "gamecube") == 0);
         CHECK(strncmp(r->url, "https://", 8) == 0);
+        CHECK(strlen(r->build) < 2304);  /* Repo_StartNext argv buffer */
         for (int j = 0; j < i; j++) CHECK(strcmp(r->dir, nso_repos[j].dir) != 0);
     }
-    CHECK(nso_repo_count >= 15);
+    CHECK(nso_repo_count >= 15 && nso_repo_count <= NSO_REPO_MAX);
+    /* Static recompilations: own *-recomp dir, relative binary and ROM. */
+    {
+        int recomps = 0;
+        for (int i = 0; i < nso_repo_count; i++) {
+            const RepoEntry *r = &nso_repos[i];
+            size_t n = strlen(r->dir);
+            if (n < 7 || strcmp(r->dir + n - 7, "-recomp") != 0) continue;
+            recomps++;
+            CHECK(r->binary[0] != '/' && strstr(r->binary, "..") == NULL);
+            CHECK(!r->rom || (r->rom[0] != '/' && strstr(r->rom, "..") == NULL));
+        }
+        CHECK(recomps >= 40);
+    }
 
     /* Never point a download at an existing AppImage or hand-made install. */
     {

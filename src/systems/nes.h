@@ -52,6 +52,41 @@ GameEntry nes_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
         .romImport = &opendana_rom_import,
     },
+    {
+        .title = "Dr. Mario",
+        .boxartPath = "assets/images/systems/nes/drmario.png",
+        .dir = "repos/nes/drmario-recomp",
+        .binary = "build-linux-prod/DrMarioRecomp",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Faxanadu",
+        .boxartPath = "assets/images/systems/nes/faxanadu.png",
+        .dir = "repos/nes/faxanadu-recomp",
+        .binary = "build-linux-prod/FaxanaduRecomp",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Legend of Zelda",
+        .boxartPath = "assets/images/systems/nes/zelda1.png",
+        .dir = "repos/nes/zelda1-recomp",
+        .binary = "build-linux-prod/LegendOfZeldaNESRecomp",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man 3",
+        .boxartPath = "assets/images/systems/nes/mm3.png",
+        .dir = "repos/nes/mm3-recomp",
+        .binary = "build-linux-prod/MegaMan3Recomp",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Metroid",
+        .boxartPath = "assets/images/systems/nes/metroid.png",
+        .dir = "repos/nes/metroid-recomp",
+        .binary = "build-linux-prod/MetroidNESRecomp",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
 };
 
 const int nes_game_count = (int)(sizeof(nes_games) / sizeof(nes_games[0]));
