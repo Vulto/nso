@@ -72,7 +72,7 @@ static const float MOSAIC_GROW_DELAY_SEC = 0.3f;
 static const float INFO_BAR_FADE_SEC = 0.4f;
 static const float INFO_BAR_SLIDE_PX = 13.0f;
 static const float MOSAIC_SELECT_SCALE = 1.18f;
-static const float MOSAIC_LIFT_SCALE = 1.30f;   /* Y Move: lifted tile */
+static const float MOSAIC_LIFT_SCALE = 0.92f;   /* Y Move: lifted tile (video: ~0.92 of its cell) */
 /* Details fade = picom's default fade (the user runs `picom -fc`, no config):
  * linear, fade-in-step 0.028 / fade-out-step 0.03 every fade-delta 10 ms,
  * i.e. ~0.36 s in and ~0.33 s out, time-based. */
@@ -574,6 +574,11 @@ static int GameIdx = 0;
 /* Y Move (hold): selected game follows the arrows; saved on release. */
 static bool gridLifted = false;
 static bool gridLiftMoved = false;
+/* Move-mode look (0..1): dark gaps, smaller covers, slot markers, rail dimmed.
+ * Same linear picom-default fade as the Details card. */
+static float liftT = 0.0f;
+static const Color MOVE_BG = { 64, 66, 66, 255 };     /* video's gap grey */
+static const float MOVE_OTHERS_SCALE = 0.80f;        /* other covers in move mode */
 
 /* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
@@ -2204,6 +2209,11 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
 
     if (cols < 1 || cellW <= 0.0f || cellH <= 0.0f) return;
 
+    float mv = liftT;
+    if (mv > 0.0f) DrawRectangle(0, 0, GetScreenWidth(), screen_h, Fade(MOVE_BG, mv));
+    float othersScale = 1.0f - (1.0f - MOVE_OTHERS_SCALE) * mv;
+    Color othersTint = ColorLerp(WHITE, (Color){ 222, 222, 222, 255 }, mv);
+
     for (int i = 0; i < numImgs; i++) {
         if (i == GameIdx) continue;
 
@@ -2215,7 +2225,7 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         float fitW, fitH;
         FitAspectInCell(cellW, cellH, Nso_OrientAspect(GameOrientAt(i)), &fitW, &fitH);
 
-        float tile_scale = animScales[i];
+        float tile_scale = animScales[i] * othersScale;
         float draw_y = y - v_offset;
         float draw_w = fitW * tile_scale;
         float draw_h = fitH * tile_scale;
@@ -2233,10 +2243,31 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                            (Rectangle){ox, oy, draw_w, draw_h},
                            (Vector2){0, 0},
                            0.0f,
-                           GameTint(i));
-            DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, GameTint(i));
+                           ColorTint(GameTint(i), othersTint));
+            DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, ColorTint(GameTint(i), othersTint));
             if (Repo_Offer(Game_Repo(&ActiveGames()[i])))
                 Repo_BadgeDraw(slotFont, (Rectangle){ox, oy, draw_w, draw_h});
+        }
+    }
+
+    /* Video's drop-slot markers: small rounded squares on every cell's left
+     * edge (row middle) and at the left of each row boundary. */
+    if (mv > 0.0f) {
+        float m = fmaxf(10.0f, (float)screen_h * 0.0135f);
+        Color mc = Fade((Color){ 200, 202, 202, 255 }, mv);
+        int rows = (numImgs + cols - 1) / cols;
+        for (int r = 0; r <= rows; r++) {
+            float ry = (float)r * cellH - v_offset;
+            for (int c = 0; c < cols && r < rows; c++) {
+                if (r * cols + c >= numImgs) break;
+                Vector2 at = { (float)origin_x + (float)c * cellW, ry + cellH * 0.5f };
+                if (at.y < -m || at.y > (float)screen_h + m) continue;
+                DrawRectangleRoundedLinesEx((Rectangle){ at.x - m * 0.5f, at.y - m * 0.5f, m, m },
+                                            0.45f, 6, fmaxf(1.5f, m * 0.12f), mc);
+            }
+            if (r > 0 && ry > -m && ry < (float)screen_h + m)
+                DrawRectangleRoundedLinesEx((Rectangle){ (float)origin_x - m * 0.5f, ry - m * 0.5f, m, m },
+                                            0.45f, 6, fmaxf(1.5f, m * 0.12f), mc);
         }
     }
 
@@ -2259,11 +2290,14 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         ClampTileToContent(&draw_x, &draw_y_scaled, scaled_w, scaled_h,
                            origin_x, content_w, screen_h, MOSAIC_CURSOR_PAD);
 
-        if (gridLifted) {
-            /* Picked up: raised a little over a drop shadow. */
-            draw_y_scaled -= 8.0f;
-            DrawRectangleRec((Rectangle){draw_x + 10.0f, draw_y_scaled + 14.0f, scaled_w, scaled_h},
-                             Fade(BLACK, 0.55f));
+        if (gridLifted || mv > 0.0f) {
+            /* Picked up (video): soft shadow all round, fading in with the mode. */
+            for (int k = 1; k <= 8; k++) {
+                float g = (float)k * 2.5f;
+                DrawRectangleRounded((Rectangle){ draw_x - g, draw_y_scaled - g + 4.0f,
+                                                  scaled_w + 2.0f * g, scaled_h + 2.0f * g },
+                                     0.04f, 6, Fade(BLACK, 0.07f * mv));
+            }
         }
 
         DrawTexturePro(images[GameIdx],
@@ -2286,10 +2320,11 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         Color line_color = {r, g, b, a};
 
         if (gridLifted) {
+            /* Video: thin light edge on the lifted cover, no cursor pulse. */
             DrawRectangleLinesEx(
-                (Rectangle){draw_x - 3.0f, draw_y_scaled - 3.0f, scaled_w + 6.0f, scaled_h + 6.0f},
-                4.0f,
-                (Color){ 255, 196, 0, 255 });
+                (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
+                2.0f,
+                (Color){ 225, 228, 228, 255 });
         } else {
             DrawRectangleLinesEx(
                 (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
@@ -3091,6 +3126,10 @@ static void DrawMosaic(Color background, Font font) {
         DrawSidebar(SystemBG, font);
     }
 
+    /* Move mode: the rail sinks into the dark backdrop (video). */
+    if (liftT > 0.0f)
+        DrawRectangle(0, 0, (int)SidebarRailWidth(), GetScreenHeight(), Fade(MOVE_BG, 0.85f * liftT));
+
     /* Above blur / panel so accept/back help stays readable. */
     InfoBar_Draw(font);
 }
@@ -3383,6 +3422,11 @@ int main(void) {
         Repo_Poll();
         Repo_Watch();
         Details_Update(dt);
+        {   /* move-mode look: linear, picom default rates (see Details) */
+            float st = dt * 1000.0f / DETAILS_FADE_DELTA_MS;
+            if (gridLifted) liftT = fminf(1.0f, liftT + st * DETAILS_FADE_IN_STEP);
+            else liftT = fmaxf(0.0f, liftT - st * DETAILS_FADE_OUT_STEP);
+        }
 
         /* A on an install notice builds that game (one press). Not while a
          * game, the save states, Details, a scrape or a slide owns input. */
