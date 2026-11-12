@@ -580,6 +580,12 @@ static int gridLiftFrom = 0;   /* index the lifted game had on entering move mod
 static float liftT = 0.0f;
 static const Color MOVE_BG = { 64, 66, 66, 255 };     /* video's gap grey */
 static const float MOVE_OTHERS_SCALE = 0.80f;        /* other covers in move mode */
+/* Video timings (60 fps frames 000319..000390): the rail slides out/in over
+ * ~8.5 frames with a symmetric ease; the lifted cover glides to its new slot
+ * over ~9 frames, ease-in-out. */
+static const float MOVE_RAIL_SLIDE_SEC = 0.14f;
+static const float MOVE_GLIDE_SEC = 0.15f;
+static float railSlideT = 0.0f;   /* 0 = rail in place, 1 = slid off to the left */
 
 /* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
@@ -2119,10 +2125,6 @@ static void DrawSidebar(Color systemBg, Font font) {
     float t = SidebarExpandProgress();
     Color pink = ColorLerp(systemBg, WHITE, 0.5f);
 
-    /* Blurred mosaic is drawn behind when expanded; dim it like the video. */
-    if (t > 0.0f) DrawRectangle((int)sidebarWidth, 0, (int)(sw - sidebarWidth) + 1, (int)sh, Fade(BLACK, 0.35f * t));
-    DrawRectangle(0, 0, (int)sidebarWidth, (int)sh, systemBg);
-
     float iconS = sh * 0.052f;
     float boxS = sh * 0.066f;                        /* rail highlight square / row height */
     float iconX = railW * 0.5f + (sw * 0.0645f - railW * 0.5f) * t;
@@ -2136,6 +2138,16 @@ static void DrawSidebar(Color systemBg, Font font) {
         Color fg = (i == sidebarItem) ? systemBg : WHITE;
         iconTex[i] = SidebarIcon_Render(i, iconBox, iconS, fg, SidebarAnim_Progress(i), sbAnimDir[i]);
     }
+
+    /* Blurred mosaic is drawn behind when expanded; dim it like the video. */
+    if (t > 0.0f) DrawRectangle((int)sidebarWidth, 0, (int)(sw - sidebarWidth) + 1, (int)sh, Fade(BLACK, 0.35f * t));
+
+    /* Move mode: the whole rail slides off to the left (after the icon
+     * render-texture passes, which reset the matrix). */
+    float slide = 0.5f - 0.5f * cosf(PI * railSlideT);
+    bool slid = slide > 0.0f;
+    if (slid) { rlPushMatrix(); rlTranslatef(-(sidebarWidth + 1.0f) * slide, 0.0f, 0.0f); }
+    DrawRectangle(0, 0, (int)sidebarWidth, (int)sh, systemBg);
 
     BeginScissorMode(0, 0, (int)sidebarWidth, (int)sh);
     for (int i = 0; i < SB_ITEM_COUNT; i++) {
@@ -2167,6 +2179,7 @@ static void DrawSidebar(Color systemBg, Font font) {
         }
     }
     EndScissorMode();
+    if (slid) rlPopMatrix();
 
     if (settled && sidebarPanelFocus && sidebarItem == SB_ITEM_SETTINGS) {
         SidebarPanel_Draw(font, systemBg);
@@ -2256,6 +2269,27 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         int row = GameIdx / cols;
         float x = (float)origin_x + (float)col * cellW;
         float y = (float)row * cellH;
+
+        /* Lifted cover glides between slots (also back on B) instead of
+         * jumping; plain cursor moves outside move mode still jump. */
+        static int glideIdx = -1;
+        static float gFromX, gFromY, gCurX, gCurY;
+        static double gStart = 0.0;
+        double now = GetTime();
+        bool gliding = glideIdx >= 0 && now - gStart < (double)MOVE_GLIDE_SEC;
+        if (gridLifted || liftT > 0.0f || gliding) {
+            if (glideIdx < 0) {
+                glideIdx = GameIdx; gCurX = x; gCurY = y; gStart = now - MOVE_GLIDE_SEC;
+            } else if (glideIdx != GameIdx) {
+                glideIdx = GameIdx; gFromX = gCurX; gFromY = gCurY; gStart = now;
+            }
+            float u = fminf(1.0f, (float)(now - gStart) / MOVE_GLIDE_SEC);
+            float e = u < 0.5f ? 4.0f * u * u * u : 1.0f - powf(-2.0f * u + 2.0f, 3.0f) * 0.5f;
+            if (u < 1.0f) { x = gFromX + (x - gFromX) * e; y = gFromY + (y - gFromY) * e; }
+            gCurX = x; gCurY = y;
+        } else {
+            glideIdx = -1;
+        }
 
         float fitW, fitH;
         FitAspectInCell(cellW, cellH, Nso_OrientAspect(GameOrientAt(GameIdx)),
@@ -3106,10 +3140,6 @@ static void DrawMosaic(Color background, Font font) {
         DrawSidebar(SystemBG, font);
     }
 
-    /* Move mode: the rail sinks into the dark backdrop (video). */
-    if (liftT > 0.0f)
-        DrawRectangle(0, 0, (int)SidebarRailWidth(), GetScreenHeight(), Fade(MOVE_BG, 0.85f * liftT));
-
     /* Above blur / panel so accept/back help stays readable. */
     InfoBar_Draw(font);
 }
@@ -3406,6 +3436,8 @@ int main(void) {
             float st = dt * 1000.0f / DETAILS_FADE_DELTA_MS;
             if (gridLifted) liftT = fminf(1.0f, liftT + st * DETAILS_FADE_IN_STEP);
             else liftT = fmaxf(0.0f, liftT - st * DETAILS_FADE_OUT_STEP);
+            float rs = dt / MOVE_RAIL_SLIDE_SEC;
+            railSlideT = gridLifted ? fminf(1.0f, railSlideT + rs) : fmaxf(0.0f, railSlideT - rs);
         }
 
         /* A on an install notice builds that game (one press). Not while a
