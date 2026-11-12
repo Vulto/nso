@@ -221,6 +221,9 @@ static bool smw_state_save(const char *path) {
     if (!M.live || !path) return false;
     M.guard = true;
     if (setjmp(M.jb)) { M.guard = false; M.live = false; return false; }
+    /* The state holds g_snes->ppu, but the native game draws through g_my_ppu
+     * (left stale since boot: a black screen once loaded). Loading copies back. */
+    ppu_copy(g_snes->ppu, g_my_ppu);
     bool ok = RtlSaveSnapshot(path, false);
     M.guard = false;
     return ok;

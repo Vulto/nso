@@ -24,6 +24,7 @@ SAME(&PpuBeginDrawing, void (*)(Ppu *, uint8_t *, size_t, uint32_t), "PpuBeginDr
 SAME(&SmwSpcPlayer_Create, SpcPlayer *(*)(void), "SmwSpcPlayer_Create");
 SAME(&snes_free, void (*)(Snes *), "snes_free");
 SAME(&ppu_free, void (*)(Ppu *), "ppu_free");
+SAME(&ppu_copy, void (*)(Ppu *, Ppu *), "ppu_copy");
 SAME(g_snes, Snes *, "g_snes");
 SAME(g_my_ppu, Ppu *, "g_my_ppu");
 SAME(g_rtl_game_info, const RtlGameInfo *, "g_rtl_game_info");

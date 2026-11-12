@@ -54,6 +54,8 @@ int main(void)
         CHECK(RectIs(Embed_ZoomRect(c, g, 1.0f), 240, 0, 1440, 1080));
         CHECK(RectIs(Embed_ZoomRect(c, g, 0.5f), 170, 25, 820, 690));
     }
+    CHECK(Embed_LoadBlack(EMBED_LOAD_SEC) == 1.0f && Embed_LoadBlack(0.0f) == 0.0f);
+    CHECK(Embed_LoadBlack(EMBED_LOAD_FADE_SEC * 0.5f) > 0.4f && Embed_LoadBlack(EMBED_LOAD_FADE_SEC * 0.5f) < 0.6f);
     puts("embed_test: ok");
     return 0;
 }

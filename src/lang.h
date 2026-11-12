@@ -43,7 +43,8 @@ typedef enum {
     S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
     S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_CTRL_DISPLAY,
     /* embedded game pause menu (embed.h) */
-    S_EMB_CONTINUE, S_EMB_RESTART, S_EMB_QUIT,
+    S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
+    S_EMB_SLOT, S_EMB_NODATA, S_EMB_DATE,
     S_COUNT
 } StrId;
 
@@ -181,8 +182,13 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "CRT Filter",
         [S_SET_CTRL_DISPLAY] = "Control Display",
         [S_EMB_CONTINUE] = "Continue",
+        [S_EMB_LOAD] = "Load Suspend Point",
+        [S_EMB_SAVE] = "Create Suspend Point",
         [S_EMB_RESTART] = "Reset Game",
         [S_EMB_QUIT] = "To Game Selection",
+        [S_EMB_SLOT] = "Save slot %d",
+        [S_EMB_NODATA] = "No data.",
+        [S_EMB_DATE] = "%m/%d/%Y - %H:%M",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -283,8 +289,13 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "Filtro CRT",
         [S_SET_CTRL_DISPLAY] = "Exibição de controles",
         [S_EMB_CONTINUE] = "Continuar",
+        [S_EMB_LOAD] = "Carregar ponto de suspensão",
+        [S_EMB_SAVE] = "Criar ponto de suspensão",
         [S_EMB_RESTART] = "Reiniciar jogo",
         [S_EMB_QUIT] = "Voltar à seleção de jogos",
+        [S_EMB_SLOT] = "Espaço %d",
+        [S_EMB_NODATA] = "Sem dados.",
+        [S_EMB_DATE] = "%d/%m/%Y - %H:%M",
     },
 };
 

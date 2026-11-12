@@ -3194,7 +3194,7 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
-    bool ok = Embed_Start(module, romPath, stateLoadPath);
+    bool ok = Embed_Start(module, romPath, game->stateDir ? GetDataPath(game->stateDir) : NULL, stateLoadPath);
     stateLoadPath[0] = '\0';
     return ok;
 }
@@ -3856,9 +3856,10 @@ int main(void) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, introOpacity));
             }
         } else if (currentState == EMBED) {
-            const char *const items[EMBED_MENU_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_RESTART), T(S_EMB_QUIT) };
+            const char *const text[EMBED_TXT_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_LOAD), T(S_EMB_SAVE),
+                T(S_EMB_RESTART), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE) };
             if (Embed_MenuOpacity() > 0.0f) EnsureBlurResources(GetScreenWidth(), GetScreenHeight());
-            Embed_Draw(font, sysSettings[currentSystem].screen, items, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
+            Embed_Draw(font, sysSettings[currentSystem].screen, text, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
             DrawInfoBarEx(font, T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);

@@ -7,7 +7,9 @@
  * "<system>.screen", feeds the samples (mono or stereo) to a raylib
  * AudioStream, and draws a pause menu on top (End or
  * the Guide button) laid out like Switch Online's: items right-aligned left
- * of a divider over the blurred, dimmed, frozen game frame.
+ * of a divider over the blurred, dimmed, frozen game frame. Load / Create
+ * Suspend Point list four slots right of the divider, kept as the grid's
+ * Save States files ("<stateDir>/Suspend point N.sav" + .bmp thumbnail).
  *
  * The inline helpers are pure (no raylib calls) and unit-tested in
  * embed_test.c; the rest is the EMBED_IMPLEMENTATION part main.c includes. */
@@ -21,7 +23,11 @@
 
 /* "<system>.screen" values, same order as main.c SCREEN_MODE_KEYS. */
 enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
-enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_RESTART, EMBED_MENU_QUIT, EMBED_MENU_COUNT };
+enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_QUIT,
+       EMBED_MENU_COUNT };
+/* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime). */
+enum { EMBED_TXT_SLOT = EMBED_MENU_COUNT, EMBED_TXT_NODATA, EMBED_TXT_DATE, EMBED_TXT_COUNT };
+#define EMBED_SLOTS 4
 
 /* Where a fw x fh picture goes on a sw x sh screen.
  * Pixel Perfect: largest integer scale, square pixels (1080p: 4x, NES 1024x960).
@@ -76,6 +82,15 @@ static inline float Embed_BackEase(float t)
     return 1.0f - powf(1.0f - t, 4.0f);
 }
 
+/* Loading a suspend point (frames 144-159): after the menu exit the screen
+ * cuts to black, holds, then fades back in. Black's opacity, t = seconds left. */
+#define EMBED_LOAD_SEC 0.40f
+#define EMBED_LOAD_FADE_SEC 0.07f
+static inline float Embed_LoadBlack(float t)
+{
+    return fminf(1.0f, fmaxf(0.0f, t / EMBED_LOAD_FADE_SEC));
+}
+
 /* p = 0: card, 1: game rect. */
 static inline Rectangle Embed_ZoomRect(Rectangle card, Rectangle game, float p)
 {
@@ -83,12 +98,13 @@ static inline Rectangle Embed_ZoomRect(Rectangle card, Rectangle game, float p)
                         card.width + (game.width - card.width) * p, card.height + (game.height - card.height) * p };
 }
 
-/* dataPath: the module's game data (nsomod.h); stateLoad: a state file to resume, or NULL. */
-bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad);
+/* dataPath: the module's game data (nsomod.h); stateDir: where suspend points go
+ * (NULL: none); stateLoad: a state file to resume, or NULL. */
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad);
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
 /* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc);
+void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc);
 /* After Embed_Update returned false: the frozen frame at t (0..1) of the way into card. */
 void Embed_DrawBack(int screenMode, Rectangle card, float t);
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim);
@@ -101,8 +117,11 @@ void Embed_Stop(void);
 #ifndef EMBED_IMPLEMENTATION_ONCE
 #define EMBED_IMPLEMENTATION_ONCE
 
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "nso.h"
+#include "savestate.h"
 
 /* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
@@ -116,11 +135,11 @@ void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, floa
 
 #if defined(_WIN32)
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
-bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad)
-{ (void)modulePath; (void)dataPath; (void)stateLoad; return false; }
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad)
+{ (void)modulePath; (void)dataPath; (void)stateDir; (void)stateLoad; return false; }
 bool Embed_Update(float dt) { (void)dt; return false; }
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
-{ (void)font; (void)screenMode; (void)items; (void)blur; (void)blurDirLoc; }
+void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
+{ (void)font; (void)screenMode; (void)text; (void)blur; (void)blurDirLoc; }
 void Embed_DrawBack(int screenMode, Rectangle card, float t) { (void)screenMode; (void)card; (void)t; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
@@ -155,9 +174,16 @@ static struct {
     RenderTexture2D blurA, blurB;
     bool blurReady;
     bool quitting;   /* To Game Selection: false once the menu exit ends */
+    char stateDir[1100];                   /* "" = no suspend points */
+    const uint8_t *last;                   /* last frame (thumbnail), module-owned */
+    bool slotsFocus;
+    int slotSel, loadSlot;                 /* loadSlot: 1..EMBED_SLOTS once the menu exit ends */
+    float blackT;                          /* Embed_LoadBlack countdown */
+    long slotTime[EMBED_SLOTS];            /* .sav mtime, 0 = empty */
+    Texture2D thumb[EMBED_SLOTS];
 } embed;
 
-bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateLoad)
+bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad)
 {
     if (embed.active) return false;
     memset(&embed, 0, sizeof(embed));
@@ -179,6 +205,9 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
     embed.fbh = embed.api->fb_h;
     embed.channels = embed.api->channels;
     embed.fps = embed.api->fps;
+    if (stateDir && embed.api->state_save && embed.api->state_load
+        && (DirectoryExists(stateDir) || MakeDirectory(stateDir) == 0))
+        snprintf(embed.stateDir, sizeof(embed.stateDir), "%s", stateDir);
 
     Image img = GenImageColor(embed.fbw, embed.fbh, BLACK);
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
@@ -211,6 +240,7 @@ void Embed_Stop(void)
     if (embed.ownAudioDevice) CloseAudioDevice();
     UnloadTexture(embed.tex);
     if (embed.blurA.id) { UnloadRenderTexture(embed.blurA); UnloadRenderTexture(embed.blurB); }
+    for (int i = 0; i < EMBED_SLOTS; i++) if (embed.thumb[i].id) UnloadTexture(embed.thumb[i]);
     SetExitKey(KEY_ESCAPE);
     memset(&embed, 0, sizeof(embed));
 }
@@ -276,7 +306,58 @@ static bool Embed_Reload(void)
     }
     embed.api = api;
     embed.pendN = 0;
+    embed.last = NULL;   /* the old copy's buffer */
     return true;
+}
+
+/* Slot i (0-based) file with ext; false if it does not fit. */
+static bool Embed_SlotPath(char *out, size_t n, int i, const char *ext)
+{
+    char name[32];
+    snprintf(name, sizeof(name), "Suspend point %d", i + 1);
+    return Ss_Path(out, n, embed.stateDir, name, ext) == 0;
+}
+
+static void Embed_ScanSlot(int i)
+{
+    char p[1200];
+    if (embed.thumb[i].id) UnloadTexture(embed.thumb[i]);
+    embed.thumb[i] = (Texture2D){ 0 };
+    embed.slotTime[i] = 0;
+    if (!embed.stateDir[0] || !Embed_SlotPath(p, sizeof(p), i, ".sav") || !FileExists(p)) return;
+    embed.slotTime[i] = GetFileModTime(p);
+    if (Embed_SlotPath(p, sizeof(p), i, ".bmp") && FileExists(p)) {
+        embed.thumb[i] = LoadTexture(p);
+        SetTextureFilter(embed.thumb[i], TEXTURE_FILTER_BILINEAR);
+    }
+}
+
+/* Create Suspend Point: the state goes to a temp file first so a failed save
+ * never clobbers the slot; the thumbnail is the frozen frame. */
+static void Embed_SaveSlot(int i)
+{
+    char sav[1200], tmp[1200], bmp[1200];
+    if (!Embed_SlotPath(sav, sizeof(sav), i, ".sav") || !Embed_SlotPath(tmp, sizeof(tmp), i, ".sav.tmp")
+        || !Embed_SlotPath(bmp, sizeof(bmp), i, ".bmp")) return;
+    if (!embed.api->state_save(tmp) || rename(tmp, sav) != 0) { remove(tmp); return; }
+    if (embed.last) {
+        Image img = { .data = (void *)embed.last, .width = embed.fbw, .height = embed.fbh,
+                      .mipmaps = 1, .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
+        ExportImage(img, bmp);
+    }
+    Embed_ScanSlot(i);
+}
+
+/* After the menu exit: load the slot, show its first frame under the black. */
+static void Embed_LoadSlot(int i)
+{
+    char sav[1200];
+    if (!Embed_SlotPath(sav, sizeof(sav), i, ".sav") || !embed.api->state_load(sav)) return;
+    NsomodInput none = { 0 };
+    NsomodFrame f = embed.api->frame(&none);
+    UpdateTexture(embed.tex, f.rgb24);
+    embed.last = f.rgb24;
+    embed.blackT = EMBED_LOAD_SEC;
 }
 
 /* Opening pauses game and audio; both resume once the exit animation ends. */
@@ -285,8 +366,29 @@ static void Embed_SetMenu(bool open)
     embed.menuOpen = open;
     if (!open) return;
     embed.menuSel = EMBED_MENU_CONTINUE;
+    embed.slotsFocus = false;
     embed.blurReady = false;
+    for (int i = 0; i < EMBED_SLOTS; i++) Embed_ScanSlot(i);
     if (embed.audio) PauseAudioStream(embed.stream);
+}
+
+/* Slot list (Load / Create focused right of the divider). */
+static void Embed_SlotsInput(bool gp)
+{
+    bool load = (embed.menuSel == EMBED_MENU_LOAD);
+    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_LEFT) || Nso_PadBackPressed(0)
+        || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT))) {
+        embed.slotsFocus = false;
+        return;
+    }
+    if ((IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) && embed.slotSel > 0)
+        embed.slotSel--;
+    if ((IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
+        && embed.slotSel + 1 < EMBED_SLOTS)
+        embed.slotSel++;
+    if (!(IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0))) return;
+    if (!load) Embed_SaveSlot(embed.slotSel);
+    else if (embed.slotTime[embed.slotSel]) { embed.loadSlot = embed.slotSel + 1; Embed_SetMenu(false); }
 }
 
 bool Embed_Update(float dt)
@@ -301,18 +403,32 @@ bool Embed_Update(float dt)
         embed.menuT = fmaxf(0.0f, embed.menuT - st);
         embed.acc = 0.0;
         if (embed.menuT <= 0.0f && embed.quitting) return false;
-        if (embed.menuT <= 0.0f && embed.audio) ResumeAudioStream(embed.stream);
+        if (embed.menuT <= 0.0f && embed.loadSlot) { Embed_LoadSlot(embed.loadSlot - 1); embed.loadSlot = 0; }
+        if (embed.menuT <= 0.0f && embed.audio && embed.blackT <= 0.0f) ResumeAudioStream(embed.stream);
+        return true;
+    }
+    if (embed.blackT > 0.0f) {   /* suspend point loading: still paused */
+        embed.blackT = fmaxf(0.0f, embed.blackT - dt);
+        embed.acc = 0.0;
+        if (embed.blackT <= 0.0f && embed.audio) ResumeAudioStream(embed.stream);
         return true;
     }
 
     if (embed.menuOpen) {   /* paused: no game frames */
         embed.acc = 0.0;
-        if (toggle || IsKeyPressed(KEY_B) || Nso_PadBackPressed(0)) { Embed_SetMenu(false); return true; }
+        if (toggle) { Embed_SetMenu(false); return true; }
+        if (embed.slotsFocus) { Embed_SlotsInput(gp); return true; }
+        if (IsKeyPressed(KEY_B) || Nso_PadBackPressed(0)) { Embed_SetMenu(false); return true; }
         if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)))
             embed.menuSel = (embed.menuSel + EMBED_MENU_COUNT - 1) % EMBED_MENU_COUNT;
         if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
             embed.menuSel = (embed.menuSel + 1) % EMBED_MENU_COUNT;
-        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0)) {
+        bool slots = embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE;
+        bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT));
+        bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0);
+        if (slots && (ok || right)) {
+            if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; }
+        } else if (ok) {
             if (embed.menuSel == EMBED_MENU_QUIT) embed.quitting = true;
             if (embed.menuSel == EMBED_MENU_RESTART) {
                 if (!Embed_Reload()) return false;
@@ -329,6 +445,7 @@ bool Embed_Update(float dt)
         NsomodFrame f = { 0 };
         for (int i = 0; i < n; i++) f = embed.api->frame(&p1);
         UpdateTexture(embed.tex, f.rgb24);
+        embed.last = f.rgb24;
     }
     Embed_PumpAudio();
     return true;
@@ -377,7 +494,47 @@ static void Embed_BuildBlur(Shader sh, int loc)
     embed.blurReady = true;
 }
 
-void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
+/* Right of the divider at 1080p (frames 124-142): four 626 x 168 boxes, 210
+ * apart, thumbnail left; the focused one white with red text. */
+static void Embed_DrawSlots(Font font, const char *const text[EMBED_TXT_COUNT], float k, float ox, float a,
+                            Color panel, Color selInk)
+{
+    float fs = roundf(40.0f * k), bw = roundf(2.0f * k);
+    for (int i = 0; i < EMBED_SLOTS; i++) {
+        Rectangle box = { roundf(1071.0f * k) + ox, roundf((141.0f + 210.0f * i) * k), roundf(626.0f * k), roundf(168.0f * k) };
+        Rectangle th = { box.x, box.y, roundf(216.0f * k), box.height };
+        bool sel = embed.slotsFocus && i == embed.slotSel;
+        if (sel) DrawRectangleRec((Rectangle){ th.x + th.width, box.y, box.width - th.width, box.height }, Fade(panel, a));
+        if (embed.thumb[i].id)
+            DrawTexturePro(embed.thumb[i], (Rectangle){ 0, 0, (float)embed.thumb[i].width, (float)embed.thumb[i].height },
+                           th, (Vector2){ 0 }, 0.0f, Fade(WHITE, a));
+        else {
+            DrawRectangleRec(th, Fade((Color){ 65, 67, 67, 255 }, a));
+            if (!embed.slotTime[i]) {
+                Vector2 m = MeasureTextEx(font, text[EMBED_TXT_NODATA], roundf(32.0f * k), 0.0f);
+                DrawTextEx(font, text[EMBED_TXT_NODATA], (Vector2){ roundf(th.x + (th.width - m.x) * 0.5f),
+                           roundf(th.y + (th.height - m.y) * 0.5f) }, roundf(32.0f * k), 0.0f, Fade(WHITE, a));
+            }
+        }
+        DrawRectangleLinesEx(box, bw, Fade(panel, a));
+        char line[64];
+        Color ink = Fade(sel ? selInk : WHITE, a);
+        float tx = th.x + th.width + roundf(53.0f * k);
+        snprintf(line, sizeof(line), text[EMBED_TXT_SLOT], i + 1);
+        Vector2 m = MeasureTextEx(font, line, fs, 0.0f);
+        if (!embed.slotTime[i]) {   /* label alone, centred */
+            DrawTextEx(font, line, (Vector2){ tx, roundf(box.y + (box.height - m.y) * 0.5f) }, fs, 0.0f, ink);
+            continue;
+        }
+        DrawTextEx(font, line, (Vector2){ tx, roundf(box.y + 65.0f * k - m.y * 0.5f) }, fs, 0.0f, ink);
+        time_t t = (time_t)embed.slotTime[i];
+        struct tm tm;
+        if (localtime_r(&t, &tm) && strftime(line, sizeof(line), text[EMBED_TXT_DATE], &tm))
+            DrawTextEx(font, line, (Vector2){ tx, roundf(box.y + 105.0f * k - m.y * 0.5f) }, fs, 0.0f, ink);
+    }
+}
+
+void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
 {
     if (!embed.active) return;
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
@@ -392,6 +549,7 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
             DrawRectangleRec((Rectangle){ dst.x, dst.y + y * lh + lh * 0.6f, dst.width, fmaxf(1.0f, lh * 0.4f) },
                              Fade(BLACK, 0.35f * (1.0f - a)));
     }
+    if (embed.blackT > 0.0f) DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, Embed_LoadBlack(embed.blackT)));
     if (a <= 0.0f) return;
 
     /* Backdrop: blurred frame cross-faded in, then dimmed to ~65%. */
@@ -413,14 +571,17 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
     for (int i = 0; i < EMBED_MENU_COUNT; i++) {
         float cy = roundf((300.0f + 92.0f * i) * k);
         bool sel = (i == embed.menuSel);
-        if (sel) {
+        if (sel) {   /* grey with black text while the slots have the focus */
             float bx = roundf(240.0f * k) + ox;
-            DrawRectangleRec((Rectangle){ bx, cy - roundf(36.0f * k), divX - bx, roundf(72.0f * k) }, Fade(panel, a));
+            DrawRectangleRec((Rectangle){ bx, cy - roundf(36.0f * k), divX - bx, roundf(72.0f * k) },
+                             Fade(embed.slotsFocus ? (Color){ 192, 191, 200, 255 } : panel, a));
         }
-        Vector2 m = MeasureTextEx(font, items[i], fs, 0.0f);
-        DrawTextEx(font, items[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
-                   fs, 0.0f, Fade(sel ? selInk : WHITE, a));
+        Vector2 m = MeasureTextEx(font, text[i], fs, 0.0f);
+        DrawTextEx(font, text[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
+                   fs, 0.0f, Fade(!sel ? WHITE : embed.slotsFocus ? BLACK : selInk, a));
     }
+    if (embed.stateDir[0] && (embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE))
+        Embed_DrawSlots(font, text, k, ox, a, panel, selInk);
 }
 
 void Embed_DrawBack(int screenMode, Rectangle card, float t)
