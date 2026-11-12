@@ -2835,7 +2835,7 @@ static void Details_GlowRect(Rectangle r, float rad, float th, float alpha) {
 }
 
 /* Details card as in the video: frosted, dimmed grid behind; one light card
- * with a lighter left column (cover) and the text column on the right. */
+ * (one panel, one colour: cover on the left, text column on the right). */
 static void Details_Draw(Font font) {
     if (detailsT <= 0.0f || GameIdx >= ActiveGameCount()) return;
     const GameEntry *g = &ActiveGames()[GameIdx];
@@ -2843,17 +2843,14 @@ static void Details_Draw(Font font) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
     const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 }, body = { 85, 90, 91, 255 };
-    const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 }, rule = { 205, 211, 213, 255 };
+    const Color panel = { 229, 235, 237, 255 }, rule = { 205, 211, 213, 255 };
 
     DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * a));
 
     Rectangle card = { sw * 0.042f, sh * 0.047f, sw * 0.916f, sh * 0.905f };
     float rad = sh * 0.012f, lw = sw * 0.259f;
     float rnd = 2.0f * rad / fminf(card.width, card.height);
-    DrawRectangleRounded(card, rnd, 12, Fade(colL, a));
-    Rectangle right = { card.x + lw, card.y, card.width - lw, card.height };
-    DrawRectangleRounded(right, 2.0f * rad / fminf(right.width, right.height), 12, Fade(colR, a));
-    DrawRectangleRec((Rectangle){ right.x, right.y, rad * 2.0f, right.height }, Fade(colR, a));
+    DrawRectangleRounded(card, rnd, 12, Fade(panel, a));   /* single draw: no seam while fading */
 
     Texture2D tex = gameBoxarts[GameIdx];
     float cvW, cvH;
