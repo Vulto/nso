@@ -574,6 +574,7 @@ static int GameIdx = 0;
 /* Y Move (hold): selected game follows the arrows; saved on release. */
 static bool gridLifted = false;
 static bool gridLiftMoved = false;
+static int gridLiftFrom = 0;   /* index the lifted game had on entering move mode (B restores) */
 /* Move-mode look (0..1): dark gaps, smaller covers, slot markers, rail dimmed.
  * Same linear picom-default fade as the Details card. */
 static float liftT = 0.0f;
@@ -752,7 +753,7 @@ static void InfoBar_Update(float dt) {
 
 static const char *InfoBar_Text(InfoBarId id) {
     switch (id) {
-        case INFO_BAR_MOSAIC:  return T(S_MOSAIC_INFO);
+        case INFO_BAR_MOSAIC:  return T(gridLifted ? S_MOVE_INFO : S_MOSAIC_INFO);
         case INFO_BAR_SIDEBAR:
             return scrapeBusy ? T(S_INFO_CANCEL) : T(S_SIDEBAR_INFO);
         default: return NULL;
@@ -2250,27 +2251,6 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         }
     }
 
-    /* Video's drop-slot markers: small rounded squares on every cell's left
-     * edge (row middle) and at the left of each row boundary. */
-    if (mv > 0.0f) {
-        float m = fmaxf(10.0f, (float)screen_h * 0.0135f);
-        Color mc = Fade((Color){ 200, 202, 202, 255 }, mv);
-        int rows = (numImgs + cols - 1) / cols;
-        for (int r = 0; r <= rows; r++) {
-            float ry = (float)r * cellH - v_offset;
-            for (int c = 0; c < cols && r < rows; c++) {
-                if (r * cols + c >= numImgs) break;
-                Vector2 at = { (float)origin_x + (float)c * cellW, ry + cellH * 0.5f };
-                if (at.y < -m || at.y > (float)screen_h + m) continue;
-                DrawRectangleRoundedLinesEx((Rectangle){ at.x - m * 0.5f, at.y - m * 0.5f, m, m },
-                                            0.45f, 6, fmaxf(1.5f, m * 0.12f), mc);
-            }
-            if (r > 0 && ry > -m && ry < (float)screen_h + m)
-                DrawRectangleRoundedLinesEx((Rectangle){ (float)origin_x - m * 0.5f, ry - m * 0.5f, m, m },
-                                            0.45f, 6, fmaxf(1.5f, m * 0.12f), mc);
-        }
-    }
-
     if (GameIdx >= 0 && GameIdx < numImgs) {
         int col = GameIdx % cols;
         int row = GameIdx / cols;
@@ -3491,7 +3471,7 @@ int main(void) {
 
                     /* KEY_O only: shrink selection, then expand full menu (no Select). */
                     if (!sidebarOpen && !sidebarExpandPending && !sidebarClosing
-                        && sbWidthPhase == SB_WIDTH_IDLE
+                        && sbWidthPhase == SB_WIDTH_IDLE && !gridLifted
                         && canNavigate && IsKeyPressed(KEY_O)) {
                         RequestSidebarExpand();
                         break;
@@ -3507,12 +3487,25 @@ int main(void) {
                         break;
                     }
 
-                    /* Y held: the lifted game follows the arrows; release drops + saves. */
+                    /* Move mode (Y tap): arrows move the lifted game; A confirms
+                     * and saves, B puts it back where it was (no save); Y ignored. */
                     if (gridLifted) {
-                        bool held = IsKeyDown(KEY_Y) || (gp && IsGamepadButtonDown(0, NSO_BTN_Y));
-                        if (!held || GameIdx >= gameCount) {
+                        if (GameIdx >= gameCount) {
+                            gridLifted = false;
+                            gridLiftMoved = false;
+                            break;
+                        }
+                        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) {
                             gridLifted = false;
                             if (gridLiftMoved) Order_SaveActive();
+                            gridLiftMoved = false;
+                            break;
+                        }
+                        if (IsKeyPressed(KEY_B) || gpBack) {
+                            /* Only the lifted game moved, so moving it back restores
+                             * the order exactly. */
+                            if (gridLiftFrom >= 0 && gridLiftFrom < gameCount) Grid_MoveLifted(gridLiftFrom);
+                            gridLifted = false;
                             gridLiftMoved = false;
                             break;
                         }
@@ -3527,6 +3520,7 @@ int main(void) {
                     if (onGame && (IsKeyPressed(KEY_Y) || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y)))) {
                         gridLifted = true;
                         gridLiftMoved = false;
+                        gridLiftFrom = GameIdx;
                         break;
                     }
 

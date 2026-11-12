@@ -12,7 +12,7 @@ typedef enum { LANG_EN = 0, LANG_PT, LANG_COUNT } NsoLang;
 
 typedef enum {
     S_RAW = 0,                 /* NsoMsg only: show arg verbatim */
-    S_MOSAIC_INFO, S_SIDEBAR_INFO, S_INFO_CANCEL, S_MANAGE_INFO,
+    S_MOSAIC_INFO, S_SIDEBAR_INFO, S_INFO_CANCEL, S_MANAGE_INFO, S_MOVE_INFO,
     /* scraping */
     S_SCRAPE_DONE, S_SCRAPE_DONE_MISSED, S_SCRAPE_NO_SOURCE, S_SCRAPE_DOWNLOAD_FAILED,
     S_SCRAPE_INDEX, S_SCRAPE_NO_CURL, S_SCRAPE_CANCELLED, S_SCRAPE_INDEX_TOO_LARGE,
@@ -86,6 +86,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SIDEBAR_INFO] = "    🅑 Back      🅐 OK   ",
         [S_INFO_CANCEL] = "    🅑 Cancel   ",
         [S_MANAGE_INFO] = "    🅐 Select      🅑 Back   ",
+        [S_MOVE_INFO] = "    🅐 Confirm      🅑 Cancel Move   ",
         [S_SCRAPE_DONE] = "Done",
         [S_SCRAPE_DONE_MISSED] = "Done, %d missed",
         [S_SCRAPE_NO_SOURCE] = "No art source",
@@ -179,6 +180,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SIDEBAR_INFO] = "    🅑 Voltar      🅐 OK   ",
         [S_INFO_CANCEL] = "    🅑 Cancelar   ",
         [S_MANAGE_INFO] = "    🅐 Selecionar      🅑 Voltar   ",
+        [S_MOVE_INFO] = "    🅐 Confirmar      🅑 Cancelar movimento   ",
         [S_SCRAPE_DONE] = "Concluído",
         [S_SCRAPE_DONE_MISSED] = "Concluído, %d sem capa",
         [S_SCRAPE_NO_SOURCE] = "Sem fonte de capas",

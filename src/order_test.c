@@ -62,6 +62,29 @@ int main(void)
     CHECK(p[0] == 2 && p[1] == 0 && p[2] == 1);
     CHECK(Order_Format(buf, 8, u, 3) == -1 && buf[0] == '\0');
 
+    /* Move mode: B puts the lifted game back at its entry index, which restores
+     * the order exactly; A keeps the new order, and that is what gets saved. */
+    {
+        const char *g[6] = { "A", "B", "C", "D", "E", "F" };
+        const char *w[6];
+        memcpy(w, g, sizeof(w));
+        int from = 1, cur = from;
+        int path[4] = { 2, 3, 4, 0 };
+        for (int k = 0; k < 4; k++) { Order_Move(w, sizeof(w[0]), 6, cur, path[k]); cur = path[k]; }
+        CHECK(strcmp(w[0], "B") == 0 && strcmp(w[1], "A") == 0);
+        Order_Move(w, sizeof(w[0]), 6, cur, from);   /* cancel */
+        for (int k = 0; k < 6; k++) CHECK(w[k] == g[k]);
+
+        cur = from;
+        Order_Move(w, sizeof(w[0]), 6, cur, 3); cur = 3;   /* confirm at 3 */
+        char sv[64];
+        CHECK(Order_Format(sv, sizeof(sv), w, 6) == 0);
+        CHECK(strcmp(sv, "A\nC\nD\nB\nE\nF\n") == 0);
+        int q[6];
+        Order_Perm(sv, g, 6, q);   /* reload of the saved file gives the new order */
+        CHECK(q[0] == 0 && q[1] == 2 && q[2] == 3 && q[3] == 1 && q[4] == 4 && q[5] == 5);
+    }
+
     if (fails) return 1;
     puts("order_test: ok");
     return 0;
