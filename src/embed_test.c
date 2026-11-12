@@ -41,6 +41,8 @@ int main(void)
     CHECK(Embed_MenuEase(0.0f) == 0.0f && Embed_MenuEase(1.0f) == 1.0f);
     CHECK(Embed_MenuEase(-1.0f) == 0.0f && Embed_MenuEase(2.0f) == 1.0f);
     CHECK(Embed_MenuEase(0.5f) > 0.5f && Embed_MenuEase(0.5f) < Embed_MenuEase(0.6f));
+    CHECK(Embed_BackEase(0.0f) == 0.0f && Embed_BackEase(1.0f) == 1.0f);
+    CHECK(Embed_BackEase(0.2f) > 0.5f && Embed_BackEase(0.2f) < Embed_BackEase(0.3f));
     puts("embed_test: ok");
     return 0;
 }

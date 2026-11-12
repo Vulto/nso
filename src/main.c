@@ -675,6 +675,7 @@ typedef enum {
 
 static MosaicIntroPhase mosaicIntroPhase = MOSAIC_INTRO_NONE;
 static float mosaicIntroTimer = 0.0f;
+static float embedBackT = -1.0f;   /* >= 0: embedded game shrinking into its card */
 
 /* Leave mosaic → systems: reverse of enter (info out → shrink → slide; no delay). */
 typedef enum {
@@ -3213,6 +3214,8 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     if (!Cfg_Get(text, game->embedRomKey, rom, sizeof(rom)) || !rom[0]) return false;
     snprintf(romPath, sizeof(romPath), "%s", rom[0] == '/' ? rom : GetDataPath(rom));
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
+    Embed_Stop();   /* relaunched before the back transition ended */
+    embedBackT = -1.0f;
     return Embed_Start(module, romPath);
 }
 
@@ -3301,6 +3304,17 @@ static void UpdateSplash(float dt) {
         slideDirection = -1;
         slideOffset = 0.0f;
     }
+}
+
+/* Selected cover at rest (scale 1), as DrawSlotImages places it. */
+static Rectangle SelectedCardRect(void) {
+    GridLayout g = GetGridLayout();
+    if (g.slotsPerRow < 1) return (Rectangle){ 0 };
+    float fitW, fitH;
+    FitAspectInCell(g.cellW, g.cellH, Nso_OrientAspect(GameOrientAt(GameIdx)), &fitW, &fitH);
+    float x = (float)g.originX + (float)(GameIdx % g.slotsPerRow) * g.cellW;
+    float y = (float)(GameIdx / g.slotsPerRow) * g.cellH - viewportY;
+    return (Rectangle){ x + (g.cellW - fitW) * 0.5f, y + (g.cellH - fitH) * 0.5f, fitW, fitH };
 }
 
 static void DrawMosaicSlots(Color background) {
@@ -3637,8 +3651,12 @@ int main(void) {
             }
         }
 
+        if (embedBackT >= 0.0f) {
+            embedBackT += dt / EMBED_BACK_SEC;
+            if (embedBackT >= 1.0f) { Embed_Stop(); embedBackT = -1.0f; }
+        }
         if (currentState == EMBED && !Embed_Update(dt)) {
-            Embed_Stop();
+            embedBackT = 0.0f;   /* Embed_Stop once the frame reached its card */
             currentState = MOSAIC;
             BeginMosaicEnterIntro();
             overlayConsumedConfirm = true;   /* the Quit press must not relaunch */
@@ -3861,6 +3879,8 @@ int main(void) {
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);
+            if (embedBackT >= 0.0f)
+                Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(), embedBackT);
             if (statesOpen && GameIdx < ActiveGameCount()) {
                 States_Draw(font, ActiveGames()[GameIdx].title);
             }

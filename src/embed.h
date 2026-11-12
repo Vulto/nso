@@ -64,11 +64,22 @@ static inline float Embed_MenuEase(float t)
     return 1.0f - powf(1.0f - t, 1.6f);
 }
 
+/* Back to the grid (Switch Online capture, frames 5848-5861): after the
+ * menu exit, the frozen frame shrinks into the selected card while fading. */
+#define EMBED_BACK_SEC 0.35f
+static inline float Embed_BackEase(float t)
+{
+    t = fminf(1.0f, fmaxf(0.0f, t));
+    return 1.0f - powf(1.0f - t, 4.0f);
+}
+
 bool Embed_Start(const char *modulePath, const char *romPath);
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
 /* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
 void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc);
+/* After Embed_Update returned false: the frozen frame at t (0..1) of the way into card. */
+void Embed_DrawBack(int screenMode, Rectangle card, float t);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
 
@@ -87,6 +98,7 @@ bool Embed_Start(const char *modulePath, const char *romPath) { (void)modulePath
 bool Embed_Update(float dt) { (void)dt; return false; }
 void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc)
 { (void)font; (void)screenMode; (void)items; (void)blur; (void)blurDirLoc; }
+void Embed_DrawBack(int screenMode, Rectangle card, float t) { (void)screenMode; (void)card; (void)t; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
 #else
@@ -117,6 +129,7 @@ static struct {
     float menuT;
     RenderTexture2D blurA, blurB;
     bool blurReady;
+    bool quitting;   /* To Game Selection: false once the menu exit ends */
 } embed;
 
 bool Embed_Start(const char *modulePath, const char *romPath)
@@ -229,6 +242,7 @@ bool Embed_Update(float dt)
     else if (embed.menuT > 0.0f) {   /* exit animation: still paused */
         embed.menuT = fmaxf(0.0f, embed.menuT - st);
         embed.acc = 0.0;
+        if (embed.menuT <= 0.0f && embed.quitting) return false;
         if (embed.menuT <= 0.0f && embed.audio) ResumeAudioStream(embed.stream);
         return true;
     }
@@ -241,7 +255,7 @@ bool Embed_Update(float dt)
         if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
             embed.menuSel = (embed.menuSel + 1) % EMBED_MENU_COUNT;
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0)) {
-            if (embed.menuSel == EMBED_MENU_QUIT) return false;
+            if (embed.menuSel == EMBED_MENU_QUIT) embed.quitting = true;
             if (embed.menuSel == EMBED_MENU_RESTART) {
                 embed.api->shutdown();
                 if (!embed.api->init(&embed.cfg)) return false;
@@ -351,6 +365,18 @@ void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_CO
         DrawTextEx(font, items[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
                    fs, 0.0f, Fade(sel ? selInk : WHITE, a));
     }
+}
+
+void Embed_DrawBack(int screenMode, Rectangle card, float t)
+{
+    if (!embed.active) return;
+    Rectangle a = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight());
+    float p = Embed_BackEase(t), q = 1.0f - t;
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.35f * q));
+    Rectangle r = { a.x + (card.x - a.x) * p, a.y + (card.y - a.y) * p,
+                    a.width + (card.width - a.width) * p, a.height + (card.height - a.height) * p };
+    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H }, r,
+                   (Vector2){ 0 }, 0.0f, Fade(WHITE, q * q));
 }
 #endif /* _WIN32 */
 
