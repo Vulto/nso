@@ -73,8 +73,7 @@ static const float INFO_BAR_FADE_SEC = 0.4f;
 static const float INFO_BAR_SLIDE_PX = 13.0f;
 static const float MOSAIC_SELECT_SCALE = 1.18f;
 static const float MOSAIC_LIFT_SCALE = 1.30f;   /* Y Move: lifted tile */
-static const float DETAILS_SLIDE_SEC = 0.28f;
-static const float DETAILS_WIDTH_FRAC = 0.34f;
+static const float DETAILS_SLIDE_SEC = 0.20f;   /* video: ~12 frames at 60 fps */
 
 
 static char baseDir[1024] = {0};
@@ -571,7 +570,7 @@ static int GameIdx = 0;
 static bool gridLifted = false;
 static bool gridLiftMoved = false;
 
-/* X Details panel: slides in from the right (detailsT 0..1). */
+/* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
 static float detailsT = 0.0f;
 
@@ -2807,36 +2806,65 @@ static float Details_Text(Font font, const char *text, Vector2 pos, float size, 
     return s;
 }
 
+/* Video-style gradient glow around the highlighted row: pink top, cyan right,
+ * blue corners; traced along the rounded outline so it follows the corners. */
+static void Details_GlowRect(Rectangle r, float rad, float th, float alpha) {
+    const Color cTL = { 110, 150, 245, 255 }, cTR = { 245, 185, 232, 255 };
+    const Color cBR = { 90, 125, 245, 255 },  cBL = { 190, 235, 250, 255 };
+    const int steps = 10;
+    Vector2 ctr[4] = { { r.x + r.width - rad, r.y + rad }, { r.x + r.width - rad, r.y + r.height - rad },
+                       { r.x + rad, r.y + r.height - rad }, { r.x + rad, r.y + rad } };
+    Vector2 prev = { 0 };
+    for (int k = 0; k <= 4 * (steps + 1); k++) {
+        int q = (k / (steps + 1)) % 4, j = k % (steps + 1);
+        float a = (-90.0f + 90.0f * (float)q + 90.0f * (float)j / (float)steps) * DEG2RAD;
+        Vector2 p = { ctr[q].x + rad * cosf(a), ctr[q].y + rad * sinf(a) };
+        float u = (p.x - r.x) / r.width, v = (p.y - r.y) / r.height;
+        Color col = ColorLerp(ColorLerp(cTL, cTR, u), ColorLerp(cBL, cBR, u), v);
+        col = Fade(col, alpha);
+        if (k > 0) DrawLineEx(prev, p, th, col);
+        DrawCircleV(p, th * 0.5f, col);
+        prev = p;
+    }
+}
+
+/* Details card as in the video: frosted, dimmed grid behind; one light card
+ * with a lighter left column (cover) and the text column on the right. */
 static void Details_Draw(Font font) {
     if (detailsT <= 0.0f || GameIdx >= ActiveGameCount()) return;
     const GameEntry *g = &ActiveGames()[GameIdx];
     float e = 1.0f - powf(1.0f - detailsT, 3.0f);   /* ease-out cubic */
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
-    float fs = (float)font.baseSize;
-    float w = sw * DETAILS_WIDTH_FRAC;
-    float x = sw - w * e;
-    float pad = 40.0f;
-    float cx = x + pad, cw = w - 2.0f * pad, y = 60.0f;
+    float a = fminf(1.0f, fmaxf(0.0f, (e - 0.25f) / 0.75f));   /* card fades in after the wash */
+    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 }, body = { 85, 90, 91, 255 };
+    const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 }, rule = { 205, 211, 213, 255 };
 
-    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.45f * e));
-    DrawRectangleRec((Rectangle){ x, 0.0f, w, sh }, (Color){ 40, 40, 40, 245 });
-    BeginScissorMode((int)x, 0, (int)w + 1, (int)sh);
+    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * e));
+    DrawRectangle(0, 0, (int)sw, (int)sh, Fade((Color){ 232, 237, 239, 255 }, 0.6f * sinf(PI * e)));
+
+    Rectangle card = { sw * 0.042f, sh * 0.047f, sw * 0.916f, sh * 0.905f };
+    float rad = sh * 0.012f, lw = sw * 0.259f;
+    float rnd = 2.0f * rad / fminf(card.width, card.height);
+    DrawRectangleRounded(card, rnd, 12, Fade(colL, a));
+    Rectangle right = { card.x + lw, card.y, card.width - lw, card.height };
+    DrawRectangleRounded(right, 2.0f * rad / fminf(right.width, right.height), 12, Fade(colR, a));
+    DrawRectangleRec((Rectangle){ right.x, right.y, rad * 2.0f, right.height }, Fade(colR, a));
 
     Texture2D tex = gameBoxarts[GameIdx];
     float cvW, cvH;
-    FitAspectInCell(cw, sh * 0.36f, Nso_OrientAspect(GameOrientAt(GameIdx)), &cvW, &cvH);
-    Rectangle cr = { cx + (cw - cvW) * 0.5f, y, cvW, cvH };
+    FitAspectInCell(sw * 0.208f, sh * 0.30f, Nso_OrientAspect(GameOrientAt(GameIdx)), &cvW, &cvH);
+    Rectangle cr = { card.x + (lw - cvW) * 0.5f, sh * 0.139f, cvW, cvH };
     if (tex.id) {
         DrawTexturePro(tex, (Rectangle){ 0, 0, (float)tex.width, (float)tex.height }, cr,
-                       (Vector2){ 0 }, 0.0f, WHITE);
+                       (Vector2){ 0 }, 0.0f, Fade(WHITE, a));
     } else {
-        DrawRectangleRec(cr, DARKGRAY);
-        DrawMissingCover(tex, cr, WHITE);
+        DrawRectangleRec(cr, Fade(DARKGRAY, a));
+        DrawMissingCover(tex, cr, Fade(WHITE, a));
     }
-    y += cvH + 30.0f;
 
-    y += Details_Text(font, g->title ? g->title : "", (Vector2){ cx, y }, fs * 1.2f, cw, WHITE) + 30.0f;
+    float tx = sw * 0.334f, tw = card.x + card.width - sw * 0.05f - tx;
+    Details_Text(font, g->title ? g->title : "", (Vector2){ tx, sh * 0.140f }, sh * 0.040f, tw, Fade(ink, a));
 
     int repo = Details_Repo(g);
     char source[2304], status[192] = "";
@@ -2853,31 +2881,37 @@ static void Details_Draw(Font font) {
     else if (!status[0]) snprintf(status, sizeof(status), "%s",
                                   T(GameBinaryPresent(g) ? S_DET_INSTALLED : S_DET_NOT_INSTALLED));
 
-    const char *labels[3] = { T(S_DET_SYSTEM), T(S_DET_SOURCE), T(S_DET_STATUS) };
-    const char *values[3] = { ActiveSystem()->platform->name, source, status };
-    for (int i = 0; i < 3; i++) {
-        DrawTextEx(font, labels[i], (Vector2){ cx, y }, fs * 0.7f, 2.0f, GRAY);
-        y += fs * 0.7f + 6.0f;
-        Details_Text(font, values[i], (Vector2){ cx, y }, fs * 0.85f, cw, WHITE);
-        y += fs * 0.85f + 22.0f;
-    }
-    y += 16.0f;
+    /* Video's two grey meta lines: "Label: value   Label: value". */
+    float ms = sh * 0.026f;
+    Details_Text(font, TextFormat("%s: %s      %s: %s", T(S_DET_SYSTEM), ActiveSystem()->platform->name,
+                                  T(S_DET_STATUS), status),
+                 (Vector2){ tx, sh * 0.220f - ms * 0.5f }, ms, tw, Fade(meta, a));
+    Details_Text(font, TextFormat("%s: %s", T(S_DET_SOURCE), source),
+                 (Vector2){ tx, sh * 0.253f - ms * 0.5f }, ms, tw, Fade(meta, a));
 
+    /* Action rows where the video has its description; highlighted row
+     * gets the gradient glow, the others sit on a thin rule. */
     bool install = Repo_Offer(repo);
-    if (install) {
-        DrawRectangleRounded((Rectangle){ cx - 14.0f, y - 6.0f, cw + 28.0f, 54.0f }, 0.35f, 8, WHITE);
-        DrawTextEx(font, T(S_DET_INSTALL), (Vector2){ cx, y + 4.0f }, fs, 2.0f, BLACK);
-        y += 62.0f;
+    struct { const char *label; bool sel; bool box; } rows[2];
+    int n = 0;
+    if (install) rows[n++] = (typeof(rows[0])){ T(S_DET_INSTALL), true, true };
+    if (g->stateDir) rows[n++] = (typeof(rows[0])){ T(S_DET_SAVES), !install, true };
+    else rows[n++] = (typeof(rows[0])){ T(S_DET_NO_SAVES), false, false };
+    float rs = sh * 0.033f, rh = sh * 0.085f, ry = sh * 0.32f;
+    float rx = tx - sw * 0.012f, rw = sw * 0.56f;
+    for (int i = 0; i < n; i++) {
+        Rectangle rr = { rx, ry, rw, rh };
+        if (rows[i].sel) {
+            DrawRectangleRounded(rr, 2.0f * rad / rh, 12, Fade((Color){ 250, 252, 252, 255 }, a));
+            Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
+        } else if (rows[i].box) {
+            DrawLineEx((Vector2){ rx, ry + rh }, (Vector2){ rx + rw, ry + rh }, fmaxf(1.0f, sh * 0.0014f),
+                       Fade(rule, a));
+        }
+        Details_Text(font, rows[i].label, (Vector2){ tx, ry + (rh - rs) * 0.5f }, rs, rw - sw * 0.03f,
+                     Fade(rows[i].sel ? ink : body, a));
+        ry += rh + sh * 0.012f;
     }
-    if (g->stateDir && install) {
-        DrawTextEx(font, T(S_DET_SAVES), (Vector2){ cx, y + 4.0f }, fs, 2.0f, WHITE);
-    } else if (g->stateDir) {
-        DrawRectangleRounded((Rectangle){ cx - 14.0f, y - 6.0f, cw + 28.0f, 54.0f }, 0.35f, 8, WHITE);
-        DrawTextEx(font, T(S_DET_SAVES), (Vector2){ cx, y + 4.0f }, fs, 2.0f, BLACK);
-    } else {
-        Details_Text(font, T(S_DET_NO_SAVES), (Vector2){ cx, y + 4.0f }, fs * 0.8f, cw, LIGHTGRAY);
-    }
-    EndScissorMode();
 
     DrawInfoBarEx(font, T(S_DET_INFO), e, (1.0f - e) * INFO_BAR_SLIDE_PX);
 }
@@ -3023,7 +3057,7 @@ static void DrawMosaicSlots(Color background) {
 static void DrawMosaic(Color background, Font font) {
     Color SystemBG = GetColor(0xEE0010FF);
 
-    if (SidebarWantsBlur()) {
+    if (SidebarWantsBlur() || detailsT > 0.0f) {
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
         EnsureBlurResources(sw, sh);
@@ -3033,6 +3067,10 @@ static void DrawMosaic(Color background, Font font) {
             DrawMosaicSlots(background);
             EndTextureMode();
             DrawBlurredMosaicBackdrop(background);
+            /* Details: the sharp grid dissolves into the blur as the card comes in. */
+            if (!SidebarWantsBlur() && detailsT < 0.5f)
+                DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
+                       Fade(WHITE, 1.0f - detailsT * 2.0f));
         } else {
             DrawMosaicSlots(background);
         }
