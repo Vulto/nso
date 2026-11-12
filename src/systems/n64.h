@@ -22,12 +22,14 @@ PlatformEntry n64_platform = {
 };
 
 GameEntry n64_games[] = {
-    {
+    {   /* sm64ex (repos/n64/sm64ex) inside NSO's window: `make embed` */
         .title = "Super Mario 64",
         .boxartPath = "assets/images/systems/n64/sm64.png",
-        .dir = "repos/n64/sm64",
-        .binary = "./sm64",
+        .dir = "embed/sm64",
+        .binary = "build/libsm64mod.so",
+        .stateDir = "saves/n64/sm64",
         .orient = SLOT_ORIENT_INHERIT,
+        .embedRomKey = "n64.sm64_dir",   /* EEPROM save + sm64config.txt; ROM for the build */
     },
     {
         .title = "Zelda Ocarina of Time",

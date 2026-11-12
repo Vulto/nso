@@ -24,11 +24,12 @@ linux: nso
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -o nso $(SRC) -lraylib -lm -ldl
 
-# In-process modules: SMB Vanilla (repos/nes/smbvanilla), smw (repos/snes/smw);
-# never edits them
+# In-process modules: SMB Vanilla (repos/nes/smbvanilla), smw (repos/snes/smw),
+# sm64ex (repos/n64/sm64ex); never edits them
 embed:
 	$(MAKE) -C embed/smb
 	$(MAKE) -C embed/smw
+	$(MAKE) -C embed/sm64
 
 windows:
 	$(WINCC) $(CFLAGS) -o nso.exe $(SRC) -lraylib -lopengl32 -lgdi32 -lwinmm -lpthread
@@ -36,7 +37,8 @@ windows:
 test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
-		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h
+		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
+		embed/sm64/reloc_test.c embed/sm64/reloc.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
 	$(CC) $(CFLAGS) -o savestate_test src/savestate_test.c
@@ -53,6 +55,8 @@ test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./order_test
 	$(CC) $(CFLAGS) -o embed_test src/embed_test.c -lm
 	./embed_test
+	$(CC) $(CFLAGS) -o sm64reloc_test embed/sm64/reloc_test.c
+	./sm64reloc_test
 
 clean:
-	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test
+	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sm64reloc_test

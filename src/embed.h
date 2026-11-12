@@ -3,7 +3,7 @@
  * A GameEntry with embedRomKey set names an in-process module (dir/binary,
  * e.g. embed/smb/build/libsmbmod.so; API in embed/nsomod.h). NSO dlopen()s
  * it, calls one game frame per console frame from its own loop, uploads the
- * RGB framebuffer (NES 256x240, SNES 256x224) to a texture drawn per
+ * RGB framebuffer (NES 256x240, SNES 256x224, N64 640x480) to a texture drawn per
  * "<system>.screen", feeds the samples (mono or stereo) to a raylib
  * AudioStream, and draws a pause menu on top (End or
  * the Guide button) laid out like Switch Online's: items right-aligned left
@@ -246,8 +246,10 @@ void Embed_Stop(void)
 }
 
 /* Keyboard: arrows, X = A, Z = B, Enter = Start, Right Shift = Select;
- * SNES also S = X, A = Y, C = L, V = R (the smw port's own defaults).
- * Gamepad: D-pad / left stick, Nintendo A / B / X / Y (nso.h), L1 / R1, Start, Select. */
+ * SNES also S = X, A = Y, C = L, V = R (the smw port's own defaults);
+ * N64 also Left Shift = Z, I / J / K / L = C buttons (right stick).
+ * Gamepad: D-pad / left stick, Nintendo A / B / X / Y (nso.h), L1 / R1, Start, Select;
+ * N64 also the sticks as analog, ZL / ZR = Z. */
 static NsomodInput Embed_ReadPad(void)
 {
     NsomodInput in = {
@@ -256,10 +258,19 @@ static NsomodInput Embed_ReadPad(void)
         .a = IsKeyDown(KEY_X), .b = IsKeyDown(KEY_Z), .x = IsKeyDown(KEY_S), .y = IsKeyDown(KEY_A),
         .l = IsKeyDown(KEY_C), .r = IsKeyDown(KEY_V),
         .start = IsKeyDown(KEY_ENTER), .select = IsKeyDown(KEY_RIGHT_SHIFT),
+        .rx = (float)(IsKeyDown(KEY_L) - IsKeyDown(KEY_J)), .ry = (float)(IsKeyDown(KEY_K) - IsKeyDown(KEY_I)),
+        .z = IsKeyDown(KEY_LEFT_SHIFT),
     };
     if (IsGamepadAvailable(0)) {
         float lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
         float ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+        float rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
+        float ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+        in.lx = lx;
+        in.ly = ly;
+        if (fabsf(rx) > fabsf(in.rx)) in.rx = rx;
+        if (fabsf(ry) > fabsf(in.ry)) in.ry = ry;
+        in.z |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_TRIGGER_2) || IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
         in.up |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_UP) || ly < -0.5f;
         in.down |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || ly > 0.5f;
         in.left |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT) || lx < -0.5f;
