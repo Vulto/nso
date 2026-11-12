@@ -14,6 +14,7 @@ void   smbmod_audio_free(SmbmodAudio *a);
 void   smbmod_audio_write_register(SmbmodAudio *a, uint16_t addr, uint8_t data);
 void   smbmod_audio_end_frame(SmbmodAudio *a);          /* makes ~samplerate/60 samples */
 size_t smbmod_audio_pull(SmbmodAudio *a, int16_t *out, size_t max);
+void   smbmod_audio_reset(SmbmodAudio *a);                /* state load: silence, drop queued samples */
 #ifdef __cplusplus
 }
 #endif

@@ -54,6 +54,13 @@ extern "C" void smbmod_audio_end_frame(SmbmodAudio *a) {
     }
 }
 
+extern "C" void smbmod_audio_reset(SmbmodAudio *a) {
+    a->apu.reset();          // the game re-enables $4015 every frame
+    a->buf.clear();
+    a->clock = 0;
+    a->head = a->count = 0;
+}
+
 extern "C" size_t smbmod_audio_pull(SmbmodAudio *a, int16_t *out, size_t max) {
     size_t n = a->count < max ? a->count : max;
     for (size_t i = 0; i < n; i++) out[i] = a->fifo[(a->head + i) % FIFO_CAP];

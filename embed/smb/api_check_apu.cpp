@@ -15,6 +15,8 @@ using SetOut   = void (Nes_Apu::*)(Blip_Buffer *);
 using Read     = int (Blip_Buffer::*)(blip_sample_t *, int, bool);
 using BufEnd   = void (Blip_Buffer::*)(blip_time_t);
 using Clock    = void (Blip_Buffer::*)(int);
+using Reset    = void (Nes_Apu::*)(bool, uint8_t);
+using Clear    = void (Blip_Buffer::*)();
 
 // Each member must resolve to exactly this overload (else: compile error here).
 [[maybe_unused]] static constexpr WriteReg write_register = &Nes_Apu::write_register;
@@ -23,6 +25,8 @@ using Clock    = void (Blip_Buffer::*)(int);
 [[maybe_unused]] static constexpr Read     read_samples   = &Blip_Buffer::read_samples;
 [[maybe_unused]] static constexpr BufEnd   buf_end_frame  = &Blip_Buffer::end_frame;
 [[maybe_unused]] static constexpr Clock    clock_rate     = &Blip_Buffer::clock_rate;
+[[maybe_unused]] static constexpr Reset    apu_reset      = &Nes_Apu::reset;
+[[maybe_unused]] static constexpr Clear    buf_clear      = &Blip_Buffer::clear;
 
 SAME("blip_sample_t", blip_sample_t, std::int16_t);
 SAME("Nes_Apu::dmc_reader", decltype(Nes_Apu::dmc_reader), std::function<int(int)>);

@@ -36,6 +36,7 @@ GameEntry nes_games[] = {
         .dir = "embed/smb",
         .binary = "build/libsmbmod.so",
         .orient = SLOT_ORIENT_INHERIT,
+        .stateDir = "saves/nes/smb",
         .embedRomKey = "nes.smb_rom",
     },
     {

@@ -12,9 +12,14 @@
 #include "smbmod_audio.h"
 
 #include "smbcore/api.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"   /* the core's inline stubs */
+#include "smbcore/interface.h"   /* struct SMB_state: the PPU flags a state file needs */
+#pragma GCC diagnostic pop
 #include "render_raster.h"
 #include "palette_builtin.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -160,9 +165,57 @@ static NsomodFrame nso_frame(const NsomodInput *p1) {
     return (NsomodFrame){ f.rgb24, f.width, f.height };
 }
 
+/* Suspend point file: magic, CPU RAM 0x800 + PPU RAM 0x4000 (what SMB
+ * Vanilla's own dump_ram/dump_ppuram keep), then the PPU flags the core holds
+ * outside RAM. Everything else is rebuilt from RAM by SMB_ram_finishwrite.
+ * shortcut: SMB1 only; SMB2J also lives in FDS RAM $6000-$DFFF, save it to add 2J. */
+#define NSO_STATE_MAGIC "NSOSMB1\x01"
+typedef struct {
+    char magic[8];
+    uint8_t ram[SMB_RAM_SAVE], ppuram[SMB_PPU_SAVE];
+    uint16_t scroll_x, scroll_y;
+    uint8_t screen_on;
+} NsoSmbState;
+
+static bool nso_state_save(const char *path) {
+    if (!M.live || !path || M.state->which_game != GAME_SMB1) return false;
+    static NsoSmbState s;
+    memcpy(s.magic, NSO_STATE_MAGIC, sizeof s.magic);
+    memcpy(s.ram, SMB_ram(M.state), SMB_RAM_SAVE);
+    memcpy(s.ppuram, SMB_ppuram(M.state), SMB_PPU_SAVE);
+    s.scroll_x = M.state->ppu.scroll_x;
+    s.scroll_y = M.state->ppu.scroll_y;
+    s.screen_on = M.state->ppu.screen_on;
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    bool ok = fwrite(&s, sizeof s, 1, f) == 1;
+    return fclose(f) == 0 && ok;
+}
+
+static bool nso_state_load(const char *path) {
+    if (!M.live || !path || M.state->which_game != GAME_SMB1) return false;
+    static NsoSmbState s;
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    bool ok = fread(&s, sizeof s, 1, f) == 1 && fgetc(f) == EOF;
+    fclose(f);
+    if (!ok || memcmp(s.magic, NSO_STATE_MAGIC, sizeof s.magic) != 0) return false;
+    memcpy(SMB_ram(M.state), s.ram, SMB_RAM_SAVE);
+    memcpy(SMB_ppuram(M.state), s.ppuram, SMB_PPU_SAVE);
+    M.state->ppu.scroll_x = s.scroll_x;
+    M.state->ppu.scroll_y = s.scroll_y;
+    M.state->ppu.screen_on = s.screen_on != 0;
+    M.state->reset_occurred = true;   /* loaded before the first tick: no smb1_Reset over it */
+    SMB_ram_finishwrite(M.state);
+    /* the next frame is cleared to the backdrop before the core pushes the palette */
+    SMBraster_update_palette(M.raster, SMB_ppuram(M.state) + 0x3F00);
+    if (M.audio) smbmod_audio_reset(M.audio);
+    return true;
+}
+
 static const NsomodApi NSO_API = {
     NSOMOD_API_VERSION, SMBMOD_FB_W, SMBMOD_FB_H, SMBMOD_NES_FPS, 1,
-    nso_init, nso_frame, smbmod_audio_pull_api, NULL, NULL, smbmod_shutdown,
+    nso_init, nso_frame, smbmod_audio_pull_api, nso_state_save, nso_state_load, smbmod_shutdown,
 };
 
 __attribute__((visibility("default")))

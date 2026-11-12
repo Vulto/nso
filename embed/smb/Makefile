@@ -24,7 +24,7 @@ INC  := -I. -I$(SMBV)/src -I$(SMBV)/src/platform -I$(SNDE)
 
 CORE_SRC := common.c common_sound.c area.c
 APU_SRC  := Blip_Buffer.cpp Multi_Buffer.cpp Nes_Apu.cpp Nes_Oscs.cpp
-NEEDED := $(addprefix $(SMBV)/src/smbcore/,$(CORE_SRC) smb1only.c smb2jonly.c smbcore.c api.h) \
+NEEDED := $(addprefix $(SMBV)/src/smbcore/,$(CORE_SRC) smb1only.c smb2jonly.c smbcore.c api.h interface.h) \
           $(SMBV)/src/platform/render_raster.c $(SMBV)/src/platform/render_raster.h \
           $(SMBV)/src/platform/palette_builtin.h $(addprefix $(SNDE)/nes_apu/,$(APU_SRC) Nes_Apu.h)
 MISSING := $(filter-out $(wildcard $(NEEDED)),$(NEEDED))

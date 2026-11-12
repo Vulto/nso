@@ -3,6 +3,7 @@
  * Never linked; `make` runs it first so an upstream change fails here with a
  * named assertion instead of somewhere inside the adapter. */
 #include "smbcore/api.h"
+#include "smbcore/interface.h"
 #include "render_raster.h"
 #include "palette_builtin.h"
 
@@ -36,6 +37,15 @@ SAME(FIELD(apu_write_register), void (*)(void *, u16, u8), "SMB_state_options.ap
 SAME(FIELD(apu_end_frame), void (*)(void *), "SMB_state_options.apu_end_frame");
 SAME(FIELD(joy1), void (*)(void *, struct SMB_buttons *), "SMB_state_options.joy1");
 SAME(FIELD(joy2), void (*)(void *, struct SMB_buttons *), "SMB_state_options.joy2");
+
+/* smbmod.c's state files read these internals (not in api.h) */
+#define STATE(f) (((struct SMB_state *)0)->f)
+SAME(STATE(ppu), struct ppu_state, "SMB_state.ppu");
+SAME(STATE(ppu.scroll_x), u16, "ppu_state.scroll_x");
+SAME(STATE(ppu.scroll_y), u16, "ppu_state.scroll_y");
+SAME(STATE(ppu.screen_on), bool, "ppu_state.screen_on");
+SAME(STATE(reset_occurred), bool, "SMB_state.reset_occurred");
+SAME(STATE(which_game), int, "SMB_state.which_game");
 
 SAME(&SMBraster_size, size_t (*)(void), "SMBraster_size");
 SAME(&SMBraster_init, bool (*)(struct SMBraster *), "SMBraster_init");
