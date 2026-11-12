@@ -64,13 +64,22 @@ static inline float Embed_MenuEase(float t)
     return 1.0f - powf(1.0f - t, 1.6f);
 }
 
-/* Back to the grid (Switch Online capture, frames 5848-5861): after the
- * menu exit, the frozen frame shrinks into the selected card while fading. */
+/* Card <-> game zoom (Switch Online capture). Back to the grid (frames
+ * 5848-5861): after the menu exit the frozen frame shrinks into the selected
+ * card while fading. Launch, every game (frames 5519-5533): a dark panel
+ * grows out of the card to the game picture, same ease, grid dimming. */
 #define EMBED_BACK_SEC 0.35f
 static inline float Embed_BackEase(float t)
 {
     t = fminf(1.0f, fmaxf(0.0f, t));
     return 1.0f - powf(1.0f - t, 4.0f);
+}
+
+/* p = 0: card, 1: game rect. */
+static inline Rectangle Embed_ZoomRect(Rectangle card, Rectangle game, float p)
+{
+    return (Rectangle){ card.x + (game.x - card.x) * p, card.y + (game.y - card.y) * p,
+                        card.width + (game.width - card.width) * p, card.height + (game.height - card.height) * p };
 }
 
 bool Embed_Start(const char *modulePath, const char *romPath);
@@ -80,6 +89,7 @@ bool Embed_Update(float dt);
 void Embed_Draw(Font font, int screenMode, const char *const items[EMBED_MENU_COUNT], Shader blur, int blurDirLoc);
 /* After Embed_Update returned false: the frozen frame at t (0..1) of the way into card. */
 void Embed_DrawBack(int screenMode, Rectangle card, float t);
+void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
 
@@ -91,6 +101,16 @@ void Embed_Stop(void);
 
 #include <string.h>
 #include "nso.h"
+
+/* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
+void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
+{
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, dim));
+    Rectangle r = Embed_ZoomRect(card, game, p);
+    if (tex.id) DrawTexturePro(tex, (Rectangle){ 0, 0, (float)tex.width, (float)tex.height }, r,
+                               (Vector2){ 0 }, 0.0f, Fade(WHITE, alpha));
+    else DrawRectangleRec(r, Fade(BLACK, alpha));
+}
 
 #if defined(_WIN32)
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
@@ -371,12 +391,8 @@ void Embed_DrawBack(int screenMode, Rectangle card, float t)
 {
     if (!embed.active) return;
     Rectangle a = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight());
-    float p = Embed_BackEase(t), q = 1.0f - t;
-    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.35f * q));
-    Rectangle r = { a.x + (card.x - a.x) * p, a.y + (card.y - a.y) * p,
-                    a.width + (card.width - a.width) * p, a.height + (card.height - a.height) * p };
-    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, SMBMOD_FB_W, SMBMOD_FB_H }, r,
-                   (Vector2){ 0 }, 0.0f, Fade(WHITE, q * q));
+    float q = 1.0f - t;
+    Embed_DrawZoom(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q);
 }
 #endif /* _WIN32 */
 

@@ -534,29 +534,6 @@ void UpdateScreenFadeAnimation(ScreenFadeAnimation *anim, float deltaTime) {
     }
 }
 
-void DrawScreenFadeAnimation(const ScreenFadeAnimation *anim) {
-    if (anim->duration <= 0.0f) return;
-
-    float progress = anim->timer / anim->duration;
-    if (progress > 1.0f) progress = 1.0f;
-
-    float startW = anim->screenW * anim->startScale;
-    float startH = anim->screenH * anim->startScale;
-    float startX = (anim->screenW - startW) * 0.5f;
-    float startY = (anim->screenH - startH) * 0.5f;
-
-    float x = startX + (0.0f - startX) * progress;
-    float y = startY + (0.0f - startY) * progress;
-    float w = startW + (anim->screenW - startW) * progress;
-    float h = startH + (anim->screenH - startH) * progress;
-
-    float alpha = anim->startAlpha + (anim->endAlpha - anim->startAlpha) * progress;
-    unsigned char alphaByte = (unsigned char)(alpha * 255.0f);
-
-    Color drawColor = {anim->color.r, anim->color.g, anim->color.b, alphaByte};
-    DrawRectangleRec((Rectangle){x, y, w, h}, drawColor);
-}
-
 bool IsScreenFadeAnimationFinished(const ScreenFadeAnimation *anim) {
     return anim->finished;
 }
@@ -3306,15 +3283,19 @@ static void UpdateSplash(float dt) {
     }
 }
 
-/* Selected cover at rest (scale 1), as DrawSlotImages places it. */
-static Rectangle SelectedCardRect(void) {
+/* Selected cover at scale, as DrawSlotImages places it. */
+static Rectangle SelectedCardRect(float scale) {
     GridLayout g = GetGridLayout();
     if (g.slotsPerRow < 1) return (Rectangle){ 0 };
     float fitW, fitH;
     FitAspectInCell(g.cellW, g.cellH, Nso_OrientAspect(GameOrientAt(GameIdx)), &fitW, &fitH);
     float x = (float)g.originX + (float)(GameIdx % g.slotsPerRow) * g.cellW;
     float y = (float)(GameIdx / g.slotsPerRow) * g.cellH - viewportY;
-    return (Rectangle){ x + (g.cellW - fitW) * 0.5f, y + (g.cellH - fitH) * 0.5f, fitW, fitH };
+    float w = fitW * scale, h = fitH * scale;
+    x += (g.cellW - w) * 0.5f;
+    y += (g.cellH - h) * 0.5f;
+    ClampTileToContent(&x, &y, w, h, g.originX, g.contentW, g.screenH, MOSAIC_CURSOR_PAD);
+    return (Rectangle){ x, y, w, h };
 }
 
 static void DrawMosaicSlots(Color background) {
@@ -3489,7 +3470,7 @@ int main(void) {
 
     Color Mosaicbg = GetColor(0x303030FF);
 
-    InitScreenFadeAnimation(&launchFadeAnim, 0.32f, 0.65f, 0.0f, 1.0f, BLACK);
+    InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
 
     while (!WindowShouldClose()) {
 
@@ -3647,7 +3628,7 @@ int main(void) {
                     currentState = MOSAIC;
                     BeginMosaicEnterIntro();
                 }
-                InitScreenFadeAnimation(&launchFadeAnim, 0.32f, 0.65f, 0.0f, 1.0f, BLACK);
+                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
             }
         }
 
@@ -3731,7 +3712,7 @@ int main(void) {
                                 isLaunching = true;
                                 launchingGameIdx = GameIdx;
                                 currentState = LAUNCHING;
-                                InitScreenFadeAnimation(&launchFadeAnim, 0.32f, 0.65f, 0.0f, 1.0f, BLACK);
+                                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
                             } else {
                                 stateLoadPath[0] = '\0'; /* never leak into another launch */
                             }
@@ -3817,7 +3798,7 @@ int main(void) {
                                 isLaunching = true;
                                 launchingGameIdx = GameIdx;
                                 currentState = LAUNCHING;
-                                InitScreenFadeAnimation(&launchFadeAnim, 0.32f, 0.65f, 0.0f, 1.0f, BLACK);
+                                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
                             }
                         }
                     }
@@ -3880,14 +3861,20 @@ int main(void) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);
             if (embedBackT >= 0.0f)
-                Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(), embedBackT);
+                Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(1.0f), embedBackT);
             if (statesOpen && GameIdx < ActiveGameCount()) {
                 States_Draw(font, ActiveGames()[GameIdx].title);
             }
         }
 
-        if (isLaunching) {
-            DrawScreenFadeAnimation(&launchFadeAnim);
+        if (isLaunching) {   /* every game: the card grows into the game's picture */
+            float t = launchFadeAnim.timer / launchFadeAnim.duration;
+            float u = fminf(1.0f, fmaxf(0.0f, (t - 0.75f) / 0.25f));   /* then the rest goes black */
+            float p = Embed_BackEase(t), sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+            int mode = ActiveGames()[launchingGameIdx].embedRomKey ? sysSettings[currentSystem].screen
+                                                                    : EMBED_SCREEN_43;
+            Embed_DrawZoom((Texture2D){ 0 }, Embed_DestRect(mode, sw, sh), SelectedCardRect(animScales[GameIdx]),
+                           p, 1.0f - (1.0f - t) * (1.0f - t), 0.35f * p + 0.65f * u * u * (3.0f - 2.0f * u));
         }
 
         if (waitingForGame) {
