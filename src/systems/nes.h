@@ -30,15 +30,8 @@ PlatformEntry nes_platform = {
 };
 
 GameEntry nes_games[] = {
-    {
-        .title = "Super Mario Bros",
-        .boxartPath = "assets/images/systems/nes/smb.png",
-        .dir = "repos/nes/smb",
-        .binary = "./smb",
-        .orient = SLOT_ORIENT_INHERIT,
-    },
     {   /* SMB Vanilla (repos/nes/smbvanilla) inside NSO's window: `make embed` */
-        .title = "Super Mario Bros (SMB Vanilla)",
+        .title = "Super Mario Bros",
         .boxartPath = "assets/images/systems/nes/smb.png",
         .dir = "embed/smb",
         .binary = "build/libsmbmod.so",
