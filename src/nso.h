@@ -3,6 +3,8 @@
 #define NSO_H
 
 #include "raylib.h"
+#include <stdlib.h>
+#include <string.h>
 
 /* USA = landscape 4:3, JAPAN = portrait 3:4 */
 typedef enum {
@@ -100,6 +102,85 @@ static inline int Nso_PadAxisEdge(float prev, float now)
         return -1;
     }
     return 0;
+}
+
+/* Per-controller hint profile. Only N64 is implemented; more can be added. */
+typedef enum {
+    NSO_PAD_PROFILE_DEFAULT = 0,
+    NSO_PAD_PROFILE_N64,
+} NsoPadProfile;
+
+static inline bool Nso_PadNameIsN64(const char *name)
+{
+    return name && (strstr(name, "N64") || strstr(name, "8BitDo 64"));
+}
+
+static inline NsoPadProfile Nso_PadProfileFromName(const char *name)
+{
+    if (Nso_PadNameIsN64(name)) {
+        return NSO_PAD_PROFILE_N64;
+    }
+    return NSO_PAD_PROFILE_DEFAULT;
+}
+
+/* NSO_PAD_STYLE=n64 or =default overrides auto-detection (tests). */
+static inline bool Nso_PadStyleEnvOverride(NsoPadProfile *out)
+{
+    const char *f = getenv("NSO_PAD_STYLE");
+    if (!f || !f[0] || !out) {
+        return false;
+    }
+    if (strcmp(f, "n64") == 0) {
+        *out = NSO_PAD_PROFILE_N64;
+        return true;
+    }
+    if (strcmp(f, "default") == 0) {
+        *out = NSO_PAD_PROFILE_DEFAULT;
+        return true;
+    }
+    return false;
+}
+
+/* N64 hints use the same font as the stock bar; only X/Y labels change.
+ * 🅧 (Details / delete) -> "C-Up", 🅨 (Move / copy) -> "C-Down".
+ * Arrow glyphs are not in the UI font atlas, so "C-Up" / "C-Down" are used
+ * rather than "C↑". A and B keep 🅐 / 🅑. Default profile returns text as-is. */
+static inline const char *Nso_HintTextForProfile(NsoPadProfile profile,
+                                                 const char *text,
+                                                 char *buf,
+                                                 size_t bufsz)
+{
+    if (!text || profile != NSO_PAD_PROFILE_N64 || !buf || bufsz < 2) {
+        return text;
+    }
+    size_t o = 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; ) {
+        const char *rep = NULL;
+        size_t skip = 1;
+        if (p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x85 && p[3] == 0xA7) {
+            rep = "C-Up";
+            skip = 4;
+        } else if (p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x85 && p[3] == 0xA8) {
+            rep = "C-Down";
+            skip = 4;
+        }
+        if (rep) {
+            size_t rl = strlen(rep);
+            if (o + rl >= bufsz) {
+                break;
+            }
+            memcpy(buf + o, rep, rl);
+            o += rl;
+            p += skip;
+        } else {
+            if (o + 1 >= bufsz) {
+                break;
+            }
+            buf[o++] = (char)*p++;
+        }
+    }
+    buf[o] = '\0';
+    return buf;
 }
 
 /* 8BitDo N64 Mod Kit (Bluetooth 05..., USB 03...). SDL's gamecontrollerdb

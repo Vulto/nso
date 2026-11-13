@@ -915,6 +915,13 @@ static void DrawSystemMenu(float offsetX) {
     DrawMenuGear(offsetX);
 }
 
+static NsoPadProfile Pad_ActiveProfile(void) {
+    NsoPadProfile env;
+    if (Nso_PadStyleEnvOverride(&env)) return env;
+    if (IsGamepadAvailable(0)) return Nso_PadProfileFromName(GetGamepadName(0));
+    return NSO_PAD_PROFILE_DEFAULT;
+}
+
 /* opacity 0..1; ySlide = (1-opacity)*INFO_BAR_SLIDE_PX so close is reverse of open.
  * Far-right aligned; 10px margin between text and rounded border. */
 static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySlide) {
@@ -923,7 +930,9 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     const float textPad = 10.0f;
     float fontSize = (float)font.baseSize;
     float spacing = 2.0f;
-    Vector2 textSize = MeasureTextEx(font, text, fontSize, spacing);
+    char hintBuf[256];
+    const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
+    Vector2 textSize = MeasureTextEx(font, draw, fontSize, spacing);
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
     float barH = 55.0f;
@@ -956,7 +965,7 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     };
 
     DrawTextEx(font,
-               text,
+               draw,
                textPosition,
                fontSize,
                spacing,
@@ -1605,13 +1614,15 @@ static void Repo_NoticeDraw(Font font) {
                  - (repoNotice.note == REPO_NOTE_INSTALLABLE ? 10.0 : 7.0))) / 0.25));
     if (op <= 0.0f) return;
     float fs = (float)font.baseSize;
-    Vector2 m = MeasureTextEx(font, text, fs, 2.0f);
+    char hintBuf[512];
+    const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
+    Vector2 m = MeasureTextEx(font, draw, fs, 2.0f);
     float w = m.x + 48.0f, h = 56.0f;   /* clears the gear screen's tabs */
     float x = ((float)GetScreenWidth() - w) * 0.5f, y = 14.0f - (1.0f - op) * 20.0f;
     DrawRectangleRounded((Rectangle){ x, y, w, h }, 0.35f, 8, Fade(BLACK, 0.85f * op));
     DrawCircleV((Vector2){ x + 14.0f, y + h * 0.5f }, 5.0f,
                 Fade(repoNotice.note == REPO_NOTE_ROM_NEEDED ? ORANGE : (Color){ 0, 190, 255, 255 }, op));
-    DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
+    DrawTextEx(font, draw, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
 }
 
 /* Repository entry that builds this game of the active system (same dir), or -1. */
