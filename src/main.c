@@ -924,10 +924,15 @@ static double padNoticeUntil;
 static double padNoticeStart;
 static const float PAD_NOTICE_SEC = 4.0f;
 
+static NsoPadLink Pad_LinkNow(void);
+
 static NsoPadProfile Pad_Detect(void) {
+    NsoPadProfile env;
     const char *flip = getenv("NSO_PAD_FLIP_AT");
+    if (Nso_PadStyleEnvOverride(&env)) return env;
     if (flip && flip[0] && GetTime() >= atof(flip)) return NSO_PAD_PROFILE_N64;
-    return Nso_PadProfileFromConnected();
+    /* USB (or no N64 pad) keeps the default bar; Bluetooth gets N64 labels. */
+    return Nso_PadProfileFromLink(Pad_LinkNow());
 }
 
 static void PadNotice_Show(void) {
@@ -936,10 +941,25 @@ static void PadNotice_Show(void) {
 }
 
 static void Pad_Update(float dt) {
+    static NsoPadLink seen;
+    static bool inited;
+    NsoPadLink link = Pad_LinkNow();
+    bool shown = false;
+
     Nso_PadWatchUpdate(&padWatch, Pad_Detect(), dt, INFO_BAR_FADE_SEC);
+    if (!inited) {
+        seen = link;
+        inited = true;
+    } else if (link != seen) {
+        if (link == NSO_PAD_LINK_USB || link == NSO_PAD_LINK_BT) {
+            PadNotice_Show();
+            shown = true;
+        }
+        seen = link;
+    }
     if (padWatch.notice) {
         padWatch.notice = false;
-        PadNotice_Show();
+        if (!shown) PadNotice_Show();
     }
 }
 
@@ -3730,46 +3750,43 @@ int main(void) {
     while (!WindowShouldClose()) {
 
         bool gp = IsGamepadAvailable(0);
-        static float prevLX = 0.0f;
-        static float prevLY = 0.0f;
-        float lx = 0.0f;
-        float ly = 0.0f;
+        static bool padWasAvail = false;
+        static double padSettleUntil = 0.0;
+        static NsoPadAxisArm armLX, armLY, armRX, armRY;
+        if (gp != padWasAvail) {
+            Nso_PadAxisArmReset(&armLX);
+            Nso_PadAxisArmReset(&armLY);
+            Nso_PadAxisArmReset(&armRX);
+            Nso_PadAxisArmReset(&armRY);
+            if (gp) padSettleUntil = GetTime() + (double)NSO_PAD_SETTLE_SEC;
+            padWasAvail = gp;
+        }
+        bool gpReady = gp && GetTime() >= padSettleUntil;
+
+        float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
         if (gp) {
             lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
             ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
-        }
-
-        bool gpLeft = gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ||
-                             (lx < -0.5f && prevLX >= -0.5f));
-        bool gpRight = gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) ||
-                              (lx > 0.5f && prevLX <= 0.5f));
-        bool gpUp = gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP) ||
-                           (ly < -0.5f && prevLY >= -0.5f));
-        bool gpDown = gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) ||
-                             (ly > 0.5f && prevLY <= 0.5f));
-        bool gpConfirm = gp && Nso_PadConfirmPressed(0);
-        /* Select opens the full sidebar; keep Back as B only (not Select). */
-        bool gpSelect = gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
-        bool gpBack = gp && Nso_PadBackPressed(0);
-
-        prevLX = lx;
-        prevLY = ly;
-
-        static float prevRX = 0.0f;
-        static float prevRY = 0.0f;
-        float rx = 0.0f;
-        float ry = 0.0f;
-        if (gp) {
             rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
             ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
         }
-        int cX = Nso_PadAxisEdge(prevRX, rx);
-        int cY = Nso_PadAxisEdge(prevRY, ry);
-        padCUp = cY < 0;
-        padCDown = cY > 0;
-        padCLeft = cX < 0;
-        prevRX = rx;
-        prevRY = ry;
+        int eLX = Nso_PadAxisEdgeArmed(&armLX, lx);
+        int eLY = Nso_PadAxisEdgeArmed(&armLY, ly);
+        int eRX = Nso_PadAxisEdgeArmed(&armRX, rx);
+        int eRY = Nso_PadAxisEdgeArmed(&armRY, ry);
+
+        bool gpLeft = gpReady && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT) || eLX < 0);
+        bool gpRight = gpReady && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) || eLX > 0);
+        bool gpUp = gpReady && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP) || eLY < 0);
+        bool gpDown = gpReady && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || eLY > 0);
+        bool gpConfirm = gpReady && Nso_PadConfirmPressed(0);
+        /* Select opens the full sidebar; keep Back as B only (not Select). */
+        bool gpSelect = gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
+        bool gpBack = gpReady && Nso_PadBackPressed(0);
+
+        padCUp = gpReady && eRY < 0;
+        padCDown = gpReady && eRY > 0;
+        padCLeft = gpReady && eRX < 0;
 
         bool overlayConsumedConfirm = false;
         bool canNavigate = !OverlayActive() && !isLaunching && !waitingForGame

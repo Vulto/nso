@@ -63,6 +63,25 @@ int main(void)
     CHECK(Nso_PadAxisEdge(-0.6f, -0.8f) == 0);
     CHECK(Nso_PadAxisEdge(-0.51f, 0.51f) == 1);
     CHECK(NSO_PAD_DEADZONE == 0.5f);
+    CHECK(Nso_PadAxisEdge(0.0f, -0.51f) == -1); /* the connect-time false C-left */
+    {
+        NsoPadAxisArm a;
+        Nso_PadAxisArmReset(&a);
+        CHECK(!a.armed && Nso_PadAxisEdgeArmed(&a, -1.0f) == 0); /* first off-centre: no edge */
+        CHECK(!a.armed && Nso_PadAxisEdgeArmed(&a, -1.0f) == 0);
+        CHECK(Nso_PadAxisEdgeArmed(&a, 0.0f) == 0 && a.armed);
+        CHECK(Nso_PadAxisEdgeArmed(&a, -0.51f) == -1);
+        CHECK(Nso_PadAxisEdgeArmed(&a, -0.8f) == 0);
+        CHECK(Nso_PadAxisEdgeArmed(&a, 0.0f) == 0);
+        CHECK(Nso_PadAxisEdgeArmed(&a, 0.51f) == 1);
+        Nso_PadAxisArmReset(&a);
+        CHECK(!a.armed && Nso_PadAxisEdgeArmed(&a, 0.51f) == 0);
+    }
+    CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_BT) == NSO_PAD_PROFILE_N64);
+    CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_USB) == NSO_PAD_PROFILE_DEFAULT);
+    CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_NONE) == NSO_PAD_PROFILE_DEFAULT);
+    CHECK(Nso_PadNameIsN64("8BitDo  8BitDo N64 Modkit"));
+    CHECK(NSO_PAD_SETTLE_SEC > 0.0f);
     {
         NsoPadWatch w = { 0 };
         Nso_PadWatchUpdate(&w, NSO_PAD_PROFILE_N64, 0.016f, 0.4f);

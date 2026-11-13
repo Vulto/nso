@@ -107,6 +107,43 @@ static inline int Nso_PadAxisEdge(float prev, float now)
     return 0;
 }
 
+/* After a connect, ignore edges until the axis has sat inside the deadzone.
+ * First samples are often 0 on a 0..255 stick (GLFW -1.0), which would look
+ * like a C-left/left press if prev starts at 0. */
+#define NSO_PAD_SETTLE_SEC 0.30f
+
+typedef struct {
+    float prev;
+    bool armed;
+} NsoPadAxisArm;
+
+static inline void Nso_PadAxisArmReset(NsoPadAxisArm *a)
+{
+    if (!a) {
+        return;
+    }
+    a->prev = 0.0f;
+    a->armed = false;
+}
+
+static inline int Nso_PadAxisEdgeArmed(NsoPadAxisArm *a, float now)
+{
+    int e;
+    if (!a) {
+        return 0;
+    }
+    if (!a->armed) {
+        if (now <= NSO_PAD_DEADZONE && now >= -NSO_PAD_DEADZONE) {
+            a->armed = true;
+        }
+        a->prev = now;
+        return 0;
+    }
+    e = Nso_PadAxisEdge(a->prev, now);
+    a->prev = now;
+    return e;
+}
+
 /* Per-controller hint profile. Only N64 is implemented; more can be added. */
 typedef enum {
     NSO_PAD_PROFILE_DEFAULT = 0,
@@ -237,6 +274,16 @@ typedef enum {
     NSO_PAD_LINK_USB,
     NSO_PAD_LINK_BT,
 } NsoPadLink;
+
+/* Hint-bar profile from the evdev link of the N64 pad. USB keeps the default
+ * bar; only Bluetooth switches to N64 labels. */
+static inline NsoPadProfile Nso_PadProfileFromLink(NsoPadLink link)
+{
+    if (link == NSO_PAD_LINK_BT) {
+        return NSO_PAD_PROFILE_N64;
+    }
+    return NSO_PAD_PROFILE_DEFAULT;
+}
 
 /* True if s contains mac (colons, hyphens or no separators, any case). */
 static inline bool Nso_PadTextHasMac(const char *s, const char *mac)
