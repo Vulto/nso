@@ -678,52 +678,8 @@ static float infoBarOpacity[INFO_BAR_COUNT];
 static InfoBarId infoBarActive = INFO_BAR_NONE;
 static InfoBarId infoBarWanted = INFO_BAR_NONE;
 
-/* N64 pad: C-up / C-down / C-left this frame (right stick edges), set in the main loop. */
+/* C-up / C-down / C-left this frame (right stick edges on any pad), set in the main loop. */
 static bool padCUp, padCDown, padCLeft;
-
-static bool Pad_N64Style(void) {
-    const char *f = getenv("NSO_PAD_STYLE");   /* "n64" forces the N64 hints (headless screenshots) */
-    if (f && strcmp(f, "n64") == 0) return true;
-    return IsGamepadAvailable(0) && Nso_PadNameIsN64(GetGamepadName(0));
-}
-
-/* Hint text with the 🅐🅑🅧🅨 glyphs drawn as N64 buttons: A blue, B green,
- * X / Y as yellow C-up / C-down. Returns the width; draw=false only measures. */
-static float Hint_Text(Font font, const char *text, Vector2 pos, float fs, float sp, Color tint, bool draw) {
-    float scale = fs / (float)font.baseSize, x = pos.x;
-    for (const char *p = text; *p; ) {
-        int n = 0, cp = GetCodepointNext(p, &n);
-        p += n;
-        if (cp == 0x1F150 || cp == 0x1F151 || cp == 0x1F167 || cp == 0x1F168) {
-            float r = fs * 0.39f;
-            Vector2 c = { x + r, pos.y + fs * 0.5f };
-            if (draw) {
-                Color col = cp == 0x1F150 ? (Color){ 40, 90, 225, 255 }
-                          : cp == 0x1F151 ? (Color){ 30, 160, 70, 255 } : (Color){ 245, 200, 30, 255 };
-                DrawCircleV(c, r, Fade(col, tint.a / 255.0f));
-                float t = r * 0.5f;
-                if (cp == 0x1F167) {
-                    DrawTriangle((Vector2){ c.x, c.y - t }, (Vector2){ c.x - t, c.y + t * 0.6f },
-                                 (Vector2){ c.x + t, c.y + t * 0.6f }, Fade(BLACK, tint.a / 255.0f));
-                } else if (cp == 0x1F168) {
-                    DrawTriangle((Vector2){ c.x, c.y + t }, (Vector2){ c.x + t, c.y - t * 0.6f },
-                                 (Vector2){ c.x - t, c.y - t * 0.6f }, Fade(BLACK, tint.a / 255.0f));
-                } else {
-                    const char *l = cp == 0x1F150 ? "A" : "B";
-                    float ls = fs * 0.62f;
-                    Vector2 m = MeasureTextEx(font, l, ls, 0.0f);
-                    DrawTextEx(font, l, (Vector2){ c.x - m.x * 0.5f, c.y - m.y * 0.5f }, ls, 0.0f, tint);
-                }
-            }
-            x += 2.0f * r + sp;
-            continue;
-        }
-        int gi = GetGlyphIndex(font, cp);
-        if (draw && cp != ' ') DrawTextCodepoint(font, cp, (Vector2){ x, pos.y }, fs, tint);
-        x += (font.glyphs[gi].advanceX ? (float)font.glyphs[gi].advanceX : font.recs[gi].width) * scale + sp;
-    }
-    return x - pos.x;
-}
 
 static void StepInfoOpacity(float *cur, float target, float dt) {
     if (INFO_BAR_FADE_SEC <= 0.0f) {
@@ -968,8 +924,6 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     float fontSize = (float)font.baseSize;
     float spacing = 2.0f;
     Vector2 textSize = MeasureTextEx(font, text, fontSize, spacing);
-    bool n64 = Pad_N64Style();
-    if (n64) textSize.x = Hint_Text(font, text, (Vector2){ 0 }, fontSize, spacing, WHITE, false);
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
     float barH = 55.0f;
@@ -1001,8 +955,7 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
         .y = rec.y + (barH - textSize.y) * 0.5f
     };
 
-    if (n64) Hint_Text(font, text, textPosition, fontSize, spacing, Fade(WHITE, opacity), true);
-    else DrawTextEx(font,
+    DrawTextEx(font,
                text,
                textPosition,
                fontSize,
@@ -1653,15 +1606,12 @@ static void Repo_NoticeDraw(Font font) {
     if (op <= 0.0f) return;
     float fs = (float)font.baseSize;
     Vector2 m = MeasureTextEx(font, text, fs, 2.0f);
-    bool n64 = Pad_N64Style();
-    if (n64) m.x = Hint_Text(font, text, (Vector2){ 0 }, fs, 2.0f, WHITE, false);
     float w = m.x + 48.0f, h = 56.0f;   /* clears the gear screen's tabs */
     float x = ((float)GetScreenWidth() - w) * 0.5f, y = 14.0f - (1.0f - op) * 20.0f;
     DrawRectangleRounded((Rectangle){ x, y, w, h }, 0.35f, 8, Fade(BLACK, 0.85f * op));
     DrawCircleV((Vector2){ x + 14.0f, y + h * 0.5f }, 5.0f,
                 Fade(repoNotice.note == REPO_NOTE_ROM_NEEDED ? ORANGE : (Color){ 0, 190, 255, 255 }, op));
-    if (n64) Hint_Text(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op), true);
-    else DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
+    DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
 }
 
 /* Repository entry that builds this game of the active system (same dir), or -1. */
@@ -3568,13 +3518,15 @@ int main(void) {
         static float prevRY = 0.0f;
         float rx = 0.0f;
         float ry = 0.0f;
-        if (gp && Pad_N64Style()) {
+        if (gp) {
             rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
             ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
         }
-        padCUp = ry < -0.5f && prevRY >= -0.5f;
-        padCDown = ry > 0.5f && prevRY <= 0.5f;
-        padCLeft = rx < -0.5f && prevRX >= -0.5f;
+        int cX = Nso_PadAxisEdge(prevRX, rx);
+        int cY = Nso_PadAxisEdge(prevRY, ry);
+        padCUp = cY < 0;
+        padCDown = cY > 0;
+        padCLeft = cX < 0;
         prevRX = rx;
         prevRY = ry;
 

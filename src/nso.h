@@ -3,7 +3,6 @@
 #define NSO_H
 
 #include "raylib.h"
-#include <string.h>
 
 /* USA = landscape 4:3, JAPAN = portrait 3:4 */
 typedef enum {
@@ -89,6 +88,20 @@ static inline bool Nso_PadBackPressed(int pad)
     return IsGamepadButtonPressed(pad, NSO_BTN_B);
 }
 
+#define NSO_PAD_DEADZONE 0.5f
+
+/* 1 = crossed +deadzone this frame, -1 = crossed -deadzone, 0 = none. */
+static inline int Nso_PadAxisEdge(float prev, float now)
+{
+    if (now > NSO_PAD_DEADZONE && prev <= NSO_PAD_DEADZONE) {
+        return 1;
+    }
+    if (now < -NSO_PAD_DEADZONE && prev >= -NSO_PAD_DEADZONE) {
+        return -1;
+    }
+    return 0;
+}
+
 /* 8BitDo N64 Mod Kit (Bluetooth 05..., USB 03...). SDL's gamecontrollerdb
  * entry with a/b swapped so N64 A (b0) lands on NSO_BTN_A and N64 B (b1) on
  * NSO_BTN_B; C buttons stay the right stick (SM64), Z = left trigger,
@@ -100,12 +113,6 @@ static inline bool Nso_PadBackPressed(int pad)
     "03000000c82d00006928000011010000,8BitDo N64,a:b1,b:b0,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1," \
     "guide:b12,leftshoulder:b6,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,righttrigger:b9," \
     "rightx:a2,righty:a3,start:b11,platform:Linux,\n"
-
-/* N64-style pad by name (C buttons on the right stick, N64 hint glyphs). */
-static inline bool Nso_PadNameIsN64(const char *name)
-{
-    return name && (strstr(name, "N64") || strstr(name, "8BitDo 64"));
-}
 
 #endif /* NSO_H */
 
