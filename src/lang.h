@@ -45,6 +45,8 @@ typedef enum {
     /* embedded game pause menu (embed.h) */
     S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
     S_EMB_SLOT, S_EMB_NODATA, S_EMB_DATE,
+    /* N64 controller connect pop-up */
+    S_PAD_N64_CONNECTED,
     S_COUNT
 } StrId;
 
@@ -189,6 +191,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMB_SLOT] = "Save slot %d",
         [S_EMB_NODATA] = "No data.",
         [S_EMB_DATE] = "%m/%d/%Y - %H:%M",
+        [S_PAD_N64_CONNECTED] = "N64 controller connected",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -296,6 +299,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMB_SLOT] = "Espaço %d",
         [S_EMB_NODATA] = "Sem dados.",
         [S_EMB_DATE] = "%d/%m/%Y - %H:%M",
+        [S_PAD_N64_CONNECTED] = "Controle N64 conectado",
     },
 };
 

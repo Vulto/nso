@@ -915,16 +915,160 @@ static void DrawSystemMenu(float offsetX) {
     DrawMenuGear(offsetX);
 }
 
+/* Live pad profile + the existing info-bar close/open (INFO_BAR_FADE_SEC /
+ * INFO_BAR_SLIDE_PX) when the hint labels change. fade starts at 1 so a
+ * frame before the first Pad_Update stays pixel-identical. */
+static NsoPadWatch padWatch = { .fade = 1.0f };
+static Texture2D padNoticeTex;
+static double padNoticeUntil;
+static double padNoticeStart;
+static const float PAD_NOTICE_SEC = 4.0f;
+
+static NsoPadProfile Pad_Detect(void) {
+    const char *flip = getenv("NSO_PAD_FLIP_AT");
+    if (flip && flip[0] && GetTime() >= atof(flip)) return NSO_PAD_PROFILE_N64;
+    return Nso_PadProfileFromConnected();
+}
+
+static void PadNotice_Show(void) {
+    padNoticeStart = GetTime();
+    padNoticeUntil = padNoticeStart + (double)PAD_NOTICE_SEC;
+}
+
+static void Pad_Update(float dt) {
+    Nso_PadWatchUpdate(&padWatch, Pad_Detect(), dt, INFO_BAR_FADE_SEC);
+    if (padWatch.notice) {
+        padWatch.notice = false;
+        PadNotice_Show();
+    }
+}
+
 static NsoPadProfile Pad_ActiveProfile(void) {
-    NsoPadProfile env;
-    if (Nso_PadStyleEnvOverride(&env)) return env;
-    if (IsGamepadAvailable(0)) return Nso_PadProfileFromName(GetGamepadName(0));
-    return NSO_PAD_PROFILE_DEFAULT;
+    return padWatch.drawn;
+}
+
+/* The user asset also has baked LEDs and a battery; keep only the controller. */
+#define PAD_NOTICE_CROP_X 22
+#define PAD_NOTICE_CROP_Y 40
+#define PAD_NOTICE_CROP_W 76
+#define PAD_NOTICE_CROP_H 69
+#define PAD_NOTICE_MAC "e4:17:d8:9d:7f:79"
+
+static void PadNotice_Load(void) {
+    const char *path = GetDataPath("assets/images/n64_controller.png");
+    if (!FileExists(path)) return;
+    Image img = LoadImage(path);
+    if (!img.data) return;
+    if (img.width >= PAD_NOTICE_CROP_X + PAD_NOTICE_CROP_W
+        && img.height >= PAD_NOTICE_CROP_Y + PAD_NOTICE_CROP_H) {
+        ImageCrop(&img, (Rectangle){
+            (float)PAD_NOTICE_CROP_X, (float)PAD_NOTICE_CROP_Y,
+            (float)PAD_NOTICE_CROP_W, (float)PAD_NOTICE_CROP_H
+        });
+    }
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    if (img.data && img.format == PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        int n = img.width * img.height;
+        unsigned char *px = (unsigned char *)img.data;
+        for (int i = 0; i < n; i++, px += 4) {
+            int dr = (int)px[0] - 49, dg = (int)px[1] - 51, db = (int)px[2] - 51;
+            if (dr * dr + dg * dg + db * db <= 30 * 30) {
+                px[3] = 0;
+            }
+        }
+    }
+    padNoticeTex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    if (padNoticeTex.id) {
+        GenTextureMipmaps(&padNoticeTex);
+        SetTextureFilter(padNoticeTex, TEXTURE_FILTER_BILINEAR);
+    }
+}
+
+static int Pad_N64Index(void) {
+    for (int i = 0; i < NSO_PAD_MAX; i++) {
+        if (IsGamepadAvailable(i) && Nso_PadNameIsN64(GetGamepadName(i))) return i;
+    }
+    return -1;
+}
+
+static NsoPadLink Pad_LinkNow(void) {
+    char buf[16384];
+    size_t n = 0;
+    FILE *f = fopen("/proc/bus/input/devices", "r");
+    if (!f) return NSO_PAD_LINK_NONE;
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    NsoPadLink link = Nso_PadLinkFromProc(buf, PAD_NOTICE_MAC);
+    if (link == NSO_PAD_LINK_NONE) link = Nso_PadLinkFromProc(buf, NULL);
+    return link;
+}
+
+static void PadNotice_DrawLeds(Rectangle row, int player) {
+    const Color on = { 176, 245, 91, 255 };
+    const Color off = { 144, 146, 146, 255 };
+    float gap = row.width * 0.08f;
+    float side = (row.width - gap * 3.0f) / 4.0f;
+    if (side > row.height) side = row.height;
+    float x0 = row.x + (row.width - (side * 4.0f + gap * 3.0f)) * 0.5f;
+    float y0 = row.y + (row.height - side) * 0.5f;
+    for (int i = 0; i < 4; i++) {
+        Rectangle r = { x0 + (float)i * (side + gap), y0, side, side };
+        DrawRectangleRec(r, Nso_PadPlayerLedOn(player, i + 1) ? on : off);
+    }
+}
+
+static void PadNotice_DrawBattery(Rectangle box, int pct) {
+    const Color outline = { 80, 84, 86, 255 };
+    float bodyW = box.width * 0.82f, nubW = box.width * 0.10f, th = fmaxf(2.0f, box.height * 0.10f);
+    float h = box.height * 0.70f;
+    float x = box.x + (box.width - (bodyW + nubW)) * 0.5f;
+    float y = box.y + (box.height - h) * 0.5f;
+    Rectangle body = { x, y, bodyW, h };
+    Rectangle nub = { x + bodyW, y + h * 0.28f, nubW, h * 0.44f };
+    DrawRectangleLinesEx(body, th, outline);
+    DrawRectangleRec(nub, outline);
+    if (pct > 0) {
+        float inset = th + 1.0f;
+        float fw = (bodyW - inset * 2.0f) * ((float)pct / 100.0f);
+        if (fw > 0.0f) {
+            DrawRectangleRec((Rectangle){ x + inset, y + inset, fw, h - inset * 2.0f },
+                             (Color){ 176, 245, 91, 255 });
+        }
+    }
+}
+
+/* USB trident: stem + three branches (circle / bar / square). */
+static void PadNotice_DrawUsb(Rectangle box, Color col) {
+    float s = fminf(box.width, box.height);
+    float cx = box.x + box.width * 0.5f, cy = box.y + box.height * 0.5f;
+    float th = fmaxf(2.0f, s * 0.10f);
+    float stemH = s * 0.55f, stemY = cy - s * 0.05f;
+    DrawRectangleRec((Rectangle){ cx - th * 0.5f, stemY, th, stemH }, col);
+    DrawRectangleRec((Rectangle){ cx - s * 0.28f, stemY, s * 0.56f, th }, col);
+    DrawCircleV((Vector2){ cx - s * 0.28f, stemY + th * 0.5f }, s * 0.11f, col);
+    DrawRectangleRec((Rectangle){ cx + s * 0.22f, stemY - s * 0.04f, s * 0.16f, s * 0.16f }, col);
+    DrawRectangleRec((Rectangle){ cx - th * 0.5f, stemY - s * 0.22f, th, s * 0.22f }, col);
+    /* triangle tip */
+    DrawTriangle((Vector2){ cx, stemY - s * 0.38f },
+                 (Vector2){ cx - s * 0.11f, stemY - s * 0.18f },
+                 (Vector2){ cx + s * 0.11f, stemY - s * 0.18f }, col);
+}
+
+static void PadNotice_Unload(void) {
+    if (padNoticeTex.id) UnloadTexture(padNoticeTex);
+    padNoticeTex = (Texture2D){ 0 };
 }
 
 /* opacity 0..1; ySlide = (1-opacity)*INFO_BAR_SLIDE_PX so close is reverse of open.
  * Far-right aligned; 10px margin between text and rounded border. */
 static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySlide) {
+    /* When the hint labels switch, reuse the stock close/open: multiply the
+     * caller's opacity by padWatch.fade and add the stock slide on top.
+     * At rest fade is 1, so this is a no-op (pixel-identical). */
+    opacity *= padWatch.fade;
+    ySlide += (1.0f - padWatch.fade) * INFO_BAR_SLIDE_PX;
     if (opacity <= 0.001f || !text) return;
 
     const float textPad = 10.0f;
@@ -1623,6 +1767,91 @@ static void Repo_NoticeDraw(Font font) {
     DrawCircleV((Vector2){ x + 14.0f, y + h * 0.5f }, 5.0f,
                 Fade(repoNotice.note == REPO_NOTE_ROM_NEEDED ? ORANGE : (Color){ 0, 190, 255, 255 }, op));
     DrawTextEx(font, draw, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
+}
+
+/* N64-connect pop-up: #e5ebed panel, 1/3 x 1/4 of the live window, slides
+ * down from the top (centered) and slides back up after PAD_NOTICE_SEC.
+ * The controller image is optional; a marked placeholder is used if missing. */
+static void PadNotice_Draw(Font font) {
+    if (GetTime() >= padNoticeUntil) return;
+
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float boxW = sw / 3.0f, boxH = sh / 4.0f;
+    float slide = INFO_BAR_FADE_SEC > 0.0f ? INFO_BAR_FADE_SEC : 0.4f;
+    float down = (float)(GetTime() - padNoticeStart);
+    float up = (float)(padNoticeUntil - GetTime());
+    float t = 1.0f;
+    if (down < slide) t = down / slide;
+    else if (up < slide) t = up / slide;
+    if (t <= 0.0f) return;
+    if (t > 1.0f) t = 1.0f;
+
+    float x = (sw - boxW) * 0.5f;
+    float y = -boxH * (1.0f - t);
+    Color bg = { 0xe5, 0xeb, 0xed, 255 };
+    DrawRectangleRec((Rectangle){ x, y, boxW, boxH }, bg);
+
+    float fs = (float)font.baseSize;
+    const char *label = T(S_PAD_N64_CONNECTED);
+    Vector2 tm = MeasureTextEx(font, label, fs, 2.0f);
+    if (tm.x > boxW * 0.9f && tm.x > 1.0f) {
+        fs *= boxW * 0.9f / tm.x;
+        tm = MeasureTextEx(font, label, fs, 2.0f);
+    }
+    Color ink = { 40, 44, 46, 255 };
+
+    NsoPadLink link = Pad_LinkNow();
+    bool usb = (link == NSO_PAD_LINK_USB);
+    int player = Nso_PadPlayerFromIndex(Pad_N64Index());
+    int battery = usb ? -1 : Nso_PadBatteryRead(NULL, PAD_NOTICE_MAC);
+
+    float pad = boxH * 0.06f, gap = 6.0f;
+    float topH = usb ? 0.0f : boxH * 0.11f;
+    float botH = boxH * 0.13f;
+    float srcW = padNoticeTex.id ? (float)padNoticeTex.width : (float)PAD_NOTICE_CROP_W;
+    float srcH = padNoticeTex.id ? (float)padNoticeTex.height : (float)PAD_NOTICE_CROP_H;
+    float areaY = y + pad + topH + (topH > 0.0f ? gap : 0.0f);
+    float areaW = boxW - pad * 2.0f;
+    float areaH = (y + boxH - pad - tm.y - gap) - areaY - botH - gap;
+    if (areaH < 8.0f) areaH = 8.0f;
+    float scale = fminf(areaW / srcW, areaH / srcH);
+    float imgW = srcW * scale, imgH = srcH * scale;
+    Rectangle dest = {
+        x + (boxW - imgW) * 0.5f,
+        areaY + (areaH - imgH) * 0.5f,
+        imgW, imgH
+    };
+    if (!usb && topH > 0.0f) {
+        float ledsW = fminf(areaW * 0.55f, boxW * 0.42f);
+        PadNotice_DrawLeds((Rectangle){ x + (boxW - ledsW) * 0.5f, y + pad, ledsW, topH }, player);
+    }
+    if (padNoticeTex.id) {
+        DrawTexturePro(padNoticeTex,
+                       (Rectangle){ 0, 0, srcW, srcH },
+                       dest, (Vector2){ 0, 0 }, 0.0f, WHITE);
+    } else {
+        DrawRectangleRec(dest, (Color){ 210, 216, 218, 255 });
+        DrawRectangleLinesEx(dest, 2.0f, (Color){ 0, 140, 190, 255 });
+        const char *ph = "8BitDo N64";
+        Vector2 pm = MeasureTextEx(font, ph, fs, 2.0f);
+        DrawTextEx(font, ph,
+                   (Vector2){ dest.x + (imgW - pm.x) * 0.5f, dest.y + (imgH - pm.y) * 0.5f },
+                   fs, 2.0f, (Color){ 0, 140, 190, 255 });
+    }
+    {
+        float by = dest.y + imgH + gap;
+        float bh = (y + boxH - pad - tm.y - gap) - by;
+        if (bh < botH * 0.5f) { by = y + boxH - pad - tm.y - gap - botH; bh = botH; }
+        Rectangle slot = { x + boxW * 0.35f, by, boxW * 0.30f, bh };
+        if (usb) {
+            PadNotice_DrawUsb(slot, ink);
+        } else {
+            PadNotice_DrawBattery(slot, battery); /* -1 = empty outline */
+        }
+    }
+    DrawTextEx(font, label,
+               (Vector2){ x + (boxW - tm.x) * 0.5f, y + boxH - pad - tm.y },
+               fs, 2.0f, ink);
 }
 
 /* Repository entry that builds this game of the active system (same dir), or -1. */
@@ -3468,6 +3697,7 @@ int main(void) {
     Sfx_Init();
 
     gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
+    PadNotice_Load();
 
     int Count = 0;
     char FontPath[2048];   /* base-dir relative, so ./nso works from any cwd */
@@ -3576,6 +3806,16 @@ int main(void) {
 
         int gameCount = ActiveGameCount();
         float dt = GetFrameTime();
+        Pad_Update(dt);
+        {
+            static bool padNoticeEnvDone = false;
+            const char *force = getenv("NSO_PAD_NOTICE");
+            if (!padNoticeEnvDone && force && force[0] && force[0] != '0'
+                && currentState == MOSAIC && !InfoBar_IsHidden()) {
+                padNoticeEnvDone = true;
+                PadNotice_Show();
+            }
+        }
 
         bool layoutLocked = screenSliding;
 
@@ -3933,6 +4173,7 @@ int main(void) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
         } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
+            PadNotice_Draw(font);
         }
 
         EndDrawing();
@@ -3945,6 +4186,7 @@ int main(void) {
     UnloadAllBoxarts();
     UnloadFont(font);
     if (gearTexture.id) UnloadTexture(gearTexture);
+    PadNotice_Unload();
     RetroShots_Unload();
     UnloadBlurResources();
     SidebarIcons_Unload();
