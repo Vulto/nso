@@ -122,6 +122,7 @@ void Embed_Stop(void);
 #include <time.h>
 #include "nso.h"
 #include "savestate.h"
+#include "sfx.h"
 
 /* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
@@ -381,6 +382,7 @@ static void Embed_SetMenu(bool open)
     embed.blurReady = false;
     for (int i = 0; i < EMBED_SLOTS; i++) Embed_ScanSlot(i);
     if (embed.audio) PauseAudioStream(embed.stream);
+    Sfx_Play(SFX_AUDIO);
 }
 
 /* Slot list (Load / Create focused right of the divider). */
@@ -392,12 +394,17 @@ static void Embed_SlotsInput(bool gp)
         embed.slotsFocus = false;
         return;
     }
-    if ((IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) && embed.slotSel > 0)
+    if ((IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) && embed.slotSel > 0) {
         embed.slotSel--;
+        Sfx_Play(SFX_NAVIGATE);
+    }
     if ((IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
-        && embed.slotSel + 1 < EMBED_SLOTS)
+        && embed.slotSel + 1 < EMBED_SLOTS) {
         embed.slotSel++;
+        Sfx_Play(SFX_NAVIGATE);
+    }
     if (!(IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0))) return;
+    Sfx_Play(SFX_CLICK);
     if (!load) Embed_SaveSlot(embed.slotSel);
     else if (embed.slotTime[embed.slotSel]) { embed.loadSlot = embed.slotSel + 1; Embed_SetMenu(false); }
 }
@@ -430,16 +437,21 @@ bool Embed_Update(float dt)
         if (toggle) { Embed_SetMenu(false); return true; }
         if (embed.slotsFocus) { Embed_SlotsInput(gp); return true; }
         if (IsKeyPressed(KEY_B) || Nso_PadBackPressed(0)) { Embed_SetMenu(false); return true; }
-        if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)))
+        if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) {
             embed.menuSel = (embed.menuSel + EMBED_MENU_COUNT - 1) % EMBED_MENU_COUNT;
-        if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
+            Sfx_Play(SFX_NAVIGATE);
+        }
+        if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) {
             embed.menuSel = (embed.menuSel + 1) % EMBED_MENU_COUNT;
+            Sfx_Play(SFX_NAVIGATE);
+        }
         bool slots = embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE;
         bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT));
         bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0);
         if (slots && (ok || right)) {
-            if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; }
+            if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; Sfx_Play(SFX_CLICK); }
         } else if (ok) {
+            Sfx_Play(SFX_CLICK);
             if (embed.menuSel == EMBED_MENU_QUIT) embed.quitting = true;
             if (embed.menuSel == EMBED_MENU_RESTART) {
                 if (!Embed_Reload()) return false;

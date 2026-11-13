@@ -36,6 +36,8 @@
 #include "systems/n64.h"
 #define GAMECUBE_IMPLEMENTATION
 #include "systems/gamecube.h"
+#define SFX_IMPLEMENTATION
+#include "sfx.h"
 #define EMBED_IMPLEMENTATION
 #include "embed.h"
 
@@ -1907,6 +1909,7 @@ static void Sidebar_Select(int item) {
     SidebarAnim_Play(sidebarItem, -1);
     sidebarItem = item;
     SidebarAnim_Play(item, +1);
+    Sfx_Play(SFX_PLUCK);
 }
 
 /* Progress 0..1 of the item's one-shot, or -1 when it is at rest. */
@@ -2641,9 +2644,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     bool back = IsKeyPressed(KEY_B) || gpBack;
     if (sidebarPanelFocus) {
         if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; return; }
-        if (up && sidebarSetRow > 0) sidebarSetRow--;
-        if (down && sidebarSetRow < SB_SET_COUNT - 1) sidebarSetRow++;
+        if (up && sidebarSetRow > 0) { sidebarSetRow--; Sfx_Play(SFX_PLUCK); }
+        if (down && sidebarSetRow < SB_SET_COUNT - 1) { sidebarSetRow++; Sfx_Play(SFX_PLUCK); }
         if (ok) {
+            Sfx_Play(SFX_CLICK);
             SysSettings *st = &sysSettings[currentSystem];
             if (SysIsRetro(currentSystem) && sidebarSetRow < SB_SET_CONTROLS) st->screen = sidebarSetRow;
             else if (SysIsRetro(currentSystem)) st->showControls = !st->showControls;
@@ -2661,8 +2665,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     if (sidebarItem == SB_ITEM_SETTINGS && (ok || IsKeyPressed(KEY_RIGHT) || gpRight)) {
         sidebarPanelFocus = true;
         sidebarSetRow = 0;
+        Sfx_Play(SFX_CLICK);
     } else if (ok) {
         SidebarAnim_Play(sidebarItem, +1);   /* no function: replay the one-shot */
+        Sfx_Play(SFX_CLICK);
     }
 }
 
@@ -3444,6 +3450,7 @@ int main(void) {
     }
     SysSettings_LoadAll();
     Order_LoadAll();
+    Sfx_Init();
 
     gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
 
@@ -3522,6 +3529,7 @@ int main(void) {
             autoSelected = true;
             int idx = atoi(autoSel);
             if (idx >= 0 && idx < SYSTEM_COUNT) currentSystem = idx;
+            if (ActiveSystem()->platform == &n64_platform) Sfx_Play(SFX_COIN);
             StartEnterMosaic();
         }
 
@@ -3702,6 +3710,8 @@ int main(void) {
 
                     if (canNavigate && !overlayConsumedConfirm &&
                         (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
+                        if (ActiveSystem()->platform == &n64_platform) Sfx_Play(SFX_COIN);
+                        else Sfx_Play(SFX_CLICK);
                         StartEnterMosaic();
                     }
                     break;
@@ -3712,6 +3722,7 @@ int main(void) {
                     if (statesOpen) {
                         if (States_HandleInput(gpLeft, gpRight, gpConfirm, gpBack)) {
                             if (GameIdx < gameCount && GameIsLaunchable(&ActiveGames()[GameIdx])) {
+                                Sfx_Play(SFX_CLICK);
                                 isLaunching = true;
                                 launchingGameIdx = GameIdx;
                                 currentState = LAUNCHING;
@@ -3765,7 +3776,9 @@ int main(void) {
                         }
                         int dir = GridNavPressed(gpLeft, gpRight, gpUp, gpDown);
                         if (dir >= 0) {
-                            Grid_MoveLifted(Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir));
+                            int next = Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir);
+                            if (next != GameIdx) Sfx_Play(SFX_NAVIGATE);
+                            Grid_MoveLifted(next);
                         }
                         break;
                     }
@@ -3792,12 +3805,17 @@ int main(void) {
 
                     if (gameCount > 0) {
                         int dir = GridNavPressed(gpLeft, gpRight, gpUp, gpDown);
-                        if (dir >= 0) GameIdx = Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir);
+                        if (dir >= 0) {
+                            int next = Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir);
+                            if (next != GameIdx) Sfx_Play(SFX_NAVIGATE);
+                            GameIdx = next;
+                        }
                     }
 
                     if (!overlayConsumedConfirm && (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
                         if (gameCount > 0 && GameIdx < gameCount) {
                             if (GameIsLaunchable(&ActiveGames()[GameIdx])) {
+                                Sfx_Play(SFX_CLICK);
                                 isLaunching = true;
                                 launchingGameIdx = GameIdx;
                                 currentState = LAUNCHING;
@@ -3900,6 +3918,7 @@ int main(void) {
     UnloadBlurResources();
     SidebarIcons_Unload();
     UnloadSystems();
+    Sfx_Shutdown();
     CloseWindow();
 
     return EXIT_SUCCESS;

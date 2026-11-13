@@ -7,6 +7,9 @@ logs/
 config/
 assets/cache/
 
+# User-supplied UI sounds (origin unknown; never commit Nintendo audio)
+assets/sounds/
+
 # Test screenshots and Raylib captures
 .shots/
 screenshot*.png

@@ -3,7 +3,7 @@ CFLAGS := -std=c23 -Wall -Wextra -O2 -Isrc
 SRC := src/main.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
-	src/embed.h embed/nsomod.h
+	src/embed.h src/sfx.h embed/nsomod.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -38,6 +38,7 @@ test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
 		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
+		src/sfx_test.c src/sfx.h \
 		embed/sm64/reloc_test.c embed/sm64/reloc.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
@@ -55,8 +56,10 @@ test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./order_test
 	$(CC) $(CFLAGS) -o embed_test src/embed_test.c -lm
 	./embed_test
+	$(CC) $(CFLAGS) -o sfx_test src/sfx_test.c -lraylib -lm
+	./sfx_test
 	$(CC) $(CFLAGS) -o sm64reloc_test embed/sm64/reloc_test.c
 	./sm64reloc_test
 
 clean:
-	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sm64reloc_test
+	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test
