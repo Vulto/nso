@@ -275,11 +275,11 @@ typedef enum {
     NSO_PAD_LINK_BT,
 } NsoPadLink;
 
-/* Hint-bar profile from the evdev link of the N64 pad. USB keeps the default
- * bar; only Bluetooth switches to N64 labels. */
+/* Hint-bar profile from the evdev link of the N64 pad. USB and Bluetooth
+ * both switch to N64 labels; no pad keeps the default bar. */
 static inline NsoPadProfile Nso_PadProfileFromLink(NsoPadLink link)
 {
-    if (link == NSO_PAD_LINK_BT) {
+    if (link == NSO_PAD_LINK_BT || link == NSO_PAD_LINK_USB) {
         return NSO_PAD_PROFILE_N64;
     }
     return NSO_PAD_PROFILE_DEFAULT;

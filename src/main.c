@@ -937,7 +937,7 @@ static NsoPadProfile Pad_Detect(void) {
     const char *flip = getenv("NSO_PAD_FLIP_AT");
     if (Nso_PadStyleEnvOverride(&env)) return env;
     if (flip && flip[0] && GetTime() >= atof(flip)) return NSO_PAD_PROFILE_N64;
-    /* USB (or no N64 pad) keeps the default bar; Bluetooth gets N64 labels. */
+    /* USB and Bluetooth both get N64 labels; no N64 pad keeps the default bar. */
     return Nso_PadProfileFromLink(Pad_LinkNow());
 }
 

@@ -78,7 +78,7 @@ int main(void)
         CHECK(!a.armed && Nso_PadAxisEdgeArmed(&a, 0.51f) == 0);
     }
     CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_BT) == NSO_PAD_PROFILE_N64);
-    CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_USB) == NSO_PAD_PROFILE_DEFAULT);
+    CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_USB) == NSO_PAD_PROFILE_N64);
     CHECK(Nso_PadProfileFromLink(NSO_PAD_LINK_NONE) == NSO_PAD_PROFILE_DEFAULT);
     CHECK(Nso_PadNameIsN64("8BitDo  8BitDo N64 Modkit"));
     CHECK(NSO_PAD_SETTLE_SEC > 0.0f);
