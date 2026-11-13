@@ -60,6 +60,25 @@ int main(void)
         expect_match("The Legend of Zelda: Oracle of Ages", snes, 8, NULL);
     }
 
+    {
+        const char *nes[] = {
+            "Legend of Zelda, The (Japan).png",
+            "Legend of Zelda, The (Europe).png",
+            "Legend of Zelda, The (USA).png",
+        };
+        expect_match("The Legend of Zelda", nes, 3,
+                     "Legend of Zelda, The (USA).png");
+    }
+
+    {
+        const char *n64[] = {
+            "SpaceStation Silicon Valley (Europe).png",
+            "SpaceStation Silicon Valley (USA).png",
+        };
+        expect_match("Space Station Silicon Valley", n64, 2,
+                     "SpaceStation Silicon Valley (USA).png");
+    }
+
     Scrape_Repo(repo, sizeof(repo), "Nintendo - Nintendo 64");
     if (strcmp(repo, "Nintendo_-_Nintendo_64") != 0) {
         fprintf(stderr, "repo %s\n", repo);

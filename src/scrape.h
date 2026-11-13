@@ -87,7 +87,7 @@ int Scrape_ImageUrl(char *dst, size_t n, const char *playlist, const char *file)
     return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
 }
 
-/* ", The - " article form used by libretro names (before a subtitle). */
+/* ", The" article form used by libretro names (before a subtitle, or at end). */
 static int Scrape_TheArticleDash(const unsigned char *s)
 {
     while (*s == ' ' || *s == '\t') s++;
@@ -100,13 +100,14 @@ static int Scrape_TheArticleDash(const unsigned char *s)
         (*s >= '0' && *s <= '9'))
         return 0;
     while (*s == ' ' || *s == '\t') s++;
-    return *s == '-';
+    return *s == '-' || *s == '\0';
 }
 
 /* Latin-1 accents fold to ASCII so "Pokémon" matches "Pokemon".
-   A leading "the " and the ", The" article before a " - " subtitle are dropped
-   so "The Legend of Zelda: A Link to the Past" matches
-   "Legend of Zelda, The - A Link to the Past". */
+   A leading "the " and the ", The" article (before a " - " subtitle, or
+   trailing at the end of the name) are dropped so "The Legend of Zelda"
+   matches "Legend of Zelda, The", and "The Legend of Zelda: A Link to the Past"
+   matches "Legend of Zelda, The - A Link to the Past". */
 static void Scrape_Normalize(char *dst, size_t n, const char *src)
 {
     size_t u = 0;
@@ -185,9 +186,20 @@ static int RegionRank(const char *filename)
     return 0;
 }
 
+static void Scrape_Compact(char *dst, size_t n, const char *src)
+{
+    size_t u = 0;
+    if (!dst || n == 0) return;
+    for (const char *s = src ? src : ""; *s && u + 1 < n; s++) {
+        if (*s != ' ') dst[u++] = *s;
+    }
+    dst[u] = '\0';
+}
+
 const char *Scrape_Match(const char *title, const char **names, int count)
 {
     char normTitle[512];
+    char compactTitle[512];
     const char *best = NULL;
     int bestRank = -1;
     size_t bestStem = 0;
@@ -208,6 +220,35 @@ const char *Scrape_Match(const char *title, const char **names, int count)
         if (!EndsWithWord(normStem, normTitle)) continue;
         rank = RegionRank(names[i]);
         stemLen = strlen(normStem);
+        fileLen = strlen(names[i]);
+        if (!best || rank > bestRank) better = 1;
+        else if (rank == bestRank && stemLen < bestStem) better = 1;
+        else if (rank == bestRank && stemLen == bestStem && fileLen < bestFile) better = 1;
+        if (!better) continue;
+        best = names[i];
+        bestRank = rank;
+        bestStem = stemLen;
+        bestFile = fileLen;
+    }
+    if (best) return best;
+    /* Fallback: some libretro names omit spaces ("SpaceStation Silicon Valley"). */
+    Scrape_Compact(compactTitle, sizeof(compactTitle), normTitle);
+    if (compactTitle[0] == '\0') return NULL;
+    for (int i = 0; i < count; i++) {
+        char stem[512];
+        char normStem[512];
+        char compactStem[512];
+        int rank;
+        size_t stemLen;
+        size_t fileLen;
+        int better = 0;
+        if (!names[i]) continue;
+        Scrape_Stem(stem, sizeof(stem), names[i]);
+        Scrape_Normalize(normStem, sizeof(normStem), stem);
+        Scrape_Compact(compactStem, sizeof(compactStem), normStem);
+        if (strcmp(compactStem, compactTitle) != 0) continue;
+        rank = RegionRank(names[i]);
+        stemLen = strlen(compactStem);
         fileLen = strlen(names[i]);
         if (!best || rank > bestRank) better = 1;
         else if (rank == bestRank && stemLen < bestStem) better = 1;
