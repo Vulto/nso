@@ -29,7 +29,8 @@ build-win/
 
 # Copyrighted / third-party art and fonts (user-supplied or scraped locally)
 assets/images/
-assets/fonts/
+# Ignore font files by default; the exceptions below keep the shipped ones.
+assets/fonts/*
 
 # ROM and disc images, archives, and source-port asset packs (any path)
 *.sfc
@@ -53,6 +54,8 @@ assets/fonts/
 *.obj
 !assets/fonts/NotoSansCJKkr-Regular.otf
 !assets/fonts/LICENSE-NotoSansCJK.txt
+!assets/fonts/SymbolsNerdFont-Regular.ttf
+!assets/fonts/LICENSE-NerdFonts.txt
 
 # In-process modules (embed/<game>/Makefile output)
 embed/*/build/

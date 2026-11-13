@@ -854,6 +854,12 @@ static void DrawMenuGear(float offsetX) {
  * Every system card, plus the selection ring, sits inside a rectangle a
  * quarter of the screen (half width x half height) centred on screen. */
 static Font slotFont;   /* menu font, defined (and set in main) below */
+/* Nerd Font (Symbols Only): N64 C-Up / C-Down marks only. */
+#define HINT_NERD_CUP   0xF0062  /* md-arrow_up_drop_circle */
+#define HINT_NERD_CDOWN 0xF004A  /* md-arrow_down_drop_circle */
+static Font hintNerdFont;
+static bool hintNerdLoaded;
+
 
 static void DrawSystemMenu(float offsetX) {
     float sw = (float)GetScreenWidth();
@@ -1083,6 +1089,63 @@ static void PadNotice_Unload(void) {
 
 /* opacity 0..1; ySlide = (1-opacity)*INFO_BAR_SLIDE_PX so close is reverse of open.
  * Far-right aligned; 10px margin between text and rounded border. */
+
+static int Hint_N64NerdCodepoint(int cp) {
+    if (cp == 0x1F167) return HINT_NERD_CUP;    /* 🅧 Details → C-Up */
+    if (cp == 0x1F168) return HINT_NERD_CDOWN;  /* 🅨 Move    → C-Down */
+    return 0;
+}
+
+static float Hint_GlyphAdvance(Font font, int cp, float fontSize) {
+    float scale = fontSize / (float)font.baseSize;
+    int index = GetGlyphIndex(font, cp);
+    if (font.glyphs[index].advanceX == 0) return font.recs[index].width * scale;
+    return (float)font.glyphs[index].advanceX * scale;
+}
+
+static float Hint_GlyphHeight(Font font, int cp, float fontSize) {
+    float scale = fontSize / (float)font.baseSize;
+    int index = GetGlyphIndex(font, cp);
+    return font.recs[index].height * scale;
+}
+
+/* N64 bar: same string as default, but 🅧/🅨 are drawn from hintNerdFont. */
+static float Hint_N64Width(Font font, const char *text, float fontSize, float spacing) {
+    float w = 0.0f;
+    const char *p = text;
+    while (*p) {
+        int sz = 0;
+        int cp = GetCodepointNext(p, &sz);
+        p += sz;
+        int nerd = Hint_N64NerdCodepoint(cp);
+        Font f = nerd ? hintNerdFont : font;
+        int drawcp = nerd ? nerd : cp;
+        w += Hint_GlyphAdvance(f, drawcp, fontSize) + spacing;
+    }
+    if (w > 0.0f) w -= spacing;
+    return w;
+}
+
+static void Hint_N64Draw(Font font, const char *text, Vector2 pos, float fontSize, float spacing, float lineH, Color tint) {
+    float x = pos.x;
+    const char *p = text;
+    while (*p) {
+        int sz = 0;
+        int cp = GetCodepointNext(p, &sz);
+        p += sz;
+        int nerd = Hint_N64NerdCodepoint(cp);
+        Font f = nerd ? hintNerdFont : font;
+        int drawcp = nerd ? nerd : cp;
+        float y = pos.y;
+        if (nerd) {
+            float h = Hint_GlyphHeight(f, drawcp, fontSize);
+            y = pos.y + (lineH - h) * 0.5f;
+        }
+        DrawTextCodepoint(f, drawcp, (Vector2){ x, y }, fontSize, tint);
+        x += Hint_GlyphAdvance(f, drawcp, fontSize) + spacing;
+    }
+}
+
 static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySlide) {
     /* When the hint labels switch, reuse the stock close/open: multiply the
      * caller's opacity by padWatch.fade and add the stock slide on top.
@@ -1096,7 +1159,14 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     float spacing = 2.0f;
     char hintBuf[256];
     const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
-    Vector2 textSize = MeasureTextEx(font, draw, fontSize, spacing);
+    bool n64Hints = (Pad_ActiveProfile() == NSO_PAD_PROFILE_N64) && hintNerdLoaded;
+    Vector2 textSize;
+    if (n64Hints) {
+        textSize.x = Hint_N64Width(font, text, fontSize, spacing);
+        textSize.y = MeasureTextEx(font, text, fontSize, spacing).y;
+    } else {
+        textSize = MeasureTextEx(font, draw, fontSize, spacing);
+    }
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
     float barH = 55.0f;
@@ -1128,12 +1198,16 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
         .y = rec.y + (barH - textSize.y) * 0.5f
     };
 
-    DrawTextEx(font,
-               draw,
-               textPosition,
-               fontSize,
-               spacing,
-               Fade(WHITE, opacity));
+    if (n64Hints) {
+        Hint_N64Draw(font, text, textPosition, fontSize, spacing, textSize.y, Fade(WHITE, opacity));
+    } else {
+        DrawTextEx(font,
+                   draw,
+                   textPosition,
+                   fontSize,
+                   spacing,
+                   Fade(WHITE, opacity));
+    }
 }
 
 static void InfoBar_Draw(Font font) {
@@ -3738,6 +3812,25 @@ int main(void) {
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
     slotFont = font;
 
+    {
+        char nerdPath[2048];
+        snprintf(nerdPath, sizeof(nerdPath), "%s",
+                 GetDataPath("assets/fonts/SymbolsNerdFont-Regular.ttf"));
+        hintNerdLoaded = false;
+        hintNerdFont = (Font){ 0 };
+        if (FileExists(nerdPath)) {
+            int nerdCps[2] = { HINT_NERD_CUP, HINT_NERD_CDOWN };
+            hintNerdFont = LoadFontEx(nerdPath, 36, nerdCps, 2);
+            hintNerdLoaded = (hintNerdFont.texture.id != 0 && hintNerdFont.glyphCount >= 2);
+            if (hintNerdLoaded) {
+                SetTextureFilter(hintNerdFont.texture, TEXTURE_FILTER_BILINEAR);
+            } else if (hintNerdFont.texture.id) {
+                UnloadFont(hintNerdFont);
+                hintNerdFont = (Font){ 0 };
+            }
+        }
+    }
+
     for (int i = 0; i < MAX_GAMES; i++) {
         gameBoxarts[i] = (Texture2D){0};
         animScales[i] = 1.0f;
@@ -4202,6 +4295,11 @@ int main(void) {
     States_Unload();
     UnloadAllBoxarts();
     UnloadFont(font);
+    if (hintNerdLoaded) {
+        UnloadFont(hintNerdFont);
+        hintNerdFont = (Font){ 0 };
+        hintNerdLoaded = false;
+    }
     if (gearTexture.id) UnloadTexture(gearTexture);
     PadNotice_Unload();
     RetroShots_Unload();
