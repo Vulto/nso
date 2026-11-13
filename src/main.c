@@ -678,6 +678,53 @@ static float infoBarOpacity[INFO_BAR_COUNT];
 static InfoBarId infoBarActive = INFO_BAR_NONE;
 static InfoBarId infoBarWanted = INFO_BAR_NONE;
 
+/* N64 pad: C-up / C-down / C-left this frame (right stick edges), set in the main loop. */
+static bool padCUp, padCDown, padCLeft;
+
+static bool Pad_N64Style(void) {
+    const char *f = getenv("NSO_PAD_STYLE");   /* "n64" forces the N64 hints (headless screenshots) */
+    if (f && strcmp(f, "n64") == 0) return true;
+    return IsGamepadAvailable(0) && Nso_PadNameIsN64(GetGamepadName(0));
+}
+
+/* Hint text with the 🅐🅑🅧🅨 glyphs drawn as N64 buttons: A blue, B green,
+ * X / Y as yellow C-up / C-down. Returns the width; draw=false only measures. */
+static float Hint_Text(Font font, const char *text, Vector2 pos, float fs, float sp, Color tint, bool draw) {
+    float scale = fs / (float)font.baseSize, x = pos.x;
+    for (const char *p = text; *p; ) {
+        int n = 0, cp = GetCodepointNext(p, &n);
+        p += n;
+        if (cp == 0x1F150 || cp == 0x1F151 || cp == 0x1F167 || cp == 0x1F168) {
+            float r = fs * 0.39f;
+            Vector2 c = { x + r, pos.y + fs * 0.5f };
+            if (draw) {
+                Color col = cp == 0x1F150 ? (Color){ 40, 90, 225, 255 }
+                          : cp == 0x1F151 ? (Color){ 30, 160, 70, 255 } : (Color){ 245, 200, 30, 255 };
+                DrawCircleV(c, r, Fade(col, tint.a / 255.0f));
+                float t = r * 0.5f;
+                if (cp == 0x1F167) {
+                    DrawTriangle((Vector2){ c.x, c.y - t }, (Vector2){ c.x - t, c.y + t * 0.6f },
+                                 (Vector2){ c.x + t, c.y + t * 0.6f }, Fade(BLACK, tint.a / 255.0f));
+                } else if (cp == 0x1F168) {
+                    DrawTriangle((Vector2){ c.x, c.y + t }, (Vector2){ c.x + t, c.y - t * 0.6f },
+                                 (Vector2){ c.x - t, c.y - t * 0.6f }, Fade(BLACK, tint.a / 255.0f));
+                } else {
+                    const char *l = cp == 0x1F150 ? "A" : "B";
+                    float ls = fs * 0.62f;
+                    Vector2 m = MeasureTextEx(font, l, ls, 0.0f);
+                    DrawTextEx(font, l, (Vector2){ c.x - m.x * 0.5f, c.y - m.y * 0.5f }, ls, 0.0f, tint);
+                }
+            }
+            x += 2.0f * r + sp;
+            continue;
+        }
+        int gi = GetGlyphIndex(font, cp);
+        if (draw && cp != ' ') DrawTextCodepoint(font, cp, (Vector2){ x, pos.y }, fs, tint);
+        x += (font.glyphs[gi].advanceX ? (float)font.glyphs[gi].advanceX : font.recs[gi].width) * scale + sp;
+    }
+    return x - pos.x;
+}
+
 static void StepInfoOpacity(float *cur, float target, float dt) {
     if (INFO_BAR_FADE_SEC <= 0.0f) {
         *cur = target;
@@ -921,6 +968,8 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     float fontSize = (float)font.baseSize;
     float spacing = 2.0f;
     Vector2 textSize = MeasureTextEx(font, text, fontSize, spacing);
+    bool n64 = Pad_N64Style();
+    if (n64) textSize.x = Hint_Text(font, text, (Vector2){ 0 }, fontSize, spacing, WHITE, false);
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
     float barH = 55.0f;
@@ -952,7 +1001,8 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
         .y = rec.y + (barH - textSize.y) * 0.5f
     };
 
-    DrawTextEx(font,
+    if (n64) Hint_Text(font, text, textPosition, fontSize, spacing, Fade(WHITE, opacity), true);
+    else DrawTextEx(font,
                text,
                textPosition,
                fontSize,
@@ -1603,12 +1653,15 @@ static void Repo_NoticeDraw(Font font) {
     if (op <= 0.0f) return;
     float fs = (float)font.baseSize;
     Vector2 m = MeasureTextEx(font, text, fs, 2.0f);
+    bool n64 = Pad_N64Style();
+    if (n64) m.x = Hint_Text(font, text, (Vector2){ 0 }, fs, 2.0f, WHITE, false);
     float w = m.x + 48.0f, h = 56.0f;   /* clears the gear screen's tabs */
     float x = ((float)GetScreenWidth() - w) * 0.5f, y = 14.0f - (1.0f - op) * 20.0f;
     DrawRectangleRounded((Rectangle){ x, y, w, h }, 0.35f, 8, Fade(BLACK, 0.85f * op));
     DrawCircleV((Vector2){ x + 14.0f, y + h * 0.5f }, 5.0f,
                 Fade(repoNotice.note == REPO_NOTE_ROM_NEEDED ? ORANGE : (Color){ 0, 190, 255, 255 }, op));
-    DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
+    if (n64) Hint_Text(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op), true);
+    else DrawTextEx(font, text, (Vector2){ x + 24.0f, y + (h - m.y) * 0.5f }, fs, 2.0f, Fade(WHITE, op));
 }
 
 /* Repository entry that builds this game of the active system (same dir), or -1. */
@@ -2770,8 +2823,8 @@ static void States_Close(void) {
 /* Returns true when the user picked a state to load (stateLoadPath set). */
 static bool States_HandleInput(bool gpLeft, bool gpRight, bool gpConfirm, bool gpBack) {
     bool gp = IsGamepadAvailable(0);
-    bool gpX = gp && IsGamepadButtonPressed(0, NSO_BTN_X);
-    bool gpY = gp && IsGamepadButtonPressed(0, NSO_BTN_Y);
+    bool gpX = padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X));
+    bool gpY = padCDown || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y));
     StateItem *cur = (stateCount > 0) ? &states[stateSel] : NULL;
     bool confirmHeld = false;
 
@@ -3007,7 +3060,7 @@ static void Details_HandleInput(bool gpConfirm, bool gpBack) {
     bool gp = IsGamepadAvailable(0);
     if (!detailsOpen) return;   /* sliding out */
     if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_X) || gpBack
-        || (gp && IsGamepadButtonPressed(0, NSO_BTN_X))) {
+        || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X))) {
         Details_Close();
         return;
     }
@@ -3434,6 +3487,7 @@ static void RequestLeaveMosaic(void) {
 // ====================== MAIN PROGRAM ======================
 int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");
+    SetGamepadMappings(NSO_PAD_MAPPINGS);
     SetWindowTitle("NSO");
     SetTargetFPS(FPS);
 
@@ -3509,6 +3563,20 @@ int main(void) {
 
         prevLX = lx;
         prevLY = ly;
+
+        static float prevRX = 0.0f;
+        static float prevRY = 0.0f;
+        float rx = 0.0f;
+        float ry = 0.0f;
+        if (gp && Pad_N64Style()) {
+            rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
+            ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+        }
+        padCUp = ry < -0.5f && prevRY >= -0.5f;
+        padCDown = ry > 0.5f && prevRY <= 0.5f;
+        padCLeft = rx < -0.5f && prevRX >= -0.5f;
+        prevRX = rx;
+        prevRY = ry;
 
         bool overlayConsumedConfirm = false;
         bool canNavigate = !OverlayActive() && !isLaunching && !waitingForGame
@@ -3686,7 +3754,7 @@ int main(void) {
             switch (currentState) {
                 case SYSTEMS:
                     /* O: shortcut to the gear screen. Down / Up: cards <-> gear. */
-                    if (canNavigate && IsKeyPressed(KEY_O)) {
+                    if (canNavigate && (IsKeyPressed(KEY_O) || padCLeft)) {
                         Manage_Open();
                         break;
                     }
@@ -3737,7 +3805,7 @@ int main(void) {
                     /* KEY_O only: shrink selection, then expand full menu (no Select). */
                     if (!sidebarOpen && !sidebarExpandPending && !sidebarClosing
                         && sbWidthPhase == SB_WIDTH_IDLE && !gridLifted
-                        && canNavigate && IsKeyPressed(KEY_O)) {
+                        && canNavigate && (IsKeyPressed(KEY_O) || padCLeft)) {
                         RequestSidebarExpand();
                         break;
                     }
@@ -3784,7 +3852,7 @@ int main(void) {
                     }
 
                     bool onGame = canNavigate && gameCount > 0 && GameIdx < gameCount;
-                    if (onGame && (IsKeyPressed(KEY_Y) || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y)))) {
+                    if (onGame && (IsKeyPressed(KEY_Y) || padCDown || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y)))) {
                         gridLifted = true;
                         gridLiftMoved = false;
                         gridLiftFrom = GameIdx;
@@ -3792,7 +3860,7 @@ int main(void) {
                     }
 
                     /* X / gamepad X: details panel (its Save States row opens the overlay). */
-                    if (onGame && (IsKeyPressed(KEY_X) || (gp && IsGamepadButtonPressed(0, NSO_BTN_X)))) {
+                    if (onGame && (IsKeyPressed(KEY_X) || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X)))) {
                         Details_Open();
                         break;
                     }
@@ -3840,7 +3908,7 @@ int main(void) {
                     if (IsKeyPressed(KEY_UP) || gpUp) manageRow = (manageRow + rowsN - 1) % rowsN;
                     if (IsKeyPressed(KEY_DOWN) || gpDown) manageRow = (manageRow + 1) % rowsN;
                     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) Manage_Activate();
-                    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_O) || gpBack) Manage_Close();
+                    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_O) || padCLeft || gpBack) Manage_Close();
                     break;
                 }
 
