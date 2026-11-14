@@ -43,7 +43,7 @@
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
-#define MAX_GAMES 100
+#define MAX_GAMES 400
 #define FPS 60
 
 typedef struct {

@@ -100,6 +100,17 @@ int main(void)
         expect_match("Road Fighter (USA)", nes, 9, NULL);
     }
 
+    {   /* ", A" like ", The" */
+        const char *n64[] = {
+            "Bug's Life, A (Europe).png",
+            "Bug's Life, A (USA).png",
+            "World Is Not Enough, The (USA).png",
+        };
+        expect_match("A Bug's Life", n64, 3, "Bug's Life, A (USA).png");
+        expect_match("Bug's Life", n64, 3, "Bug's Life, A (USA).png");
+        expect_match("The World Is Not Enough", n64, 3, "World Is Not Enough, The (USA).png");
+    }
+
     Scrape_Repo(repo, sizeof(repo), "Nintendo - Nintendo 64");
     if (strcmp(repo, "Nintendo_-_Nintendo_64") != 0) {
         fprintf(stderr, "repo %s\n", repo);

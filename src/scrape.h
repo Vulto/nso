@@ -87,27 +87,32 @@ int Scrape_ImageUrl(char *dst, size_t n, const char *playlist, const char *file)
     return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
 }
 
-/* ", The" article form used by libretro names (before a subtitle, or at end). */
+/* ", The" / ", A" article form used by libretro names (before a subtitle,
+   or at end): the article's length after the spaces, or 0. */
 static int Scrape_TheArticleDash(const unsigned char *s)
 {
+    int len;
     while (*s == ' ' || *s == '\t') s++;
-    if ((s[0] != 't' && s[0] != 'T') ||
-        (s[1] != 'h' && s[1] != 'H') ||
-        (s[2] != 'e' && s[2] != 'E'))
+    if ((s[0] == 't' || s[0] == 'T') && (s[1] == 'h' || s[1] == 'H') && (s[2] == 'e' || s[2] == 'E'))
+        len = 3;
+    else if (s[0] == 'a' || s[0] == 'A')
+        len = 1;
+    else
         return 0;
-    s += 3;
+    s += len;
     if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
         (*s >= '0' && *s <= '9'))
         return 0;
     while (*s == ' ' || *s == '\t') s++;
-    return *s == '-' || *s == '\0';
+    return (*s == '-' || *s == '\0') ? len : 0;
 }
 
 /* Latin-1 accents fold to ASCII so "Pokémon" matches "Pokemon".
-   A leading "the " and the ", The" article (before a " - " subtitle, or
-   trailing at the end of the name) are dropped so "The Legend of Zelda"
-   matches "Legend of Zelda, The", and "The Legend of Zelda: A Link to the Past"
-   matches "Legend of Zelda, The - A Link to the Past". */
+   A leading "the " / "a " and the ", The" / ", A" article (before a " - "
+   subtitle, or trailing at the end of the name) are dropped so "The Legend
+   of Zelda" matches "Legend of Zelda, The", "A Bug's Life" matches "Bug's
+   Life, A", and "The Legend of Zelda: A Link to the Past" matches "Legend of
+   Zelda, The - A Link to the Past". */
 static void Scrape_Normalize(char *dst, size_t n, const char *src)
 {
     size_t u = 0;
@@ -116,9 +121,10 @@ static void Scrape_Normalize(char *dst, size_t n, const char *src)
     if (!dst || n == 0) return;
     while (*s && u + 1 < n) {
         unsigned char c = *s++;
-        if (c == ',' && Scrape_TheArticleDash(s)) {
+        int article = c == ',' ? Scrape_TheArticleDash(s) : 0;
+        if (article) {
             while (*s == ' ' || *s == '\t') s++;
-            s += 3; /* "the" */
+            s += article; /* "the" / "a" */
             continue;
         }
         if (c == '\'' || c == '`') continue;
@@ -149,6 +155,8 @@ static void Scrape_Normalize(char *dst, size_t n, const char *src)
     dst[u] = '\0';
     if (strncmp(dst, "the ", 4) == 0)
         memmove(dst, dst + 4, strlen(dst + 4) + 1);
+    else if (strncmp(dst, "a ", 2) == 0)
+        memmove(dst, dst + 2, strlen(dst + 2) + 1);
 }
 
 static void Scrape_Stem(char *dst, size_t n, const char *filename)

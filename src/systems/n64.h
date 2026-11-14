@@ -339,6 +339,1252 @@ GameEntry n64_games[] = {
         .binary = "host/build/ConkerRecomp",
         .orient = SLOT_ORIENT_INHERIT,
     },
+    /* Display-only: cover and catalog, nothing to launch yet. */
+    {
+        .title = "007: The World Is Not Enough",
+        .boxartPath = "assets/images/systems/n64/007theworldisnotenough.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "AeroFighters Assault",
+        .boxartPath = "assets/images/systems/n64/aerofightersassault.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "AeroGauge",
+        .boxartPath = "assets/images/systems/n64/aerogauge.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Aidyn Chronicles: The First Mage",
+        .boxartPath = "assets/images/systems/n64/aidynchroniclesthefirstmage.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "All Star Tennis 99",
+        .boxartPath = "assets/images/systems/n64/allstartennis99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "All-Star Baseball 2000",
+        .boxartPath = "assets/images/systems/n64/allstarbaseball2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "All-Star Baseball 2001",
+        .boxartPath = "assets/images/systems/n64/allstarbaseball2001.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "All-Star Baseball 99",
+        .boxartPath = "assets/images/systems/n64/allstarbaseball99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Armorines: Project S.W.A.R.M.",
+        .boxartPath = "assets/images/systems/n64/armorinesprojectswarm.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Army Men: Air Combat",
+        .boxartPath = "assets/images/systems/n64/armymenaircombat.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Army Men: Sarge's Heroes",
+        .boxartPath = "assets/images/systems/n64/armymensargesheroes.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Army Men: Sarge's Heroes 2",
+        .boxartPath = "assets/images/systems/n64/armymensargesheroes2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Asteroids Hyper 64",
+        .boxartPath = "assets/images/systems/n64/asteroidshyper64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Automobili Lamborghini",
+        .boxartPath = "assets/images/systems/n64/automobililamborghini.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bassmasters 2000",
+        .boxartPath = "assets/images/systems/n64/bassmasters2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Batman Beyond: Return of the Joker",
+        .boxartPath = "assets/images/systems/n64/batmanbeyondreturnofthejoker.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "BattleTanx",
+        .boxartPath = "assets/images/systems/n64/battletanx.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Beetle Adventure Racing!",
+        .boxartPath = "assets/images/systems/n64/beetleadventureracing.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Big Mountain 2000",
+        .boxartPath = "assets/images/systems/n64/bigmountain2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bio F.R.E.A.K.S.",
+        .boxartPath = "assets/images/systems/n64/biofreaks.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Blast Corps",
+        .boxartPath = "assets/images/systems/n64/blastcorps.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Blues Brothers 2000",
+        .boxartPath = "assets/images/systems/n64/bluesbrothers2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bomberman 64: The Second Attack!",
+        .boxartPath = "assets/images/systems/n64/bomberman64thesecondattack.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bottom of the 9th",
+        .boxartPath = "assets/images/systems/n64/bottomofthe9th.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Brunswick Circuit Pro Bowling",
+        .boxartPath = "assets/images/systems/n64/brunswickcircuitprobowling.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Buck Bumble",
+        .boxartPath = "assets/images/systems/n64/buckbumble.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "A Bug's Life",
+        .boxartPath = "assets/images/systems/n64/abugslife.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bust-A-Move '99",
+        .boxartPath = "assets/images/systems/n64/bustamove99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Bust-A-Move 2: Arcade Edition",
+        .boxartPath = "assets/images/systems/n64/bustamove2arcadeedition.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "California Speed",
+        .boxartPath = "assets/images/systems/n64/californiaspeed.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Carmageddon 64",
+        .boxartPath = "assets/images/systems/n64/carmageddon64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Castlevania: Legacy of Darkness",
+        .boxartPath = "assets/images/systems/n64/castlevanialegacyofdarkness.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Chameleon Twist 2",
+        .boxartPath = "assets/images/systems/n64/chameleontwist2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Charlie Blast's Territory",
+        .boxartPath = "assets/images/systems/n64/charlieblaststerritory.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Chopper Attack",
+        .boxartPath = "assets/images/systems/n64/chopperattack.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Clay Fighter: Sculptor's Cut",
+        .boxartPath = "assets/images/systems/n64/clayfightersculptorscut.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Clay Fighter 63 1-3",
+        .boxartPath = "assets/images/systems/n64/clayfighter6313.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Command & Conquer",
+        .boxartPath = "assets/images/systems/n64/commandconquer.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Cruis'n Exotica",
+        .boxartPath = "assets/images/systems/n64/cruisnexotica.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Cruis'n USA",
+        .boxartPath = "assets/images/systems/n64/cruisnusa.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Cruis'n World",
+        .boxartPath = "assets/images/systems/n64/cruisnworld.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "CyberTiger",
+        .boxartPath = "assets/images/systems/n64/cybertiger.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Dark Rift",
+        .boxartPath = "assets/images/systems/n64/darkrift.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Deadly Arts",
+        .boxartPath = "assets/images/systems/n64/deadlyarts.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Destruction Derby 64",
+        .boxartPath = "assets/images/systems/n64/destructionderby64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Diddy Kong Racing",
+        .boxartPath = "assets/images/systems/n64/diddykongracing.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Donald Duck: Goin' Quackers",
+        .boxartPath = "assets/images/systems/n64/donaldduckgoinquackers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Doom 64",
+        .boxartPath = "assets/images/systems/n64/doom64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Dual Heroes",
+        .boxartPath = "assets/images/systems/n64/dualheroes.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Duck Dodgers Starring Daffy Duck",
+        .boxartPath = "assets/images/systems/n64/duckdodgersstarringdaffyduck.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Duke Nukem 64",
+        .boxartPath = "assets/images/systems/n64/dukenukem64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Earthworm Jim 3D",
+        .boxartPath = "assets/images/systems/n64/earthwormjim3d.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "ECW Hardcore Revolution",
+        .boxartPath = "assets/images/systems/n64/ecwhardcorerevolution.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Excitebike 64",
+        .boxartPath = "assets/images/systems/n64/excitebike64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Extreme-G XG2",
+        .boxartPath = "assets/images/systems/n64/extremegxg2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "F-1 World Grand Prix",
+        .boxartPath = "assets/images/systems/n64/f1worldgrandprix.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "F-1 World Grand Prix II",
+        .boxartPath = "assets/images/systems/n64/f1worldgrandprixii.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "F1 Pole Position 64",
+        .boxartPath = "assets/images/systems/n64/f1poleposition64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "FIFA: Road to World Cup 98",
+        .boxartPath = "assets/images/systems/n64/fifaroadtoworldcup98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "FIFA 99",
+        .boxartPath = "assets/images/systems/n64/fifa99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "FIFA Soccer 64",
+        .boxartPath = "assets/images/systems/n64/fifasoccer64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Fighter Destiny 2",
+        .boxartPath = "assets/images/systems/n64/fighterdestiny2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Fighters Destiny",
+        .boxartPath = "assets/images/systems/n64/fightersdestiny.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Fighting Force 64",
+        .boxartPath = "assets/images/systems/n64/fightingforce64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Flying Dragon",
+        .boxartPath = "assets/images/systems/n64/flyingdragon.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Forsaken 64",
+        .boxartPath = "assets/images/systems/n64/forsaken64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Fox Sports College Hoops '99",
+        .boxartPath = "assets/images/systems/n64/foxsportscollegehoops99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Gauntlet Legends",
+        .boxartPath = "assets/images/systems/n64/gauntletlegends.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Gex 3: Deep Cover Gecko",
+        .boxartPath = "assets/images/systems/n64/gex3deepcovergecko.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Gex 64: Enter the Gecko",
+        .boxartPath = "assets/images/systems/n64/gex64enterthegecko.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Glover",
+        .boxartPath = "assets/images/systems/n64/glover.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Goemon's Great Adventure",
+        .boxartPath = "assets/images/systems/n64/goemonsgreatadventure.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Golden Nugget 64",
+        .boxartPath = "assets/images/systems/n64/goldennugget64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "GT 64: Championship Edition",
+        .boxartPath = "assets/images/systems/n64/gt64championshipedition.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Hercules: The Legendary Journeys",
+        .boxartPath = "assets/images/systems/n64/herculesthelegendaryjourneys.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Hexen",
+        .boxartPath = "assets/images/systems/n64/hexen.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Hey You, Pikachu!",
+        .boxartPath = "assets/images/systems/n64/heyyoupikachu.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Hot Wheels: Turbo Racing",
+        .boxartPath = "assets/images/systems/n64/hotwheelsturboracing.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Hydro Thunder",
+        .boxartPath = "assets/images/systems/n64/hydrothunder.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "In-Fisherman: Bass Hunter 64",
+        .boxartPath = "assets/images/systems/n64/infishermanbasshunter64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Indiana Jones and the Infernal Machine",
+        .boxartPath = "assets/images/systems/n64/indianajonesandtheinfernalmachine.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Indy Racing 2000",
+        .boxartPath = "assets/images/systems/n64/indyracing2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "International Superstar Soccer '98",
+        .boxartPath = "assets/images/systems/n64/internationalsuperstarsoccer98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "International Superstar Soccer 2000",
+        .boxartPath = "assets/images/systems/n64/internationalsuperstarsoccer2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "International Superstar Soccer 64",
+        .boxartPath = "assets/images/systems/n64/internationalsuperstarsoccer64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "International Track & Field 2000",
+        .boxartPath = "assets/images/systems/n64/internationaltrackfield2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Jeopardy!",
+        .boxartPath = "assets/images/systems/n64/jeopardy.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Jeremy McGrath Supercross 2000",
+        .boxartPath = "assets/images/systems/n64/jeremymcgrathsupercross2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "John Romero's Daikatana",
+        .boxartPath = "assets/images/systems/n64/johnromerosdaikatana.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ken Griffey Jr.'s Slugfest",
+        .boxartPath = "assets/images/systems/n64/kengriffeyjrsslugfest.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "King Hill 64: Extreme Snowboarding",
+        .boxartPath = "assets/images/systems/n64/kinghill64extremesnowboarding.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Kirby 64: The Crystal Shards",
+        .boxartPath = "assets/images/systems/n64/kirby64thecrystalshards.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Knife Edge: Nose Gunner",
+        .boxartPath = "assets/images/systems/n64/knifeedgenosegunner.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Knockout Kings 2000",
+        .boxartPath = "assets/images/systems/n64/knockoutkings2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Kobe Bryant in NBA Courtside",
+        .boxartPath = "assets/images/systems/n64/kobebryantinnbacourtside.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Legend of Zelda: Ocarina of Time - Master Quest",
+        .boxartPath = "assets/images/systems/n64/thelegendofzeldaocarinaoftimemasterquest.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "LEGO Racers",
+        .boxartPath = "assets/images/systems/n64/legoracers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Lode Runner 3-D",
+        .boxartPath = "assets/images/systems/n64/loderunner3d.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mace: The Dark Age",
+        .boxartPath = "assets/images/systems/n64/macethedarkage.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Madden Football 64",
+        .boxartPath = "assets/images/systems/n64/maddenfootball64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Madden NFL 2000",
+        .boxartPath = "assets/images/systems/n64/maddennfl2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Madden NFL 2001",
+        .boxartPath = "assets/images/systems/n64/maddennfl2001.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Madden NFL 2002",
+        .boxartPath = "assets/images/systems/n64/maddennfl2002.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Madden NFL 99",
+        .boxartPath = "assets/images/systems/n64/maddennfl99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Magical Tetris Challenge",
+        .boxartPath = "assets/images/systems/n64/magicaltetrischallenge.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Major League Baseball Featuring Ken Griffey Jr.",
+        .boxartPath = "assets/images/systems/n64/majorleaguebaseballfeaturingkengriffeyjr.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mario Golf",
+        .boxartPath = "assets/images/systems/n64/mariogolf.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mario Party",
+        .boxartPath = "assets/images/systems/n64/marioparty.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mario Party 2",
+        .boxartPath = "assets/images/systems/n64/marioparty2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mia Hamm Soccer 64",
+        .boxartPath = "assets/images/systems/n64/miahammsoccer64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Michael Owen's WLS 2000",
+        .boxartPath = "assets/images/systems/n64/michaelowenswls2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mickey's Speedway USA",
+        .boxartPath = "assets/images/systems/n64/mickeysspeedwayusa.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Micro Machines 64 Turbo",
+        .boxartPath = "assets/images/systems/n64/micromachines64turbo.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Midway's Greatest Arcade Hits: Volume 1",
+        .boxartPath = "assets/images/systems/n64/midwaysgreatestarcadehitsvolume1.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mike Piazza's Strike Zone",
+        .boxartPath = "assets/images/systems/n64/mikepiazzasstrikezone.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Milo's Astro Lanes",
+        .boxartPath = "assets/images/systems/n64/milosastrolanes.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mischief Makers",
+        .boxartPath = "assets/images/systems/n64/mischiefmakers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mission: Impossible",
+        .boxartPath = "assets/images/systems/n64/missionimpossible.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Monaco Grand Prix",
+        .boxartPath = "assets/images/systems/n64/monacograndprix.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Monopoly",
+        .boxartPath = "assets/images/systems/n64/monopoly.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Monster Truck Madness 64",
+        .boxartPath = "assets/images/systems/n64/monstertruckmadness64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mortal Kombat 4",
+        .boxartPath = "assets/images/systems/n64/mortalkombat4.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mortal Kombat Trilogy",
+        .boxartPath = "assets/images/systems/n64/mortalkombattrilogy.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "MRC: Multi-Racing Championship",
+        .boxartPath = "assets/images/systems/n64/mrcmultiracingchampionship.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ms. Pac-Man: Maze Madness",
+        .boxartPath = "assets/images/systems/n64/mspacmanmazemadness.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Nagano Winter Olympics '98",
+        .boxartPath = "assets/images/systems/n64/naganowinterolympics98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Namco Museum 64",
+        .boxartPath = "assets/images/systems/n64/namcomuseum64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NASCAR 2000",
+        .boxartPath = "assets/images/systems/n64/nascar2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NASCAR 99",
+        .boxartPath = "assets/images/systems/n64/nascar99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Courtside 2 featuring Kobe Bryant",
+        .boxartPath = "assets/images/systems/n64/nbacourtside2featuringkobebryant.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Hangtime",
+        .boxartPath = "assets/images/systems/n64/nbahangtime.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA in the Zone '98",
+        .boxartPath = "assets/images/systems/n64/nbainthezone98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA in the Zone '99",
+        .boxartPath = "assets/images/systems/n64/nbainthezone99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA in the Zone 2000",
+        .boxartPath = "assets/images/systems/n64/nbainthezone2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Jam 99",
+        .boxartPath = "assets/images/systems/n64/nbajam99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Live 2000",
+        .boxartPath = "assets/images/systems/n64/nbalive2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Live 99",
+        .boxartPath = "assets/images/systems/n64/nbalive99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NBA Showtime: NBA on NBC",
+        .boxartPath = "assets/images/systems/n64/nbashowtimenbaonnbc.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The New Tetris",
+        .boxartPath = "assets/images/systems/n64/thenewtetris.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Blitz",
+        .boxartPath = "assets/images/systems/n64/nflblitz.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Blitz: Special Edition",
+        .boxartPath = "assets/images/systems/n64/nflblitzspecialedition.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Blitz 2000",
+        .boxartPath = "assets/images/systems/n64/nflblitz2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Blitz 2001",
+        .boxartPath = "assets/images/systems/n64/nflblitz2001.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL QB Club 2001",
+        .boxartPath = "assets/images/systems/n64/nflqbclub2001.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Quarterback Club 2000",
+        .boxartPath = "assets/images/systems/n64/nflquarterbackclub2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Quarterback Club 98",
+        .boxartPath = "assets/images/systems/n64/nflquarterbackclub98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NFL Quarterback Club 99",
+        .boxartPath = "assets/images/systems/n64/nflquarterbackclub99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NHL 99",
+        .boxartPath = "assets/images/systems/n64/nhl99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NHL Blades of Steel '99",
+        .boxartPath = "assets/images/systems/n64/nhlbladesofsteel99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NHL Breakaway 98",
+        .boxartPath = "assets/images/systems/n64/nhlbreakaway98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "NHL Breakaway 99",
+        .boxartPath = "assets/images/systems/n64/nhlbreakaway99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Nightmare Creatures",
+        .boxartPath = "assets/images/systems/n64/nightmarecreatures.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Nuclear Strike 64",
+        .boxartPath = "assets/images/systems/n64/nuclearstrike64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Off Road Challenge",
+        .boxartPath = "assets/images/systems/n64/offroadchallenge.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ogre Battle 64: Person of Lordly Caliber",
+        .boxartPath = "assets/images/systems/n64/ogrebattle64personoflordlycaliber.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Olympic Hockey 98",
+        .boxartPath = "assets/images/systems/n64/olympichockey98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Paperboy",
+        .boxartPath = "assets/images/systems/n64/paperboy.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Penny Racers",
+        .boxartPath = "assets/images/systems/n64/pennyracers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "PGA European Tour",
+        .boxartPath = "assets/images/systems/n64/pgaeuropeantour.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Pokemon Puzzle League",
+        .boxartPath = "assets/images/systems/n64/pokemonpuzzleleague.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Pokemon Snap",
+        .boxartPath = "assets/images/systems/n64/pokemonsnap.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Pokemon Stadium 2",
+        .boxartPath = "assets/images/systems/n64/pokemonstadium2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Polaris SnoCross",
+        .boxartPath = "assets/images/systems/n64/polarissnocross.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Power Rangers: Lightspeed Rescue",
+        .boxartPath = "assets/images/systems/n64/powerrangerslightspeedrescue.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Powerpuff Girls: Chemical X-Traction",
+        .boxartPath = "assets/images/systems/n64/thepowerpuffgirlschemicalxtraction.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Quake",
+        .boxartPath = "assets/images/systems/n64/quake.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Quake II",
+        .boxartPath = "assets/images/systems/n64/quakeii.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rally Challenge 2000",
+        .boxartPath = "assets/images/systems/n64/rallychallenge2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rampage: World Tour",
+        .boxartPath = "assets/images/systems/n64/rampageworldtour.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rampage 2: Universal Tour",
+        .boxartPath = "assets/images/systems/n64/rampage2universaltour.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rat Attack!",
+        .boxartPath = "assets/images/systems/n64/ratattack.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rayman 2: The Great Escape",
+        .boxartPath = "assets/images/systems/n64/rayman2thegreatescape.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Razor Freestyle Scooter",
+        .boxartPath = "assets/images/systems/n64/razorfreestylescooter.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Re-Volt",
+        .boxartPath = "assets/images/systems/n64/revolt.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ready 2 Rumble Boxing",
+        .boxartPath = "assets/images/systems/n64/ready2rumbleboxing.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ready 2 Rumble Boxing: Round 2",
+        .boxartPath = "assets/images/systems/n64/ready2rumbleboxinground2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Resident Evil 2",
+        .boxartPath = "assets/images/systems/n64/residentevil2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Road Rash 64",
+        .boxartPath = "assets/images/systems/n64/roadrash64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Roadsters",
+        .boxartPath = "assets/images/systems/n64/roadsters.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Robotron 64",
+        .boxartPath = "assets/images/systems/n64/robotron64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rocket: Robot on Wheels",
+        .boxartPath = "assets/images/systems/n64/rocketrobotonwheels.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "RR64: Ridge Racer 64",
+        .boxartPath = "assets/images/systems/n64/rr64ridgeracer64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rugrats: Scavenger Hunt",
+        .boxartPath = "assets/images/systems/n64/rugratsscavengerhunt.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rugrats in Paris: The Movie",
+        .boxartPath = "assets/images/systems/n64/rugratsinparisthemovie.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Rush 2: Extreme Racing USA",
+        .boxartPath = "assets/images/systems/n64/rush2extremeracingusa.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "S.C.A.R.S.",
+        .boxartPath = "assets/images/systems/n64/scars.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "San Francisco Rush 2049",
+        .boxartPath = "assets/images/systems/n64/sanfranciscorush2049.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Scooby-Doo!: Classic Creep Capers",
+        .boxartPath = "assets/images/systems/n64/scoobydooclassiccreepcapers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Sesame Street: Elmo's Letter Adventure",
+        .boxartPath = "assets/images/systems/n64/sesamestreetelmosletteradventure.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Sesame Street: Elmo's Number Journey",
+        .boxartPath = "assets/images/systems/n64/sesamestreetelmosnumberjourney.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Shadow Man",
+        .boxartPath = "assets/images/systems/n64/shadowman.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Shadowgate 64: Trials of the Four Towers",
+        .boxartPath = "assets/images/systems/n64/shadowgate64trialsofthefourtowers.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "SimCity 2000",
+        .boxartPath = "assets/images/systems/n64/simcity2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "South Park",
+        .boxartPath = "assets/images/systems/n64/southpark.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "South Park: Chef's Luv Shack",
+        .boxartPath = "assets/images/systems/n64/southparkchefsluvshack.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "South Park Rally",
+        .boxartPath = "assets/images/systems/n64/southparkrally.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Space Invaders",
+        .boxartPath = "assets/images/systems/n64/spaceinvaders.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Spider-Man",
+        .boxartPath = "assets/images/systems/n64/spiderman.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Star Soldier: Vanishing Earth",
+        .boxartPath = "assets/images/systems/n64/starsoldiervanishingearth.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Star Wars: Rogue Squadron",
+        .boxartPath = "assets/images/systems/n64/starwarsroguesquadron.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Star Wars: Shadows of the Empire",
+        .boxartPath = "assets/images/systems/n64/starwarsshadowsoftheempire.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Star Wars Episode I: Battle for Naboo",
+        .boxartPath = "assets/images/systems/n64/starwarsepisodeibattlefornaboo.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "StarCraft 64",
+        .boxartPath = "assets/images/systems/n64/starcraft64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Starshot: Space Circus Fever",
+        .boxartPath = "assets/images/systems/n64/starshotspacecircusfever.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Super Bowling",
+        .boxartPath = "assets/images/systems/n64/superbowling.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Supercross 2000",
+        .boxartPath = "assets/images/systems/n64/supercross2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Superman: The New Superman Aventures",
+        .boxartPath = "assets/images/systems/n64/supermanthenewsupermanaventures.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tarzan",
+        .boxartPath = "assets/images/systems/n64/tarzan.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tetrisphere",
+        .boxartPath = "assets/images/systems/n64/tetrisphere.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tigger's Honey Hunt",
+        .boxartPath = "assets/images/systems/n64/tiggershoneyhunt.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tom and Jerry in Fists of Furry",
+        .boxartPath = "assets/images/systems/n64/tomandjerryinfistsoffurry.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tom Clancy's Rainbow Six",
+        .boxartPath = "assets/images/systems/n64/tomclancysrainbowsix.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tonic Trouble",
+        .boxartPath = "assets/images/systems/n64/tonictrouble.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tony Hawk's Pro Skater 2",
+        .boxartPath = "assets/images/systems/n64/tonyhawksproskater2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tony Hawk's Pro Skater 3",
+        .boxartPath = "assets/images/systems/n64/tonyhawksproskater3.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Top Gear Hyper-Bike",
+        .boxartPath = "assets/images/systems/n64/topgearhyperbike.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Top Gear Overdrive",
+        .boxartPath = "assets/images/systems/n64/topgearoverdrive.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Top Gear Rally",
+        .boxartPath = "assets/images/systems/n64/topgearrally.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Top Gear Rally 2",
+        .boxartPath = "assets/images/systems/n64/topgearrally2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Toy Story 2: Buzz Lightyear to the Rescue!",
+        .boxartPath = "assets/images/systems/n64/toystory2buzzlightyeartotherescue.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Transformers: Beast Wars Transmetals",
+        .boxartPath = "assets/images/systems/n64/transformersbeastwarstransmetals.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Triple Play 2000",
+        .boxartPath = "assets/images/systems/n64/tripleplay2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Turok: Dinosaur Hunter",
+        .boxartPath = "assets/images/systems/n64/turokdinosaurhunter.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Turok 2: Seeds of Evil",
+        .boxartPath = "assets/images/systems/n64/turok2seedsofevil.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Turok 3: Shadow of Oblivion",
+        .boxartPath = "assets/images/systems/n64/turok3shadowofoblivion.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Twisted Edge: Extreme Snowboarding",
+        .boxartPath = "assets/images/systems/n64/twistededgeextremesnowboarding.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "V-Rally Edition 99",
+        .boxartPath = "assets/images/systems/n64/vrallyedition99.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Vigilante 8",
+        .boxartPath = "assets/images/systems/n64/vigilante8.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Vigilante 8: 2nd Offense",
+        .boxartPath = "assets/images/systems/n64/vigilante82ndoffense.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Virtual Pool 64",
+        .boxartPath = "assets/images/systems/n64/virtualpool64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Waialae Country Club: True Golf Classics",
+        .boxartPath = "assets/images/systems/n64/waialaecountryclubtruegolfclassics.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "War Gods",
+        .boxartPath = "assets/images/systems/n64/wargods.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Wayne Gretzky's 3D Hockey '98",
+        .boxartPath = "assets/images/systems/n64/waynegretzkys3dhockey98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WCW Backstage Assault",
+        .boxartPath = "assets/images/systems/n64/wcwbackstageassault.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WCW Mayhem",
+        .boxartPath = "assets/images/systems/n64/wcwmayhem.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WCW vs. nWo: World Tour",
+        .boxartPath = "assets/images/systems/n64/wcwvsnwoworldtour.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WCW-nWo Revenge",
+        .boxartPath = "assets/images/systems/n64/wcwnworevenge.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Wetrix",
+        .boxartPath = "assets/images/systems/n64/wetrix.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Wheel of Fortune",
+        .boxartPath = "assets/images/systems/n64/wheeloffortune.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WinBack: Covert Operations",
+        .boxartPath = "assets/images/systems/n64/winbackcovertoperations.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Wipeout 64",
+        .boxartPath = "assets/images/systems/n64/wipeout64.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "World Cup 98",
+        .boxartPath = "assets/images/systems/n64/worldcup98.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "World Driver Championship",
+        .boxartPath = "assets/images/systems/n64/worlddriverchampionship.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Worms Armageddon",
+        .boxartPath = "assets/images/systems/n64/wormsarmageddon.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WWF Attitude",
+        .boxartPath = "assets/images/systems/n64/wwfattitude.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WWF No Mercy",
+        .boxartPath = "assets/images/systems/n64/wwfnomercy.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WWF War Zone",
+        .boxartPath = "assets/images/systems/n64/wwfwarzone.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "WWF WrestleMania 2000",
+        .boxartPath = "assets/images/systems/n64/wwfwrestlemania2000.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Xena: Warrior Princess - The Talisman of Fate",
+        .boxartPath = "assets/images/systems/n64/xenawarriorprincessthetalismanoffate.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
 };
 
 const int n64_game_count = (int)(sizeof(n64_games) / sizeof(n64_games[0]));
