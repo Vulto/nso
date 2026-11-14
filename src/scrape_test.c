@@ -79,6 +79,27 @@ int main(void)
                      "SpaceStation Silicon Valley (USA).png");
     }
 
+    {   /* "(World)" before "(Europe)"; a "(tag)" in the title picks the release */
+        const char *nes[] = {
+            "Super Mario Bros. (Europe).png",
+            "Super Mario Bros. (World).png",
+            "Ms. Pac-Man (USA) (Namco).png",
+            "Ms. Pac-Man (USA) (Tengen) (Unl).png",
+            "Road Fighter (Europe).png",
+            "Road Fighter (Japan).png",
+            "Excitebike (Japan, USA) (En).png",
+            "Excitebike (Japan, USA).png",
+            "Excitebike (USA) (GameCube Edition).png",
+        };
+        expect_match("Super Mario Bros", nes, 9, "Super Mario Bros. (World).png");
+        expect_match("Ms. Pac-Man (Namco)", nes, 9, "Ms. Pac-Man (USA) (Namco).png");
+        expect_match("Ms. Pac-Man (Tengen)", nes, 9, "Ms. Pac-Man (USA) (Tengen) (Unl).png");
+        expect_match("Road Fighter", nes, 9, "Road Fighter (Europe).png");
+        expect_match("Road Fighter (Japan)", nes, 9, "Road Fighter (Japan).png");
+        expect_match("Excitebike (Japan, USA)", nes, 9, "Excitebike (Japan, USA).png");
+        expect_match("Road Fighter (USA)", nes, 9, NULL);
+    }
+
     Scrape_Repo(repo, sizeof(repo), "Nintendo - Nintendo 64");
     if (strcmp(repo, "Nintendo_-_Nintendo_64") != 0) {
         fprintf(stderr, "repo %s\n", repo);

@@ -180,7 +180,8 @@ static int EndsWithWord(const char *s, const char *t)
 
 static int RegionRank(const char *filename)
 {
-    if (strstr(filename, "(USA")) return 3;
+    if (strstr(filename, "(USA")) return 4;
+    if (strstr(filename, "(World")) return 3;
     if (strstr(filename, "(Europe")) return 2;
     if (strstr(filename, "(Japan")) return 1;
     return 0;
@@ -196,15 +197,35 @@ static void Scrape_Compact(char *dst, size_t n, const char *src)
     dst[u] = '\0';
 }
 
+/* A trailing " (...)" in a title is not part of the name: it names the
+   one release to use ("Ms. Pac-Man (Tengen)", "Road Fighter (Japan)"), and
+   only files carrying that tag match. Returns the tag, or NULL. */
+static const char *Scrape_TitleTag(const char **title, char *base, size_t nb, char *tag, size_t nt)
+{
+    const char *t = *title;
+    const char *open = strrchr(t, '(');
+    size_t len = strlen(t);
+    if (!open || open == t || open[-1] != ' ' || t[len - 1] != ')') return NULL;
+    if ((size_t)(t + len - open) >= nt || (size_t)(open - t) >= nb) return NULL;
+    snprintf(tag, nt, "%s", open);
+    snprintf(base, nb, "%.*s", (int)(open - 1 - t), t);
+    *title = base;
+    return tag;
+}
+
 const char *Scrape_Match(const char *title, const char **names, int count)
 {
     char normTitle[512];
     char compactTitle[512];
+    char baseTitle[512];
+    char tagBuf[128];
+    const char *tag;
     const char *best = NULL;
     int bestRank = -1;
     size_t bestStem = 0;
     size_t bestFile = 0;
     if (!title || !names || count <= 0) return NULL;
+    tag = Scrape_TitleTag(&title, baseTitle, sizeof(baseTitle), tagBuf, sizeof(tagBuf));
     Scrape_Normalize(normTitle, sizeof(normTitle), title);
     if (normTitle[0] == '\0') return NULL;
     for (int i = 0; i < count; i++) {
@@ -214,7 +235,7 @@ const char *Scrape_Match(const char *title, const char **names, int count)
         size_t stemLen;
         size_t fileLen;
         int better = 0;
-        if (!names[i]) continue;
+        if (!names[i] || (tag && !strstr(names[i], tag))) continue;
         Scrape_Stem(stem, sizeof(stem), names[i]);
         Scrape_Normalize(normStem, sizeof(normStem), stem);
         if (!EndsWithWord(normStem, normTitle)) continue;
@@ -242,7 +263,7 @@ const char *Scrape_Match(const char *title, const char **names, int count)
         size_t stemLen;
         size_t fileLen;
         int better = 0;
-        if (!names[i]) continue;
+        if (!names[i] || (tag && !strstr(names[i], tag))) continue;
         Scrape_Stem(stem, sizeof(stem), names[i]);
         Scrape_Normalize(normStem, sizeof(normStem), stem);
         Scrape_Compact(compactStem, sizeof(compactStem), normStem);

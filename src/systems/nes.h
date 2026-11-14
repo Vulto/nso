@@ -91,6 +91,257 @@ GameEntry nes_games[] = {
         .binary = "build-linux-prod/MetroidNESRecomp",
         .orient = SLOT_ORIENT_INHERIT,
     },
+    /* Display-only: cover and catalog, nothing to launch yet. */
+    {
+        .title = "Abadox: The Deadly Inner War",
+        .boxartPath = "assets/images/systems/nes/abadox.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Alpha Mission",
+        .boxartPath = "assets/images/systems/nes/alphamission.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Batman: Return of the Joker",
+        .boxartPath = "assets/images/systems/nes/batmanrotj.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Garry Kitchen's Battletank",
+        .boxartPath = "assets/images/systems/nes/battletank.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Battletoads & Double Dragon",
+        .boxartPath = "assets/images/systems/nes/bttdd.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Battletoads",
+        .boxartPath = "assets/images/systems/nes/battletoads.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Castlevania II: Simon's Quest",
+        .boxartPath = "assets/images/systems/nes/castlevania2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Castlevania III: Dracula's Curse",
+        .boxartPath = "assets/images/systems/nes/castlevania3.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Castlevania",
+        .boxartPath = "assets/images/systems/nes/castlevania.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Contra",
+        .boxartPath = "assets/images/systems/nes/contra.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Donkey Kong Classics",
+        .boxartPath = "assets/images/systems/nes/dkclassics.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Donkey Kong Jr. Math",
+        .boxartPath = "assets/images/systems/nes/dkjrmath.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Double Dragon II: The Revenge",
+        .boxartPath = "assets/images/systems/nes/doubledragon2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Double Dragon III: The Sacred Stones",
+        .boxartPath = "assets/images/systems/nes/doubledragon3.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Double Dragon",
+        .boxartPath = "assets/images/systems/nes/doubledragon.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "DuckTales 2",
+        .boxartPath = "assets/images/systems/nes/ducktales2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "DuckTales",
+        .boxartPath = "assets/images/systems/nes/ducktales.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Excitebike (Japan, USA)",
+        .boxartPath = "assets/images/systems/nes/excitebike.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Galaga: Demons of Death",
+        .boxartPath = "assets/images/systems/nes/galaga.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ghosts'n Goblins",
+        .boxartPath = "assets/images/systems/nes/ghostsngoblins.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Gradius",
+        .boxartPath = "assets/images/systems/nes/gradius.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Gun.Smoke",
+        .boxartPath = "assets/images/systems/nes/gunsmoke.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Legend of Kage",
+        .boxartPath = "assets/images/systems/nes/kage.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man 2",
+        .boxartPath = "assets/images/systems/nes/megaman2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man 4",
+        .boxartPath = "assets/images/systems/nes/megaman4.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man 5",
+        .boxartPath = "assets/images/systems/nes/megaman5.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man 6",
+        .boxartPath = "assets/images/systems/nes/megaman6.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mega Man",
+        .boxartPath = "assets/images/systems/nes/megaman.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Mr. Gimmick (Europe)",
+        .boxartPath = "assets/images/systems/nes/mrgimmick.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ms. Pac-Man (Namco)",
+        .boxartPath = "assets/images/systems/nes/mspacman_namco.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ms. Pac-Man (Tengen)",
+        .boxartPath = "assets/images/systems/nes/mspacman_tengen.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ninja Gaiden II: The Dark Sword of Chaos",
+        .boxartPath = "assets/images/systems/nes/ninjagaiden2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ninja Gaiden III: The Ancient Ship of Doom",
+        .boxartPath = "assets/images/systems/nes/ninjagaiden3.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Ninja Gaiden",
+        .boxartPath = "assets/images/systems/nes/ninjagaiden.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Pac-Mania",
+        .boxartPath = "assets/images/systems/nes/pacmania.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Pac-Man (Tengen)",
+        .boxartPath = "assets/images/systems/nes/pacman.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Road Fighter (Japan)",
+        .boxartPath = "assets/images/systems/nes/roadfighter.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Simpsons: Bartman Meets Radioactive Man",
+        .boxartPath = "assets/images/systems/nes/simpsons_bartman.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Simpsons: Bart vs. the Space Mutants",
+        .boxartPath = "assets/images/systems/nes/simpsons_bvsm.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "The Simpsons: Bart vs. the World",
+        .boxartPath = "assets/images/systems/nes/simpsons_bvtw.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Super C",
+        .boxartPath = "assets/images/systems/nes/superc.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Teenage Mutant Ninja Turtles II: The Arcade Game",
+        .boxartPath = "assets/images/systems/nes/tmnt2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Teenage Mutant Ninja Turtles III: The Manhattan Project",
+        .boxartPath = "assets/images/systems/nes/tmnt3.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Teenage Mutant Ninja Turtles: Tournament Fighters",
+        .boxartPath = "assets/images/systems/nes/tmnt_tf.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Teenage Mutant Ninja Turtles",
+        .boxartPath = "assets/images/systems/nes/tmnt.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tiger-Heli",
+        .boxartPath = "assets/images/systems/nes/tigerheli.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tiny Toon Adventures 2: Trouble in Wackyland",
+        .boxartPath = "assets/images/systems/nes/tinytoon2.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tiny Toon Adventures Cartoon Workshop",
+        .boxartPath = "assets/images/systems/nes/tinytoon_cw.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Tiny Toon Adventures",
+        .boxartPath = "assets/images/systems/nes/tinytoon.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
+    {
+        .title = "Top Gun",
+        .boxartPath = "assets/images/systems/nes/topgun.png",
+        .orient = SLOT_ORIENT_INHERIT,
+    },
 };
 
 const int nes_game_count = (int)(sizeof(nes_games) / sizeof(nes_games[0]));
