@@ -24,10 +24,12 @@ linux: nso
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -o nso $(SRC) -lraylib -lm -ldl
 
-# In-process modules: SMB Vanilla (repos/nes/smbvanilla), smw (repos/snes/smw),
-# sm64ex (repos/n64/sm64ex); never edits them
+# In-process modules: SMB Vanilla (repos/nes/smbvanilla), Mega Man 3
+# (repos/nes/mm3-recomp), smw (repos/snes/smw), sm64ex (repos/n64/sm64ex);
+# never edits them
 embed:
 	$(MAKE) -C embed/smb
+	$(MAKE) -C embed/mm3
 	$(MAKE) -C embed/smw
 	$(MAKE) -C embed/sm64
 

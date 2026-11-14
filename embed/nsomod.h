@@ -1,8 +1,8 @@
 /* nsomod.h - the one API every in-process game module exports to NSO
  * (src/embed.h dlopen()s embed/<game>/build/lib<game>mod.so and calls
  * nsomod_get_api()). Each module wraps one native port, untouched:
- * embed/smb (SMB Vanilla, NES), embed/smw (snesrev smw, SNES), embed/sm64
- * (sm64ex, N64).
+ * embed/smb (SMB Vanilla, NES), embed/mm3 (Megaman3NESRecomp, NES), embed/smw
+ * (snesrev smw, SNES), embed/sm64 (sm64ex, N64).
  *  - no window, no device, no sleeping, no printing of its own;
  *  - the host calls frame() once per console frame at fps;
  *  - one instance, one thread. */
@@ -28,7 +28,7 @@ typedef struct NsomodInput {        /* SNES pad; NES games ignore x, y, l, r */
 
 typedef struct NsomodConfig {
     const char *data_path;          /* the user's game data, read in place: a ROM
-                                       file (SMB), the port's directory (SMW) or
+                                       file (SMB, MM3), the port's directory (SMW) or
                                        its save directory (SM64) */
     int sample_rate;                /* e.g. 48000; 0 = no audio */
 } NsomodConfig;

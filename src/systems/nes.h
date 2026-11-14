@@ -75,12 +75,14 @@ GameEntry nes_games[] = {
         .binary = "build-linux-prod/LegendOfZeldaNESRecomp",
         .orient = SLOT_ORIENT_INHERIT,
     },
-    {
+    {   /* Megaman3NESRecomp (repos/nes/mm3-recomp) inside NSO's window: `make embed` */
         .title = "Mega Man 3",
         .boxartPath = "assets/images/systems/nes/mm3.png",
-        .dir = "repos/nes/mm3-recomp",
-        .binary = "build-linux-prod/MegaMan3Recomp",
+        .dir = "embed/mm3",
+        .binary = "build/libmm3mod.so",
         .orient = SLOT_ORIENT_INHERIT,
+        .stateDir = "saves/nes/mm3",
+        .embedRomKey = "nes.mm3_rom",
     },
     {
         .title = "Metroid",
