@@ -129,6 +129,25 @@ int main(void)
         }
     }
 
+    {
+        const char *n64[] = {
+            "1080 Snowboarding (Europe) (En,Ja,Fr,De).png",
+            "1080 Snowboarding (Japan, USA) (En,Ja).png",
+            "1080 Snowboarding (USA) (En,Ja) (LodgeNet).png",
+            "Lylat Wars (Australia) (En,Fr,De).png",
+            "Star Fox 64 (Japan).png",
+            "Star Fox 64 (USA) (Rev 1).png",
+            "Star Fox 64 (USA).png",
+            "Wave Race 64 - Kawasaki Jet Ski (Europe) (En,De).png",
+            "Wave Race 64 - Kawasaki Jet Ski (USA) (Rev 1).png",
+            "Wave Race 64 - Kawasaki Jet Ski (USA).png",
+        };
+        int nn = (int)(sizeof(n64) / sizeof(n64[0]));
+        expect_match("1080° Snowboarding (Japan, USA)", n64, nn, "1080 Snowboarding (Japan, USA) (En,Ja).png");
+        expect_match("Star Fox 64", n64, nn, "Star Fox 64 (USA).png");
+        expect_match("Wave Race 64 - Kawasaki Jet Ski", n64, nn, "Wave Race 64 - Kawasaki Jet Ski (USA).png");
+    }
+
     if (Scrape_ParseIndex(json, &parsed, &count) != 0 || count != 2
         || strcmp(parsed[0], "Super Mario Bros. (USA).png") != 0
         || strcmp(parsed[1], "Dr. Mario 64 (USA).png") != 0) {

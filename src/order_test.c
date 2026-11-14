@@ -85,6 +85,14 @@ int main(void)
         CHECK(q[0] == 0 && q[1] == 2 && q[2] == 3 && q[3] == 1 && q[4] == 4 && q[5] == 5);
     }
 
+    {
+        static char names[300][8];
+        const char *big[300];
+        int bp[300];
+        for (int i = 0; i < 300; i++) { snprintf(names[i], sizeof(names[i]), "g%d", i); big[i] = names[i]; }
+        Order_Perm("g299\ng0\n", big, 300, bp);   /* lists longer than 256 */
+        CHECK(bp[0] == 299 && bp[1] == 0 && bp[2] == 1 && bp[298] == 297 && bp[299] == 298);
+    }
     if (fails) return 1;
     puts("order_test: ok");
     return 0;

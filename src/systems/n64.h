@@ -60,14 +60,14 @@ GameEntry n64_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Star Fox",
+        .title = "Star Fox 64",
         .boxartPath = "assets/images/systems/n64/starfox.png",
         .dir = "repos/n64/starship",
         .binary = "starship.appimage",
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "1080° Snowboarding",
+        .title = "1080° Snowboarding (Japan, USA)",
         .boxartPath = "assets/images/systems/n64/1080.png",
         .dir = NULL,
         .binary = NULL,
@@ -186,7 +186,7 @@ GameEntry n64_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Wave Race 64",
+        .title = "Wave Race 64 - Kawasaki Jet Ski",
         .boxartPath = "assets/images/systems/n64/Wave_Race_64_NSO.png",
         .dir = "repos/n64/waverace64-recomp",
         .binary = "build-linux/WaveRace64Recomp",

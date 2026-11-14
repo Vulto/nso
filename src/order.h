@@ -67,10 +67,10 @@ void Order_Move(void *base, size_t size, int count, int from, int to)
 
 void Order_Perm(const char *text, const char *const *titles, int count, int *perm)
 {
-    unsigned char used[256] = {0};
+    unsigned char used[512] = {0};
     int k = 0;
     if (!perm || count <= 0) return;
-    if (count > 256) count = 256;
+    if (count > 512) count = 512;
     for (const char *p = text; p && *p && titles;) {
         const char *e = strchr(p, '\n');
         size_t len = e ? (size_t)(e - p) : strlen(p);
