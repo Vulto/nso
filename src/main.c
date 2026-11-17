@@ -24,6 +24,8 @@
 #include "repos.h"
 #define ORDER_IMPLEMENTATION
 #include "order.h"
+#define SORT_IMPLEMENTATION
+#include "sort.h"
 #include <time.h>
 
 #define NSO_IMPLEMENTATION
@@ -679,7 +681,7 @@ static InfoBarId infoBarActive = INFO_BAR_NONE;
 static InfoBarId infoBarWanted = INFO_BAR_NONE;
 
 /* C-up / C-down / C-left this frame (right stick edges on any pad), set in the main loop. */
-static bool padCUp, padCDown, padCLeft;
+static bool padCUp, padCDown, padCLeft, padCRight;
 
 static void StepInfoOpacity(float *cur, float target, float dt) {
     if (INFO_BAR_FADE_SEC <= 0.0f) {
@@ -3009,8 +3011,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     }
 }
 
+static bool SortPanel_Active(void);
+
 static bool OverlayActive(void) {
-    return sidebarOpen || sidebarExpandPending || sidebarClosing
+    return SortPanel_Active() || sidebarOpen || sidebarExpandPending || sidebarClosing
         || sbWidthPhase != SB_WIDTH_IDLE
         || mosaicExitPhase != MOSAIC_EXIT_NONE;
 }
@@ -3317,6 +3321,8 @@ static int GridNavPressed(bool gpLeft, bool gpRight, bool gpUp, bool gpDown) {
     if (IsKeyPressed(KEY_UP) || gpUp) return ORDER_NAV_UP;
     return -1;
 }
+
+#include "sortpanel.h"
 
 /* ---- X Details panel ---- */
 static void Details_Open(void) {
@@ -3686,6 +3692,8 @@ static void DrawMosaic(Color background, Font font) {
         DrawSidebar(SystemBG, font);
     }
 
+    SortPanel_Draw(font);
+
     /* Above blur / panel so accept/back help stays readable. */
     InfoBar_Draw(font);
 }
@@ -3788,6 +3796,7 @@ int main(void) {
     }
     SysSettings_LoadAll();
     Order_LoadAll();
+    SortPanel_LoadAll();
     Sfx_Init();
 
     gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
@@ -3880,6 +3889,7 @@ int main(void) {
         padCUp = gpReady && eRY < 0;
         padCDown = gpReady && eRY > 0;
         padCLeft = gpReady && eRX < 0;
+        padCRight = gpReady && eRX > 0;
 
         bool overlayConsumedConfirm = false;
         bool canNavigate = !OverlayActive() && !isLaunching && !waitingForGame
@@ -4115,6 +4125,11 @@ int main(void) {
                         break;
                     }
 
+                    if (SortPanel_Active()) {
+                        SortPanel_Input(gpUp, gpDown, gpConfirm, gpBack);
+                        break;
+                    }
+
                     /* KEY_O only: shrink selection, then expand full menu (no Select). */
                     if (!sidebarOpen && !sidebarExpandPending && !sidebarClosing
                         && sbWidthPhase == SB_WIDTH_IDLE && !gridLifted
@@ -4143,7 +4158,7 @@ int main(void) {
                         }
                         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) {
                             gridLifted = false;
-                            if (gridLiftMoved) Order_SaveActive();
+                            if (gridLiftMoved) { Order_SaveActive(); SortPanel_SetCustom(); }
                             gridLiftMoved = false;
                             break;
                         }
@@ -4161,6 +4176,12 @@ int main(void) {
                             if (next != GameIdx) Sfx_Play(SFX_NAVIGATE);
                             Grid_MoveLifted(next);
                         }
+                        break;
+                    }
+
+                    /* T / right stick right: change order of titles. */
+                    if (canNavigate && (IsKeyPressed(KEY_T) || padCRight)) {
+                        SortPanel_Open();
                         break;
                     }
 
@@ -4231,6 +4252,8 @@ int main(void) {
                     break;
             }
         }
+
+        SortPanel_Play(waitingForGame || currentState == EMBED);
 
         if (!screenSliding) UpdateSplash(dt);
 
@@ -4304,6 +4327,7 @@ int main(void) {
     PadNotice_Unload();
     RetroShots_Unload();
     UnloadBlurResources();
+    SortPanel_Unload();
     SidebarIcons_Unload();
     UnloadSystems();
     Sfx_Shutdown();
