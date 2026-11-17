@@ -1420,17 +1420,21 @@ static void ScrapeMenu_Idle(int status)
 
 static int ScrapeMenu_SpawnCurl(const char *url, const char *outPath)
 {
-    char *argv[9];
+    char *argv[13];
     snprintf(scrapePart, sizeof(scrapePart), "%s", outPath);
     argv[0] = "curl";
     argv[1] = "-fsSL";
     argv[2] = "--max-time";
-    argv[3] = "30";
-    argv[4] = "--create-dirs";   /* fresh clone: assets/images/systems/<id>/ is absent */
-    argv[5] = "-o";
-    argv[6] = scrapePart;
-    argv[7] = (char *)url;
-    argv[8] = NULL;
+    argv[3] = "120";   /* NES index alone is ~16 MB */
+    argv[4] = "--retry";   /* transient 5xx / timeouts: two spaced retries, no hammering */
+    argv[5] = "2";
+    argv[6] = "--retry-delay";
+    argv[7] = "3";
+    argv[8] = "--create-dirs";   /* fresh clone: assets/images/systems/<id>/ is absent */
+    argv[9] = "-o";
+    argv[10] = scrapePart;
+    argv[11] = (char *)url;
+    argv[12] = NULL;
     scrapeProc = NsoSpawnArgv(NULL, argv);
     return NsoProcOk(scrapeProc);
 }
@@ -1455,7 +1459,7 @@ static bool ScrapeMenu_StartDates(void)
 {
     const char *playlist = Scrape_Playlist(scrapeId);
     char urlYear[1024], urlMonth[1024], cache[2048];
-    char *argv[12];
+    char *argv[16];
     if (!playlist || SortPanel_DatesMissing() == 0) return false;
     if (Scrape_DatUrl(urlYear, sizeof(urlYear), "releaseyear", playlist) != 0
         || Scrape_DatUrl(urlMonth, sizeof(urlMonth), "releasemonth", playlist) != 0) return false;
@@ -1466,14 +1470,18 @@ static bool ScrapeMenu_StartDates(void)
     argv[0] = "curl";
     argv[1] = "-fsSL";
     argv[2] = "--max-time";
-    argv[3] = "30";
-    argv[4] = "-o";
-    argv[5] = scrapePart;
-    argv[6] = urlYear;
-    argv[7] = "-o";
-    argv[8] = scrapePart2;
-    argv[9] = urlMonth;
-    argv[10] = NULL;
+    argv[3] = "60";
+    argv[4] = "--retry";
+    argv[5] = "2";
+    argv[6] = "--retry-delay";
+    argv[7] = "3";
+    argv[8] = "-o";
+    argv[9] = scrapePart;
+    argv[10] = urlYear;
+    argv[11] = "-o";
+    argv[12] = scrapePart2;
+    argv[13] = urlMonth;
+    argv[14] = NULL;
     scrapeProc = NsoSpawnArgv(NULL, argv);
     if (!NsoProcOk(scrapeProc)) {
         scrapePart[0] = '\0';
