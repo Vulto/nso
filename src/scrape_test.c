@@ -164,5 +164,62 @@ int main(void)
     }
     Scrape_FreeNames(parsed, count);
 
+    {
+        char dat[1024];
+        const char *want =
+            "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/"
+            "releaseyear/Nintendo%20-%20Nintendo%2064.dat";
+        if (Scrape_DatUrl(dat, sizeof(dat), "releaseyear", "Nintendo - Nintendo 64") != 0
+            || strcmp(dat, want) != 0) {
+            fprintf(stderr, "dat url %s\n", dat);
+            fails++;
+        }
+        char small[16];
+        if (Scrape_DatUrl(small, sizeof(small), "releaseyear", "Nintendo - Nintendo 64") != -1) {
+            fprintf(stderr, "small dat url accepted\n");
+            fails++;
+        }
+    }
+
+    {
+        const char *text =
+            "game (\n"
+            "\tcomment \"Legend of Zelda, The - Majora's Mask (Europe)\"\n"
+            "\treleaseyear \"2000\"\n"
+            "\trom ( crc 11111111 )\n"
+            ")\n"
+            "game (\n"
+            "\tcomment \"Legend of Zelda, The - Majora's Mask (USA)\"\n"
+            "\treleaseyear \"2000\"\n"
+            "\trom ( crc 3EE3F2D1 )\n"
+            ")\n"
+            "game (\n"
+            "\tcomment \"Dr. Mario\"\n"
+            "\treleaseyear \"1990\"\n"
+            "\trom ( crc 22222222 )\n"
+            ")\n"
+            "game (\n"
+            "\tcomment \"No Year\"\n"
+            "\trom ( crc 33333333 )\n"
+            ")\n";
+        char **pnames = NULL;
+        int *pvals = NULL;
+        int pcount = 0;
+        if (Scrape_ParseDat(text, "releaseyear", &pnames, &pvals, &pcount) != 0
+            || pcount != 3
+            || strcmp(pnames[0], "Legend of Zelda, The - Majora's Mask (Europe).dat") != 0
+            || strcmp(pnames[1], "Legend of Zelda, The - Majora's Mask (USA).dat") != 0
+            || strcmp(pnames[2], "Dr. Mario.dat") != 0
+            || pvals[0] != 2000 || pvals[1] != 2000 || pvals[2] != 1990) {
+            fprintf(stderr, "dat parse count %d\n", pcount);
+            fails++;
+        }
+        expect_match("The Legend of Zelda: Majora's Mask", (const char **)pnames, pcount,
+                     "Legend of Zelda, The - Majora's Mask (USA).dat");
+        expect_match("Dr. Mario", (const char **)pnames, pcount, "Dr. Mario.dat");
+        Scrape_FreeNames(pnames, pcount);
+        free(pvals);
+    }
+
     return fails ? 1 : 0;
 }

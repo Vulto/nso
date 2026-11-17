@@ -84,6 +84,25 @@ int main(void)
         CHECK(Sort_StatsFormat(small, sizeof(small), t, k, 3) == -1);
         CHECK(small[0] == '\0');
     }
+    {
+        const char *t[3] = { "Alpha", "Beta", "Gamma" };
+        SortKeys k[3] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+        Sort_DatesParse("199806\tBeta\r\nnope\nabc\tGamma\n199912\tAlpha\n", t, k, 3);
+        CHECK(k[0].release == 199912);
+        CHECK(k[1].release == 199806);
+        CHECK(k[2].release == 0);
+        char buf[128];
+        CHECK(Sort_DatesFormat(buf, sizeof(buf), t, k, 3) == 0);
+        CHECK(strcmp(buf, "199912\tAlpha\n199806\tBeta\n") == 0);
+        SortKeys k2[3] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+        Sort_DatesParse(buf, t, k2, 3);
+        CHECK(k2[0].release == 199912);
+        CHECK(k2[1].release == 199806);
+        CHECK(k2[2].release == 0);
+        char small[8];
+        CHECK(Sort_DatesFormat(small, sizeof(small), t, k, 3) == -1);
+        CHECK(small[0] == '\0');
+    }
     if (fails) return 1;
     return 0;
 }

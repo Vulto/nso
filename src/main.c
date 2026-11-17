@@ -606,6 +606,7 @@ typedef enum {
     SCRAPE_IDLE = 0,
     SCRAPE_INDEX,
     SCRAPE_FILE,
+    SCRAPE_DATES,   /* release year + month files, then done */
 } ScrapePhase;
 
 static ScrapePhase scrapePhase = SCRAPE_IDLE;
@@ -621,6 +622,8 @@ static char **scrapeNames = NULL;
 static int scrapeNameCount = 0;
 static char scrapeId[32];
 static char scrapePart[2200];
+static char scrapePart2[2200];   /* second download of the dates phase */
+static bool scrapeIndexNext;     /* covers follow the dates phase */
 static char scrapeDest[2200];
 static NsoMsg scrapeMsg = { -1, 0, "" };
 
@@ -1391,6 +1394,9 @@ static bool SidebarMenuSettled(void)
     return sidebarOpen && !sidebarClosing && sbWidthPhase == SB_WIDTH_IDLE;
 }
 
+static int SortPanel_DatesMissing(void);
+static void SortPanel_DatesScrape(const char *yearText, const char *monthText);
+
 static void ScrapeMenu_ClearNames(void)
 {
     Scrape_FreeNames(scrapeNames, scrapeNameCount);
@@ -1401,6 +1407,8 @@ static void ScrapeMenu_ClearNames(void)
 static void ScrapeMenu_Idle(int status)
 {
     if (scrapePart[0] != '\0') FileRemove(scrapePart);
+    if (scrapePart2[0] != '\0') FileRemove(scrapePart2);
+    scrapePart2[0] = '\0';
     ScrapeMenu_ClearNames();
     scrapeProc = NsoProcNone();
     scrapePhase = SCRAPE_IDLE;
@@ -1425,6 +1433,79 @@ static int ScrapeMenu_SpawnCurl(const char *url, const char *outPath)
     argv[8] = NULL;
     scrapeProc = NsoSpawnArgv(NULL, argv);
     return NsoProcOk(scrapeProc);
+}
+
+static void ScrapeMenu_Finish(void)
+{
+    if (scrapeMisses > 0) {
+        Msg_Set(&scrapeMsg, S_SCRAPE_DONE_MISSED, scrapeMisses, NULL);
+    } else {
+        Msg_Set(&scrapeMsg, S_SCRAPE_DONE, 0, NULL);
+    }
+    ScrapeMenu_ClearNames();
+    scrapeProc = NsoProcNone();
+    scrapePhase = SCRAPE_IDLE;
+    scrapeBusy = false;
+    scrapePart[0] = '\0';
+}
+
+/* Release year + month of the shown system's games that have no date yet,
+ * from libretro-database's metadat (one curl, two files). False = nothing to do. */
+static bool ScrapeMenu_StartDates(void)
+{
+    const char *playlist = Scrape_Playlist(scrapeId);
+    char urlYear[1024], urlMonth[1024], cache[2048];
+    char *argv[12];
+    if (!playlist || SortPanel_DatesMissing() == 0) return false;
+    if (Scrape_DatUrl(urlYear, sizeof(urlYear), "releaseyear", playlist) != 0
+        || Scrape_DatUrl(urlMonth, sizeof(urlMonth), "releasemonth", playlist) != 0) return false;
+    snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
+    MakeDirectory(cache);
+    snprintf(scrapePart, sizeof(scrapePart), "%s/dates-year.dat.part", cache);
+    snprintf(scrapePart2, sizeof(scrapePart2), "%s/dates-month.dat.part", cache);
+    argv[0] = "curl";
+    argv[1] = "-fsSL";
+    argv[2] = "--max-time";
+    argv[3] = "30";
+    argv[4] = "-o";
+    argv[5] = scrapePart;
+    argv[6] = urlYear;
+    argv[7] = "-o";
+    argv[8] = scrapePart2;
+    argv[9] = urlMonth;
+    argv[10] = NULL;
+    scrapeProc = NsoSpawnArgv(NULL, argv);
+    if (!NsoProcOk(scrapeProc)) {
+        scrapePart[0] = '\0';
+        scrapePart2[0] = '\0';
+        return false;
+    }
+    scrapePhase = SCRAPE_DATES;
+    Msg_Set(&scrapeMsg, S_SCRAPE_INDEX, 0, NULL);
+    return true;
+}
+
+static void ScrapeMenu_StartIndex(void)
+{
+    const char *playlist = Scrape_Playlist(scrapeId);
+    char cache[2048];
+    char indexPath[2200];
+    char url[1024];
+    snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
+    MakeDirectory(cache);
+    snprintf(indexPath, sizeof(indexPath), "%s/index.json.part", cache);
+    if (!playlist || Scrape_IndexUrl(url, sizeof(url), playlist) != 0) {
+        ScrapeMenu_Idle(S_SCRAPE_DOWNLOAD_FAILED);
+        return;
+    }
+    scrapeBusy = true;
+    scrapePhase = SCRAPE_INDEX;
+    Msg_Set(&scrapeMsg, S_SCRAPE_INDEX, 0, NULL);
+    if (!ScrapeMenu_SpawnCurl(url, indexPath)) {
+        scrapeBusy = false;
+        scrapePhase = SCRAPE_IDLE;
+        Msg_Set(&scrapeMsg, S_SCRAPE_NO_CURL, 0, NULL);
+    }
 }
 
 static void ScrapeMenu_Advance(void)
@@ -1474,24 +1555,12 @@ static void ScrapeMenu_Advance(void)
         return;
     }
 
-    if (scrapeMisses > 0) {
-        Msg_Set(&scrapeMsg, S_SCRAPE_DONE_MISSED, scrapeMisses, NULL);
-    } else {
-        Msg_Set(&scrapeMsg, S_SCRAPE_DONE, 0, NULL);
-    }
-    ScrapeMenu_ClearNames();
-    scrapeProc = NsoProcNone();
-    scrapePhase = SCRAPE_IDLE;
-    scrapeBusy = false;
-    scrapePart[0] = '\0';
+    ScrapeMenu_Finish();
 }
 
 static void ScrapeMenu_Start(int replace)
 {
     const char *playlist;
-    char cache[2048];
-    char indexPath[2200];
-    char url[1024];
     int count;
     int need = 0;
 
@@ -1510,29 +1579,19 @@ static void ScrapeMenu_Start(int replace)
             snprintf(path, sizeof(path), "%s", GetDataPath(rel));
             if (!FileExists(path) || GetFileLength(path) <= 0) need = 1;
         }
-        if (!need) {
-            Msg_Set(&scrapeMsg, S_SCRAPE_DONE, 0, NULL);
-            return;
-        }
     }
     snprintf(scrapeId, sizeof(scrapeId), "%s", ActiveSystem()->platform->id);
     scrapeReplace = replace;
     scrapeMisses = 0;
     scrapeCancel = false;
-    snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
-    MakeDirectory(cache);
-    snprintf(indexPath, sizeof(indexPath), "%s/index.json.part", cache);
-    if (Scrape_IndexUrl(url, sizeof(url), playlist) != 0) {
-        Msg_Set(&scrapeMsg, S_SCRAPE_DOWNLOAD_FAILED, 0, NULL);
-        return;
-    }
     scrapeBusy = true;
-    scrapePhase = SCRAPE_INDEX;
-    Msg_Set(&scrapeMsg, S_SCRAPE_INDEX, 0, NULL);
-    if (!ScrapeMenu_SpawnCurl(url, indexPath)) {
+    scrapeIndexNext = replace || need;   /* dates first (own files), then the covers */
+    if (ScrapeMenu_StartDates()) return;
+    if (scrapeIndexNext) {
+        ScrapeMenu_StartIndex();
+    } else {
         scrapeBusy = false;
-        scrapePhase = SCRAPE_IDLE;
-        Msg_Set(&scrapeMsg, S_SCRAPE_NO_CURL, 0, NULL);
+        Msg_Set(&scrapeMsg, S_SCRAPE_DONE, 0, NULL);
     }
 }
 
@@ -1614,6 +1673,22 @@ static void ScrapeMenu_Poll(void)
         scrapePart[0] = '\0';
         scrapeGame++;
         ScrapeMenu_Advance();
+        return;
+    }
+
+    if (scrapePhase == SCRAPE_DATES) {
+        char *year = code == 0 ? LoadFileText(scrapePart) : NULL;
+        char *month = code == 0 ? LoadFileText(scrapePart2) : NULL;
+        if (year && month) SortPanel_DatesScrape(year, month);
+        if (year) UnloadFileText(year);
+        if (month) UnloadFileText(month);
+        FileRemove(scrapePart);
+        FileRemove(scrapePart2);
+        scrapePart[0] = '\0';
+        scrapePart2[0] = '\0';
+        if (scrapeIndexNext) ScrapeMenu_StartIndex();
+        else if (year && month) ScrapeMenu_Finish();
+        else ScrapeMenu_Idle(S_SCRAPE_DOWNLOAD_FAILED);
     }
 }
 

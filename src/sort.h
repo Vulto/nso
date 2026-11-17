@@ -13,6 +13,8 @@ SortMode Sort_ModeParse(const char *s);
 void Sort_Perm(SortMode mode, const char *const *titles, const SortKeys *keys, int count, int *perm);
 void Sort_StatsParse(const char *text, const char *const *titles, SortKeys *keys, int count);
 int Sort_StatsFormat(char *dst, size_t n, const char *const *titles, const SortKeys *keys, int count);
+void Sort_DatesParse(const char *text, const char *const *titles, SortKeys *keys, int count);
+int Sort_DatesFormat(char *dst, size_t n, const char *const *titles, const SortKeys *keys, int count);
 
 #endif /* NSO_SORT_H */
 
@@ -161,6 +163,53 @@ int Sort_StatsFormat(char *dst, size_t n, const char *const *titles, const SortK
         if (lp == 0 && ps == 0) continue;
         const char *t = (titles && titles[i]) ? titles[i] : "";
         int w = snprintf(dst + off, n - off, "%lld\t%lld\t%s\n", lp, ps, t);
+        if (w < 0 || (size_t)w >= n - off) { dst[0] = '\0'; return -1; }
+        off += (size_t)w;
+    }
+    return 0;
+}
+
+void Sort_DatesParse(const char *text, const char *const *titles, SortKeys *keys, int count)
+{
+    if (!text || !keys || count <= 0) return;
+    if (count > 512) count = 512;
+    for (const char *p = text; *p;) {
+        const char *e = strchr(p, '\n');
+        const char *tab = NULL;
+        if (!e) e = p + strlen(p);
+        for (const char *q = p; q < e; q++) {
+            if (*q == '\t') { tab = q; break; }
+        }
+        if (tab) {
+            char *end = NULL;
+            long long release = strtoll(p, &end, 10);
+            if (end == tab) {
+                const char *title = tab + 1;
+                size_t len = (size_t)(e - title);
+                while (len && title[len - 1] == '\r') len--;
+                for (int i = 0; i < count; i++) {
+                    const char *t = (titles && titles[i]) ? titles[i] : "";
+                    if (strlen(t) == len && strncmp(t, title, len) == 0) {
+                        keys[i].release = release;
+                        break;
+                    }
+                }
+            }
+        }
+        p = *e ? e + 1 : e;
+    }
+}
+
+int Sort_DatesFormat(char *dst, size_t n, const char *const *titles, const SortKeys *keys, int count)
+{
+    size_t off = 0;
+    if (!dst || n == 0) return -1;
+    dst[0] = '\0';
+    for (int i = 0; i < count; i++) {
+        long long release = Sort_Key(keys, i, 0);
+        if (release == 0) continue;
+        const char *t = (titles && titles[i]) ? titles[i] : "";
+        int w = snprintf(dst + off, n - off, "%lld\t%s\n", release, t);
         if (w < 0 || (size_t)w >= n - off) { dst[0] = '\0'; return -1; }
         off += (size_t)w;
     }

@@ -10,6 +10,8 @@ int Scrape_IndexUrl(char *dst, size_t n, const char *playlist);
 int Scrape_ImageUrl(char *dst, size_t n, const char *playlist, const char *file);
 const char *Scrape_Match(const char *title, const char **names, int count);
 int Scrape_ParseIndex(const char *json, char ***outNames, int *outCount);
+int Scrape_DatUrl(char *dst, size_t n, const char *field, const char *playlist);
+int Scrape_ParseDat(const char *text, const char *field, char ***outNames, int **outVals, int *outCount);
 void Scrape_FreeNames(char **names, int count);
 
 #endif /* NSO_SCRAPE_H */
@@ -336,6 +338,134 @@ int Scrape_ParseIndex(const char *json, char ***outNames, int *outCount)
     *outNames = names;
     *outCount = count;
     return 0;
+}
+
+int Scrape_DatUrl(char *dst, size_t n, const char *field, const char *playlist)
+{
+    char encPlay[512];
+    int wrote;
+    if (!dst || n == 0 || !field || !playlist) return -1;
+    if (UrlEncode(encPlay, sizeof(encPlay), playlist) != 0) return -1;
+    wrote = snprintf(dst, n,
+        "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/%s/%s.dat",
+        field, encPlay);
+    return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
+}
+
+static int Scrape_DatAdd(char ***names, int **vals, int *count, int *cap,
+                         const char *comment, size_t commentLen, long value)
+{
+    char *name;
+    if (*count == *cap) {
+        int ncap = *cap ? *cap * 2 : 32;
+        char **grownNames = realloc(*names, (size_t)ncap * sizeof(*grownNames));
+        int *grownVals;
+        if (!grownNames) return -1;
+        *names = grownNames;
+        grownVals = realloc(*vals, (size_t)ncap * sizeof(*grownVals));
+        if (!grownVals) return -1;
+        *vals = grownVals;
+        *cap = ncap;
+    }
+    name = malloc(commentLen + 5);
+    if (!name) return -1;
+    memcpy(name, comment, commentLen);
+    memcpy(name + commentLen, ".dat", 5);
+    (*names)[*count] = name;
+    (*vals)[*count] = (int)value;
+    (*count)++;
+    return 0;
+}
+
+static int Scrape_DatFlush(char ***names, int **vals, int *count, int *cap,
+                           const char *comment, size_t commentLen,
+                           int hasComment, long value, int hasField)
+{
+    if (!hasComment || !hasField) return 0;
+    return Scrape_DatAdd(names, vals, count, cap, comment, commentLen, value);
+}
+
+int Scrape_ParseDat(const char *text, const char *field, char ***outNames, int **outVals, int *outCount)
+{
+    char **names = NULL;
+    int *vals = NULL;
+    int count = 0;
+    int cap = 0;
+    int inGame = 0;
+    int hasComment = 0;
+    int hasField = 0;
+    const char *comment = NULL;
+    size_t commentLen = 0;
+    long value = 0;
+    size_t fieldLen;
+    if (!outNames || !outVals || !outCount) return -1;
+    *outNames = NULL;
+    *outVals = NULL;
+    *outCount = 0;
+    if (!text || !field) return -1;
+    fieldLen = strlen(field);
+    for (const char *p = text; *p;) {
+        const char *e = strchr(p, '\n');
+        const char *q;
+        size_t len;
+        if (!e) e = p + strlen(p);
+        q = p;
+        while (q < e && (*q == ' ' || *q == '\t')) q++;
+        len = (size_t)(e - q);
+        while (len && q[len - 1] == '\r') len--;
+        if (len >= 4 && memcmp(q, "game", 4) == 0
+            && (len == 4 || q[4] == ' ' || q[4] == '\t' || q[4] == '(')) {
+            if (Scrape_DatFlush(&names, &vals, &count, &cap, comment, commentLen,
+                                hasComment, value, hasField) != 0)
+                goto fail;
+            inGame = 1;
+            hasComment = 0;
+            hasField = 0;
+            comment = NULL;
+            commentLen = 0;
+            value = 0;
+        } else if (inGame && len >= 7 && memcmp(q, "comment", 7) == 0
+                   && (q[7] == ' ' || q[7] == '\t')) {
+            const char *open = memchr(q, '"', len);
+            if (open) {
+                const char *close = NULL;
+                for (const char *r = open + 1; r < q + len; r++) {
+                    if (*r == '"') { close = r; break; }
+                }
+                if (close) {
+                    comment = open + 1;
+                    commentLen = (size_t)(close - comment);
+                    hasComment = 1;
+                }
+            }
+        } else if (inGame && len > fieldLen && memcmp(q, field, fieldLen) == 0
+                   && (q[fieldLen] == ' ' || q[fieldLen] == '\t')) {
+            const char *open = memchr(q + fieldLen, '"', len - fieldLen);
+            if (open) {
+                value = (long)strtol(open + 1, NULL, 10);
+                hasField = 1;
+            }
+        } else if (inGame && len == 1 && q[0] == ')') {
+            if (Scrape_DatFlush(&names, &vals, &count, &cap, comment, commentLen,
+                                hasComment, value, hasField) != 0)
+                goto fail;
+            inGame = 0;
+            hasComment = 0;
+            hasField = 0;
+        }
+        p = *e ? e + 1 : e;
+    }
+    if (Scrape_DatFlush(&names, &vals, &count, &cap, comment, commentLen,
+                        hasComment, value, hasField) != 0)
+        goto fail;
+    *outNames = names;
+    *outVals = vals;
+    *outCount = count;
+    return 0;
+fail:
+    Scrape_FreeNames(names, count);
+    free(vals);
+    return -1;
 }
 
 void Scrape_FreeNames(char **names, int count)

@@ -18,6 +18,75 @@ static void SortPanel_Path(int sys, char *dst, size_t n) {
     snprintf(dst, n, "%s/config/played-%s.txt", GetBaseDirectory(), systems[sys].platform->id);
 }
 
+/* Release dates (YYYYMM) scraped from libretro-database: config/dates-<id>.txt. */
+static void SortPanel_DatesPath(int sys, char *dst, size_t n) {
+    snprintf(dst, n, "%s/config/dates-%s.txt", GetBaseDirectory(), systems[sys].platform->id);
+}
+
+static int SortPanel_DatesLoad(int sys, const char *const *titles, SortKeys *keys, int count) {
+    char path[2112];
+    SortPanel_DatesPath(sys, path, sizeof(path));
+    char *text = FileExists(path) ? LoadFileText(path) : NULL;
+    if (!text) return 0;
+    Sort_DatesParse(text, titles, keys, count);
+    UnloadFileText(text);
+    return 1;
+}
+
+/* Games of the shown system that still have no date. */
+static int SortPanel_DatesMissing(void) {
+    int count = *systems[currentSystem].gameCount, missing = 0;
+    if (count <= 0 || count > MAX_GAMES) return 0;
+    const char *titles[MAX_GAMES];
+    SortKeys keys[MAX_GAMES] = { 0 };
+    for (int i = 0; i < count; i++) titles[i] = systems[currentSystem].games[i].title;
+    SortPanel_DatesLoad(currentSystem, titles, keys, count);
+    for (int i = 0; i < count; i++) if (keys[i].release == 0) missing++;
+    return missing;
+}
+
+static void SortPanel_Refresh(void);
+
+/* Fill the missing dates of the shown system from the two downloaded metadat
+ * files (same Scrape_Match as the covers), then keep the list sorted. */
+static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
+    int sys = currentSystem, count = *systems[sys].gameCount;
+    char **yn = NULL, **mn = NULL;
+    int *yv = NULL, *mv = NULL, ny = 0, nm = 0;
+    if (count <= 0 || count > MAX_GAMES) return;
+    if (Scrape_ParseDat(yearText, "releaseyear", &yn, &yv, &ny) != 0) return;
+    if (Scrape_ParseDat(monthText, "releasemonth", &mn, &mv, &nm) != 0) {
+        Scrape_FreeNames(yn, ny);
+        free(yv);
+        return;
+    }
+    const char *titles[MAX_GAMES];
+    SortKeys keys[MAX_GAMES] = { 0 };
+    for (int i = 0; i < count; i++) titles[i] = systems[sys].games[i].title;
+    SortPanel_DatesLoad(sys, titles, keys, count);
+    for (int i = 0; i < count; i++) {
+        if (keys[i].release != 0) continue;
+        const char *hit = Scrape_Match(titles[i], (const char **)yn, ny);
+        for (int a = 0; hit && a < ny; a++) {
+            if (yn[a] != hit) continue;
+            int month = 0;
+            for (int b = 0; b < nm; b++) if (strcmp(mn[b], hit) == 0) { month = mv[b]; break; }
+            if (yv[a] > 0) keys[i].release = (long long)yv[a] * 100 + month;
+            break;
+        }
+    }
+    static char buf[MAX_GAMES * 300];
+    char path[2112];
+    SortPanel_DatesPath(sys, path, sizeof(path));
+    if (Sort_DatesFormat(buf, sizeof(buf), titles, keys, count) != 0 || !SaveFileText(path, buf))
+        fprintf(stderr, "NSO: cannot save %s\n", path);
+    Scrape_FreeNames(yn, ny);
+    Scrape_FreeNames(mn, nm);
+    free(yv);
+    free(mv);
+    SortPanel_Refresh();
+}
+
 /* Reorder system `sys` by `mode`. live = it is the shown system, so its cover
  * textures and tile scales travel along and the cursor stays on its game. */
 static void SortPanel_Apply(int sys, SortMode mode, bool live) {
@@ -34,11 +103,12 @@ static void SortPanel_Apply(int sys, SortMode mode, bool live) {
         Order_Perm(text ? text : "", titles, count, perm);
         if (text) UnloadFileText(text);
     } else {
-        SortKeys keys[MAX_GAMES] = { 0 };   /* release dates: the catalogs have none (0 = unknown) */
+        SortKeys keys[MAX_GAMES] = { 0 };   /* release 0 = unknown: no date scraped yet */
         char path[2112];
         SortPanel_Path(sys, path, sizeof(path));
         char *text = FileExists(path) ? LoadFileText(path) : NULL;
         if (text) { Sort_StatsParse(text, titles, keys, count); UnloadFileText(text); }
+        if (mode == SORT_RELEASE) SortPanel_DatesLoad(sys, titles, keys, count);
         Sort_Perm(mode, titles, keys, count, perm);
     }
     GameEntry tmp[MAX_GAMES];
@@ -58,6 +128,11 @@ static void SortPanel_Save(int sys) {
     Lang_ConfigPath(cfg, sizeof(cfg));
     snprintf(key, sizeof(key), "%s.sort", systems[sys].platform->id);
     if (!Cfg_SaveKey(cfg, key, Sort_ModeName(sortMode[sys]))) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+}
+
+/* New dates arrived: re-sort the shown system if it is sorted by them. */
+static void SortPanel_Refresh(void) {
+    if (sortMode[currentSystem] == SORT_RELEASE) SortPanel_Apply(currentSystem, SORT_RELEASE, true);
 }
 
 /* Startup, right after Order_LoadAll (the custom order is already applied). */
