@@ -38,8 +38,6 @@ typedef struct {
     const char *embedRomKey; /* NULL = spawn binary; else dir/binary is an in-process
                                 module (embed.h), its game data path (ROM file
                                 or port dir) from this config key */
-    const char *scrapeAs; /* NULL = none; else the database's name for this game, tried when
-                             title finds no cover / release date (title is a key, never renamed) */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

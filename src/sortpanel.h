@@ -66,7 +66,7 @@ static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
     SortPanel_DatesLoad(sys, titles, keys, count);
     for (int i = 0; i < count; i++) {
         if (keys[i].release != 0) continue;
-        const char *hit = ScrapeMatchGame(&systems[sys].games[i], (const char **)yn, ny);
+        const char *hit = Scrape_Match(titles[i], (const char **)yn, ny);
         for (int a = 0; hit && a < ny; a++) {
             if (yn[a] != hit) continue;
             int month = 0;

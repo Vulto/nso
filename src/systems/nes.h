@@ -40,8 +40,7 @@ GameEntry nes_games[] = {
         .embedRomKey = "nes.smb_rom",
     },
     {
-        .title = "The Wing of Madoola",
-        .scrapeAs = "Madoola no Tsubasa (Japan)",
+        .title = "Madoola no Tsubasa (Japan)",
         .boxartPath = "assets/images/systems/nes/openmadoola.png",
         .dir = "repos/nes/openmadoola",
         .binary = "build/openmadoola",
@@ -149,8 +148,7 @@ GameEntry nes_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Donkey Kong Jr. Math",
-        .scrapeAs = "Donkey Kong Jr. no Sansuu Asobi (Japan)",
+        .title = "Donkey Kong Jr. no Sansuu Asobi (Japan)",
         .boxartPath = "assets/images/systems/nes/dkjrmath.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -181,7 +179,6 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Excitebike (Japan, USA)",
-        .scrapeAs = "Excitebike (e-Reader Edition)",
         .boxartPath = "assets/images/systems/nes/excitebike.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -236,8 +233,7 @@ GameEntry nes_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Mr. Gimmick (Europe)",
-        .scrapeAs = "Gimmick! (Japan)",
+        .title = "Gimmick! (Japan)",
         .boxartPath = "assets/images/systems/nes/mrgimmick.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -247,8 +243,7 @@ GameEntry nes_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Ms. Pac-Man (Tengen)",
-        .scrapeAs = "Ms. Pac-Man (Unl)",
+        .title = "Ms. Pac-Man (USA) (Tengen) (Unl)",
         .boxartPath = "assets/images/systems/nes/mspacman_tengen.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -268,8 +263,7 @@ GameEntry nes_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Pac-Mania",
-        .scrapeAs = "Pac-Mania (Unl)",
+        .title = "Pac-Mania (USA) (Unl)",
         .boxartPath = "assets/images/systems/nes/pacmania.png",
         .orient = SLOT_ORIENT_INHERIT,
     },

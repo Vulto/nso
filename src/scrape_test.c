@@ -100,6 +100,20 @@ int main(void)
         expect_match("Road Fighter (USA)", nes, 9, NULL);
     }
 
+    {   /* the exact database name always finds its own entry (and dates: ".dat") */
+        const char *nes[] = {
+            "Pac-Mania (USA).png",
+            "Pac-Mania (USA) (Unl).png",
+            "Gimmick! (Japan).png",
+            "Mr. Gimmick (Europe).png",
+        };
+        const char *dats[] = { "Pac-Mania (USA) (Unl).dat", "Gimmick! (Japan).dat" };
+        expect_match("Pac-Mania (USA) (Unl)", nes, 4, "Pac-Mania (USA) (Unl).png");
+        expect_match("Pac-Mania (USA) (Unl)", dats, 2, "Pac-Mania (USA) (Unl).dat");
+        expect_match("Gimmick! (Japan)", dats, 2, "Gimmick! (Japan).dat");
+        expect_match("Gimmick! (Japan)", nes, 4, "Gimmick! (Japan).png");
+    }
+
     {   /* ", A" like ", The" */
         const char *n64[] = {
             "Bug's Life, A (Europe).png",

@@ -67,8 +67,7 @@ GameEntry n64_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "1080° Snowboarding (Japan, USA)",
-        .scrapeAs = "1080 Snowboarding",
+        .title = "1080 Snowboarding (Europe) (En,Ja,Fr,De)",
         .boxartPath = "assets/images/systems/n64/1080.png",
         .dir = NULL,
         .binary = NULL,
@@ -278,8 +277,7 @@ GameEntry n64_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "Sin and Punishment",
-        .scrapeAs = "Tsumi to Batsu - Hoshi no Keishousha",
+        .title = "Tsumi to Batsu - Hoshi no Keishousha",
         .boxartPath = "assets/images/systems/n64/snp.png",
         .dir = "repos/n64/snp-recomp",
         .binary = "build/SnPRecompiled",

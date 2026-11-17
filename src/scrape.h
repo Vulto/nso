@@ -235,6 +235,12 @@ const char *Scrape_Match(const char *title, const char **names, int count)
     size_t bestStem = 0;
     size_t bestFile = 0;
     if (!title || !names || count <= 0) return NULL;
+    /* A title that is a database name (without its ".png" / ".dat") is that entry. */
+    for (int i = 0; i < count; i++) {
+        size_t fileLen = names[i] ? strlen(names[i]) : 0;
+        if (fileLen > 4 && strncmp(names[i], title, fileLen - 4) == 0 && title[fileLen - 4] == '\0')
+            return names[i];
+    }
     tag = Scrape_TitleTag(&title, baseTitle, sizeof(baseTitle), tagBuf, sizeof(tagBuf));
     Scrape_Normalize(normTitle, sizeof(normTitle), title);
     if (normTitle[0] == '\0') return NULL;
