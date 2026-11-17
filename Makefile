@@ -15,7 +15,7 @@ ifeq ($(origin CC),command line)
 WINCC := $(CC)
 endif
 
-.PHONY: all linux windows embed test clean
+.PHONY: all linux windows embed check test clean
 
 all: linux
 
@@ -36,7 +36,11 @@ embed:
 windows:
 	$(WINCC) $(CFLAGS) -o nso.exe $(SRC) -lraylib -lopengl32 -lgdi32 -lwinmm -lpthread
 
-test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
+# Unit tests only: headless, audio muted (no sound device is opened).
+check: export SDL_AUDIODRIVER = dummy
+check: export PULSE_SERVER = none
+check: export ALSA_CONFIG_PATH = /dev/null
+check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
 		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
@@ -64,6 +68,13 @@ test: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./sfx_test
 	$(CC) $(CFLAGS) -o sm64reloc_test embed/sm64/reloc_test.c
 	./sm64reloc_test
+
+# Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
+test: check nso
+	@for p in $$(pgrep -x nso); do \
+		if tr '\0' '\n' < /proc/$$p/environ 2>/dev/null | grep -qx 'DISPLAY=:1'; then kill $$p; fi; \
+	done; sleep 1
+	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
 	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test
