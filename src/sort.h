@@ -161,6 +161,10 @@ int Sort_StatsFormat(char *dst, size_t n, const char *const *titles, const SortK
         long long lp = Sort_Key(keys, i, 1);
         long long ps = Sort_Key(keys, i, 2);
         if (lp == 0 && ps == 0) continue;
+        int seen = 0;   /* titles are keys: a repeated one is written once */
+        for (int j = 0; j < i && titles; j++)
+            if (titles[i] && titles[j] && strcmp(titles[i], titles[j]) == 0) { seen = 1; break; }
+        if (seen) continue;
         const char *t = (titles && titles[i]) ? titles[i] : "";
         int w = snprintf(dst + off, n - off, "%lld\t%lld\t%s\n", lp, ps, t);
         if (w < 0 || (size_t)w >= n - off) { dst[0] = '\0'; return -1; }
@@ -208,6 +212,10 @@ int Sort_DatesFormat(char *dst, size_t n, const char *const *titles, const SortK
     for (int i = 0; i < count; i++) {
         long long release = Sort_Key(keys, i, 0);
         if (release == 0) continue;
+        int seen = 0;   /* titles are keys: a repeated one is written once */
+        for (int j = 0; j < i && titles; j++)
+            if (titles[i] && titles[j] && strcmp(titles[i], titles[j]) == 0) { seen = 1; break; }
+        if (seen) continue;
         const char *t = (titles && titles[i]) ? titles[i] : "";
         int w = snprintf(dst + off, n - off, "%lld\t%s\n", release, t);
         if (w < 0 || (size_t)w >= n - off) { dst[0] = '\0'; return -1; }

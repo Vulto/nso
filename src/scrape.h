@@ -9,6 +9,7 @@ void Scrape_Repo(char *dst, size_t n, const char *playlist);
 int Scrape_IndexUrl(char *dst, size_t n, const char *playlist);
 int Scrape_ImageUrl(char *dst, size_t n, const char *playlist, const char *file);
 const char *Scrape_Match(const char *title, const char **names, int count);
+const char *Scrape_MatchLoose(const char *title, const char **names, int count);
 int Scrape_ParseIndex(const char *json, char ***outNames, int *outCount);
 int Scrape_DatUrl(char *dst, size_t n, const char *field, const char *playlist);
 int Scrape_ParseDat(const char *text, const char *field, char ***outNames, int **outVals, int *outCount);
@@ -297,6 +298,26 @@ const char *Scrape_Match(const char *title, const char **names, int count)
         bestFile = fileLen;
     }
     return best;
+}
+
+/* Scrape_Match, then, if the title's trailing "(tag)" groups name no release in
+   the list, the same game under its other releases: one group is dropped at a
+   time ("1080 Snowboarding (Japan, USA) (En,Ja)" finds the date of the only
+   release the date list has). Exact database names still win. */
+const char *Scrape_MatchLoose(const char *title, const char **names, int count)
+{
+    char cur[512];
+    const char *hit = Scrape_Match(title, names, count);
+    if (hit || !title || strlen(title) >= sizeof(cur)) return hit;
+    snprintf(cur, sizeof(cur), "%s", title);
+    for (;;) {
+        char *open = strrchr(cur, '(');
+        size_t len = strlen(cur);
+        if (!open || open == cur || open[-1] != ' ' || cur[len - 1] != ')') return NULL;
+        open[-1] = '\0';
+        hit = Scrape_Match(cur, names, count);
+        if (hit) return hit;
+    }
 }
 
 int Scrape_ParseIndex(const char *json, char ***outNames, int *outCount)

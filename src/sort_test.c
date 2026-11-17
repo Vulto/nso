@@ -103,6 +103,15 @@ int main(void)
         CHECK(Sort_DatesFormat(small, sizeof(small), t, k, 3) == -1);
         CHECK(small[0] == '\0');
     }
+    {   /* a repeated title is written once, in both files */
+        const char *t[3] = { "Same", "Other", "Same" };
+        SortKeys k[3] = { {199001, 5, 7}, {0, 0, 0}, {199001, 5, 7} };
+        char buf[128];
+        CHECK(Sort_DatesFormat(buf, sizeof(buf), t, k, 3) == 0);
+        CHECK(strcmp(buf, "199001\tSame\n") == 0);
+        CHECK(Sort_StatsFormat(buf, sizeof(buf), t, k, 3) == 0);
+        CHECK(strcmp(buf, "5\t7\tSame\n") == 0);
+    }
     if (fails) return 1;
     return 0;
 }

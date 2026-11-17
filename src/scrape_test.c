@@ -16,6 +16,15 @@ static void expect_match(const char *title, const char **names, int n, const cha
     }
 }
 
+static void expect_loose(const char *title, const char **names, int n, const char *want)
+{
+    const char *got = Scrape_MatchLoose(title, names, n);
+    if ((want == NULL && got != NULL) || (want && (got == NULL || strcmp(got, want) != 0))) {
+        fprintf(stderr, "loose %s -> %s, want %s\n", title, got ? got : "(null)", want ? want : "(null)");
+        fails++;
+    }
+}
+
 int main(void)
 {
     const char *names[] = {
@@ -112,6 +121,21 @@ int main(void)
         expect_match("Pac-Mania (USA) (Unl)", dats, 2, "Pac-Mania (USA) (Unl).dat");
         expect_match("Gimmick! (Japan)", dats, 2, "Gimmick! (Japan).dat");
         expect_match("Gimmick! (Japan)", nes, 4, "Gimmick! (Japan).png");
+    }
+
+    {   /* loose: a tag no release carries falls back to the same game's other releases */
+        const char *dats[] = {
+            "1080 Snowboarding (Europe) (En,Ja,Fr,De).dat",
+            "Final Fight 3 (USA).dat",
+            "Road Fighter (Europe).dat",
+        };
+        expect_match("1080 Snowboarding (Japan, USA) (En,Ja)", dats, 3, NULL);
+        expect_loose("1080 Snowboarding (Japan, USA) (En,Ja)", dats, 3, "1080 Snowboarding (Europe) (En,Ja,Fr,De).dat");
+        expect_loose("Final Fight 3 (patched)", dats, 3, "Final Fight 3 (USA).dat");
+        expect_loose("Final Fight 3 (USA)", dats, 3, "Final Fight 3 (USA).dat");
+        expect_loose("Road Fighter (Japan)", dats, 3, "Road Fighter (Europe).dat");
+        expect_loose("Zelda (patched)", dats, 3, NULL);
+        expect_loose("(x)", dats, 3, NULL);
     }
 
     {   /* ", A" like ", The" */

@@ -44,7 +44,8 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
 		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
-		src/sfx_test.c src/sfx.h src/sort_test.c src/sort.h \
+		src/sfx_test.c src/sfx.h src/sort_test.c src/sort.h src/catalog_test.c src/systems/nes.h \
+		src/systems/snes.h src/systems/n64.h src/systems/gamecube.h \
 		embed/sm64/reloc_test.c embed/sm64/reloc.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
@@ -62,6 +63,8 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./order_test
 	$(CC) $(CFLAGS) -o sort_test src/sort_test.c
 	./sort_test
+	$(CC) $(CFLAGS) -o catalog_test src/catalog_test.c
+	./catalog_test
 	$(CC) $(CFLAGS) -o embed_test src/embed_test.c -lm
 	./embed_test
 	$(CC) $(CFLAGS) -o sfx_test src/sfx_test.c -lraylib -lm
@@ -77,4 +80,4 @@ test: check nso
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test
+	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test

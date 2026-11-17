@@ -67,7 +67,7 @@ GameEntry n64_games[] = {
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
-        .title = "1080 Snowboarding (Europe) (En,Ja,Fr,De)",
+        .title = "1080 Snowboarding (Japan, USA) (En,Ja)",
         .boxartPath = "assets/images/systems/n64/1080.png",
         .dir = NULL,
         .binary = NULL,

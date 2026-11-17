@@ -48,7 +48,7 @@ static int SortPanel_DatesMissing(void) {
 static void SortPanel_Refresh(void);
 
 /* Fill the missing dates of the shown system from the two downloaded metadat
- * files (same Scrape_Match as the covers), then keep the list sorted. */
+ * files (same Scrape_MatchLoose as the covers), then keep the list sorted. */
 static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
     int sys = currentSystem, count = *systems[sys].gameCount;
     char **yn = NULL, **mn = NULL;
@@ -66,7 +66,7 @@ static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
     SortPanel_DatesLoad(sys, titles, keys, count);
     for (int i = 0; i < count; i++) {
         if (keys[i].release != 0) continue;
-        const char *hit = Scrape_Match(titles[i], (const char **)yn, ny);
+        const char *hit = Scrape_MatchLoose(titles[i], (const char **)yn, ny);
         for (int a = 0; hit && a < ny; a++) {
             if (yn[a] != hit) continue;
             int month = 0;

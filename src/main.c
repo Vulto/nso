@@ -1545,7 +1545,7 @@ static void ScrapeMenu_Advance(void)
             scrapeGame++;
             continue;
         }
-        file = Scrape_Match(game->title, (const char **)scrapeNames, scrapeNameCount);
+        file = Scrape_MatchLoose(game->title, (const char **)scrapeNames, scrapeNameCount);
         if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {
             scrapeMisses++;
             scrapeGame++;

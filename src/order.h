@@ -93,6 +93,10 @@ int Order_Format(char *dst, size_t n, const char *const *titles, int count)
     if (!dst || n == 0) return -1;
     dst[0] = '\0';
     for (int i = 0; i < count; i++) {
+        int seen = 0;   /* titles are keys: a repeated one is written once */
+        for (int j = 0; j < i && titles; j++)
+            if (titles[i] && titles[j] && strcmp(titles[i], titles[j]) == 0) { seen = 1; break; }
+        if (seen) continue;
         int w = snprintf(dst + off, n - off, "%s\n", (titles && titles[i]) ? titles[i] : "");
         if (w < 0 || (size_t)w >= n - off) { dst[0] = '\0'; return -1; }
         off += (size_t)w;

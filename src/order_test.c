@@ -61,6 +61,10 @@ int main(void)
     Order_Perm(buf, t, 3, p);
     CHECK(p[0] == 2 && p[1] == 0 && p[2] == 1);
     CHECK(Order_Format(buf, 8, u, 3) == -1 && buf[0] == '\0');
+    {
+        const char *d[4] = { "A", "B", "A", "C" };   /* a repeated title is written once */
+        CHECK(Order_Format(buf, sizeof(buf), d, 4) == 0 && strcmp(buf, "A\nB\nC\n") == 0);
+    }
 
     /* Move mode: B puts the lifted game back at its entry index, which restores
      * the order exactly; A keeps the new order, and that is what gets saved. */
