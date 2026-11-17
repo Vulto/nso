@@ -41,6 +41,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "The Wing of Madoola",
+        .scrapeAs = "Madoola no Tsubasa (Japan)",
         .boxartPath = "assets/images/systems/nes/openmadoola.png",
         .dir = "repos/nes/openmadoola",
         .binary = "build/openmadoola",
@@ -149,6 +150,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Donkey Kong Jr. Math",
+        .scrapeAs = "Donkey Kong Jr. no Sansuu Asobi (Japan)",
         .boxartPath = "assets/images/systems/nes/dkjrmath.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -179,6 +181,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Excitebike (Japan, USA)",
+        .scrapeAs = "Excitebike (e-Reader Edition)",
         .boxartPath = "assets/images/systems/nes/excitebike.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -234,6 +237,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Mr. Gimmick (Europe)",
+        .scrapeAs = "Gimmick! (Japan)",
         .boxartPath = "assets/images/systems/nes/mrgimmick.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -244,6 +248,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Ms. Pac-Man (Tengen)",
+        .scrapeAs = "Ms. Pac-Man (Unl)",
         .boxartPath = "assets/images/systems/nes/mspacman_tengen.png",
         .orient = SLOT_ORIENT_INHERIT,
     },
@@ -264,6 +269,7 @@ GameEntry nes_games[] = {
     },
     {
         .title = "Pac-Mania",
+        .scrapeAs = "Pac-Mania (Unl)",
         .boxartPath = "assets/images/systems/nes/pacmania.png",
         .orient = SLOT_ORIENT_INHERIT,
     },

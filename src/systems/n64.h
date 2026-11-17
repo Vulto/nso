@@ -68,6 +68,7 @@ GameEntry n64_games[] = {
     },
     {
         .title = "1080° Snowboarding (Japan, USA)",
+        .scrapeAs = "1080 Snowboarding",
         .boxartPath = "assets/images/systems/n64/1080.png",
         .dir = NULL,
         .binary = NULL,
@@ -278,6 +279,7 @@ GameEntry n64_games[] = {
     },
     {
         .title = "Sin and Punishment",
+        .scrapeAs = "Tsumi to Batsu - Hoshi no Keishousha",
         .boxartPath = "assets/images/systems/n64/snp.png",
         .dir = "repos/n64/snp-recomp",
         .binary = "build/SnPRecompiled",
