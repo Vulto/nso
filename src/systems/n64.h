@@ -70,8 +70,10 @@ GameEntry n64_games[] = {
     {
         .title = "Star Fox 64",
         .boxartPath = "assets/images/systems/n64/starfox.png",
-        .dir = "repos/n64/starship",
-        .binary = "./starship.appimage",
+        .dir = "repos/n64/starship-src/build-cmake",
+        .binary = "./Starship",
+        .appDir = "saves/n64/starship",   /* config, saves and sf64.o2r */
+        .env = "SHIP_HOME=@saves/n64/starship",   /* libultraship app dir */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
@@ -86,8 +88,10 @@ GameEntry n64_games[] = {
     {
         .title = "Banjo Kazooie",
         .boxartPath = "assets/images/systems/n64/bk.png",
-        .dir = "repos/n64/bk",
-        .binary = "BanjoRecompiled",
+        .dir = "repos/n64/Lighthouse/build-cmake",
+        .binary = "./Lighthouse",
+        .appDir = "saves/n64/bk",   /* config, saves and bk.o2r */
+        .env = "SHIP_HOME=@saves/n64/bk",   /* libultraship app dir */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
@@ -121,8 +125,10 @@ GameEntry n64_games[] = {
     {
         .title = "Mario Kart 64",
         .boxartPath = "assets/images/systems/n64/Mario_Kart_64_NSO.png",
-        .dir = "repos/n64/mk64",
-        .binary = "./spaghetti.appimage",
+        .dir = "repos/n64/spaghettikart/build-cmake",
+        .binary = "./Spaghettify",
+        .appDir = "saves/n64/mk64",   /* config, saves and mk64.o2r */
+        .env = "SHIP_HOME=@saves/n64/mk64",   /* libultraship app dir */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

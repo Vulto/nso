@@ -71,7 +71,7 @@ int main(void)
     int counts[ST_COUNT] = { 0 }, total;
     check_sys("NES", nes_games, nes_game_count, (int[ST_COUNT]){ 5, 3, 50, 0 }, counts);
     check_sys("SNES", snes_games, snes_game_count, (int[ST_COUNT]){ 8, 3, 50, 0 }, counts);
-    check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 42, 9, 0, 242 }, counts);
+    check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 41, 10, 0, 242 }, counts);
     check_sys("GameCube", gamecube_games, gamecube_game_count, (int[ST_COUNT]){ 0, 4, 0, 0 }, counts);
     total = nes_game_count + snes_game_count + n64_game_count + gamecube_game_count;
     expect("sum of categories", counts[0] + counts[1] + counts[2] + counts[3], total);
@@ -93,7 +93,7 @@ int main(void)
     type_of(n64_games, n64_game_count, "Zelda Ocarina of Time", ST_NATIVE);
     type_of(n64_games, n64_game_count, "Blast Corps", ST_RECOMP);
     type_of(n64_games, n64_game_count, "AeroGauge", ST_RECOMP);
-    type_of(n64_games, n64_game_count, "Banjo Kazooie", ST_RECOMP);
+    type_of(n64_games, n64_game_count, "Banjo Kazooie", ST_NATIVE);
     type_of(n64_games, n64_game_count, "Killer Instinct Gold", ST_NONE);
     type_of(gamecube_games, gamecube_game_count, "Metroid Prime", ST_NATIVE);
 
