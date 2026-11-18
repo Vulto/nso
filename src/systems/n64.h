@@ -70,11 +70,11 @@ GameEntry n64_games[] = {
     {
         .title = "Star Fox 64",
         .boxartPath = "assets/images/systems/n64/starfox.png",
-        .dir = "repos/n64/starship-src/build-cmake",
-        .binary = "./Starship",
-        .appDir = "saves/n64/starship",   /* config, saves and sf64.o2r */
-        .env = "SHIP_HOME=@saves/n64/starship",   /* libultraship app dir */
+        .dir = "embed/starship",   /* Starship inside NSO's window: `make embed` */
+        .binary = "build/libstarshipmod.so",
+        .stateDir = "saves/n64/starship",
         .orient = SLOT_ORIENT_INHERIT,
+        .embedRomKey = "n64.starship_dir",   /* config, saves, sf64.o2r and starship.o2r */
     },
     {
         .title = "1080 Snowboarding (Japan, USA) (En,Ja)",

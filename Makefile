@@ -28,7 +28,8 @@ nso: $(SRC) $(HDRS)
 
 # In-process modules: SMB Vanilla (repos/nes/smbvanilla), Mega Man 3
 # (repos/nes/mm3-recomp), SMW, Star Fox SNES recomp, sm64ex, and AeroGauge
-# (repos/n64/aerogauge-recomp, which carries its NSO adapter).
+# (repos/n64/aerogauge-recomp, which carries its NSO adapter), and Star Fox 64
+# (Starship, embed/starship).
 embed:
 	$(MAKE) -C embed/smb
 	$(MAKE) -C embed/mm3
@@ -36,6 +37,7 @@ embed:
 	cmake -S repos/snes/starfox-recomp -B repos/snes/starfox-recomp/build -DCMAKE_BUILD_TYPE=Release
 	cmake --build repos/snes/starfox-recomp/build --target StarFoxNSOMod --parallel
 	$(MAKE) -C embed/sm64
+	$(MAKE) -C embed/starship
 	cmake -S repos/n64/aerogauge-recomp -B repos/n64/aerogauge-recomp/build -DCMAKE_BUILD_TYPE=Release
 	cmake --build repos/n64/aerogauge-recomp/build --target aerogauge_nso --parallel
 

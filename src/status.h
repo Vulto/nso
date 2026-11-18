@@ -49,6 +49,7 @@ static const StatusDir status_dirs[] = {
     { "repos/n64/2s2h-src/build-cmake/mm", ST_NATIVE },
     { "repos/n64/perfect_dark-src", ST_NATIVE },
     { "repos/n64/BattleShip/build-us", ST_NATIVE },
+    { "embed/starship", ST_NATIVE },
     { "repos/n64/starship", ST_NATIVE },
     { "repos/n64/starship-src/build-cmake", ST_NATIVE },
     { "repos/n64/mk64", ST_NATIVE },
