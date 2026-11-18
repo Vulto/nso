@@ -3942,20 +3942,39 @@ static void DrawEnterLogoGlyph(float cx, float cy, float w, float deg, float alp
                    deg, Fade(WHITE, alpha));
 }
 
-/* "PC Ports", right-aligned (right edge x, vertical centre cy), rotated about its centre. */
-static void DrawEnterPortsText(float x, float cy, float size, float deg, float alpha) {
+/* "PC Ports", right-aligned (right edge x, vertical centre cy). Every letter flips like a card
+ * about its own horizontal axis, each a little out of phase (EnterAnim_LetterAngle): height
+ * scales by cos(angle), with a little perspective (the half turning towards the viewer grows
+ * slightly wider). All letters are face-on while the word holds. */
+static void DrawEnterPortsText(float x, float cy, float size, float t, float alpha) {
     if (!enterTextOk) return;
     const char *text = "PC Ports";
-    Vector2 m = MeasureTextEx(enterTextFont, text, size, size * 0.02f);
+    const int n = (int)strlen(text);
+    const float spacing = size * 0.02f;
+    Vector2 whole = MeasureTextEx(enterTextFont, text, size, spacing);
     Color c = Fade(WHITE, alpha);
-    for (int pass = 0; pass < 2; pass++)   /* a second pass a hair to the right: bolder strokes */
-        DrawTextPro(enterTextFont, text, (Vector2){ x - m.x * 0.5f + (float)pass * size * 0.02f, cy },
-                    (Vector2){ m.x * 0.5f, m.y * 0.5f }, deg, size, size * 0.02f, c);
+    for (int i = 0; i < n; i++) {
+        if (text[i] == ' ') continue;
+        char prefix[16] = { 0 }, one[2] = { text[i], 0 };
+        memcpy(prefix, text, (size_t)i);
+        float ox = i ? MeasureTextEx(enterTextFont, prefix, size, spacing).x : 0.0f;
+        float lw = MeasureTextEx(enterTextFont, one, size, 0.0f).x;
+        float rad = EnterAnim_LetterAngle(t, i, n) * (float)PI / 180.0f;
+        float sy = cosf(rad), sx = 1.0f + 0.10f * fabsf(sinf(rad));
+        if (fabsf(sy) < 0.01f) continue;   /* edge-on */
+        rlPushMatrix();
+        rlTranslatef(x - whole.x + ox + lw * 0.5f, cy, 0.0f);
+        rlScalef(sx, sy, 1.0f);
+        for (int pass = 0; pass < 2; pass++)   /* a second pass a hair to the right: bolder strokes */
+            DrawTextEx(enterTextFont, one, (Vector2){ -lw * 0.5f + (float)pass * size * 0.02f, -whole.y * 0.5f },
+                       size, 0.0f, c);
+        rlPopMatrix();
+    }
 }
 
 /* Pressing A on a system tile (enteranim.h): the tile's art lifts off as a fading ghost while a
  * (17,17,17) layer rises over the menu; the layer holds with the white logos (Nintendo wordmark
- * top-left, "PC Ports" bottom-right); then the system's own screen crossfades in. */
+ * top-left, "PC Ports" bottom-right, flipping in); then the system's own screen crossfades in. */
 static void DrawEnterTransition(void) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float cover = EnterAnim_Cover(enterT), cross = EnterAnim_Cross(enterT);
@@ -3988,11 +4007,11 @@ static void DrawEnterTransition(void) {
         DrawSystemArt(0.0f);                                   /* the destination, as it always is */
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, 1.0f - cross));
     }
-    float la = EnterAnim_LogoAlpha(enterT), deg = EnterAnim_LogoAngle(enterT);
+    float la = EnterAnim_LogoAlpha(enterT);
     if (la > 0.0f) {   /* positions and sizes as in the reference, relative to the screen */
         float lw = sw * 0.120f;
-        DrawEnterLogoGlyph(sw * 0.0229f + lw * 0.5f, sh * 0.0495f + lw * 0.25f * 0.5f, lw, deg, la);
-        DrawEnterPortsText(sw * 0.967f, sh * 0.920f, sh * 0.072f, deg, la);
+        DrawEnterLogoGlyph(sw * 0.0229f + lw * 0.5f, sh * 0.0495f + lw * 0.25f * 0.5f, lw, 0.0f, la);   /* never rotates */
+        DrawEnterPortsText(sw * 0.967f, sh * 0.920f, sh * 0.072f, enterT, la);
     }
 }
 

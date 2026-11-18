@@ -4,16 +4,20 @@
  * frames 106..203, A pressed at 106):
  *   106-134  the tile's art lifts off as a fading ghost while a (17,17,17)
  *            layer rises over the menu, slow then fast (reaches 1 at 134)
- *   134-176  full-screen (17,17,17); logos fade in 135-143 and rotate in
+ *   134-176  full-screen (17,17,17); logos fade in 135-143 ("PC Ports" flips in)
  *   176-203  linear crossfade to the system's own screen; logos out 176-184 */
 #ifndef NSO_ENTERANIM_H
 #define NSO_ENTERANIM_H
 
 #define ENTER_REF_FPS 59.7f
+/* The reference's 97 frames plus 20 ms, spread proportionally over every phase (all curves keep
+ * their shape, only stretched in time). */
+#define ENTER_EXTRA_SEC 0.020f
+#define ENTER_STRETCH ((97.0f / ENTER_REF_FPS + ENTER_EXTRA_SEC) / (97.0f / ENTER_REF_FPS))
 #define ENTER_COVER_R 17
 #define ENTER_COVER_G 17
 #define ENTER_COVER_B 17
-#define ENTER_LOGO_TILT_DEG 12.0f   /* rotate-in start angle (and rotate-out end angle) */
+#define ENTER_FLIP_DEG 90.0f   /* "PC Ports" flips about its horizontal axis: edge-on at -90, face-on at 0, edge-on at +90 */
 
 /* Seconds from A to the end of the crossfade (frame 203). */
 float EnterAnim_Total(void);
@@ -22,9 +26,14 @@ float EnterAnim_Cover(float t);
 /* Ghost of the pressed tile: 0..1 progress over frames 106-134 and its opacity. */
 float EnterAnim_GhostProgress(float t);
 float EnterAnim_GhostAlpha(float t);
-/* White logos' opacity (fade in 135-143, out 176-184) and rotation in degrees. */
+/* White logos' opacity (fade in 135-143, out 176-184); the angle (degrees) is only for "PC Ports"
+ * (card flip about the X axis); the Nintendo wordmark never rotates. */
 float EnterAnim_LogoAlpha(float t);
 float EnterAnim_LogoAngle(float t);
+/* Same flip for letter i of n of "PC Ports": each letter is a little out of phase with the
+ * others (flip-in windows start staggered inside 135-143, flip-out inside 176-184), and all are
+ * face-on (0 degrees, the word readable) from frame 143 to 176. */
+float EnterAnim_LetterAngle(float t, int i, int n);
 /* Opacity of the destination screen over the (17,17,17) layer: 0 until 176, 1 at 203. */
 float EnterAnim_Cross(float t);
 
@@ -34,14 +43,14 @@ float EnterAnim_Cross(float t);
 #ifndef ENTERANIM_IMPLEMENTATION_ONCE
 #define ENTERANIM_IMPLEMENTATION_ONCE
 
-static float enter_frame(float t) { return 106.0f + t * ENTER_REF_FPS; }
+static float enter_frame(float t) { return 106.0f + t / ENTER_STRETCH * ENTER_REF_FPS; }
 
 static float enter_clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
 
 /* Linear ramp between frames a and b. */
 static float enter_ramp(float f, float a, float b) { return enter_clamp01((f - a) / (b - a)); }
 
-float EnterAnim_Total(void) { return (203.0f - 106.0f) / ENTER_REF_FPS; }
+float EnterAnim_Total(void) { return (203.0f - 106.0f) / ENTER_REF_FPS * ENTER_STRETCH; }
 
 float EnterAnim_Cover(float t)
 {
@@ -81,7 +90,17 @@ float EnterAnim_LogoAngle(float t)
     float f = enter_frame(t);
     float in = enter_ramp(f, 135.0f, 143.0f), out = enter_ramp(f, 176.0f, 184.0f);
     in = 1.0f - (1.0f - in) * (1.0f - in);
-    return -ENTER_LOGO_TILT_DEG * (1.0f - in) + ENTER_LOGO_TILT_DEG * out;
+    return -ENTER_FLIP_DEG * (1.0f - in) + ENTER_FLIP_DEG * out;
+}
+
+float EnterAnim_LetterAngle(float t, int i, int n)
+{
+    float f = enter_frame(t);
+    float lag = n > 1 ? 3.0f * (float)i / (float)(n - 1) : 0.0f;   /* 0..3 frames, letter by letter */
+    float in = enter_ramp(f, 135.0f + lag, 140.0f + lag);          /* 5-frame flip, done by 143 */
+    float out = enter_ramp(f, 176.0f + lag, 181.0f + lag);         /* done by 184 */
+    in = 1.0f - (1.0f - in) * (1.0f - in);
+    return -ENTER_FLIP_DEG * (1.0f - in) + ENTER_FLIP_DEG * out;
 }
 
 float EnterAnim_Cross(float t) { return enter_ramp(enter_frame(t), 176.0f, 203.0f); }
