@@ -36,9 +36,9 @@ static const char *Status_TypeName(StatusType t) {
 }
 
 static const char *Status_Word(int id) {
-    static const char *const en[] = { "Port status", "playable", "Total", "Playable", "Not playable",
+    static const char *const en[] = { "Port status", "status", "Playable", "Not playable",
                                       "%d (%d%% of total)", "    \xF0\x9F\x85\x91 Back   " };
-    static const char *const pt[] = { "Status dos ports", "jogáveis", "Total", "Jogável", "Não jogável",
+    static const char *const pt[] = { "Status dos ports", "status", "Jogável", "Não jogável",
                                       "%d (%d%% do total)", "    \xF0\x9F\x85\x91 Voltar   " };
     return (Lang_Get() == LANG_PT ? pt : en)[id];
 }
@@ -139,19 +139,13 @@ static void Status_Draw(Font font) {
 
     float ix = pc.x + pad, iw = pc.width - 2.0f * pad, y = pc.y + sh * 0.025f;
     int pct = Status_Percent(statusPlayable, statusTotal);
-    char big[16], rest[48], tot[16];
+    char big[16], rest[48];
     snprintf(big, sizeof(big), "%d%%", pct);
     snprintf(rest, sizeof(rest), " %s", Status_Word(1));
-    snprintf(tot, sizeof(tot), "%d", statusTotal);
     float bs = sh * 0.052f, ss = sh * 0.026f;
     Status_Bold(font, big, (Vector2){ ix, y }, bs, Fade(ink, a));
     float bw = MeasureTextEx(font, big, bs, 2.0f).x;
     DrawTextEx(font, rest, (Vector2){ ix + bw, y + bs - ss * 1.15f }, ss, 2.0f, Fade(light, a));
-    Vector2 tv = MeasureTextEx(font, tot, ss * 1.2f, 2.0f);
-    Status_Bold(font, tot, (Vector2){ ix + iw - tv.x, y + bs - ss * 1.4f }, ss * 1.2f, Fade(ink, a));
-    const char *tl = Status_Word(2);
-    Vector2 tlv = MeasureTextEx(font, tl, ss, 2.0f);
-    DrawTextEx(font, tl, (Vector2){ ix + iw - tv.x - tlv.x - 10.0f, y + bs - ss * 1.15f }, ss, 2.0f, Fade(light, a));
 
     /* Segmented bar: gray track, one rounded segment per type, small gaps. */
     float by = y + bs + sh * 0.035f, bh = sh * 0.022f, gap = sh * 0.004f;
@@ -174,7 +168,7 @@ static void Status_Draw(Font font) {
         DrawCircleV((Vector2){ ix + ds, cy }, ds, Fade(statusColors[t], a));
         float nx = ix + ds * 3.0f;
         char cnt[48];
-        snprintf(cnt, sizeof(cnt), Status_Word(5), statusCounts[t], Status_Percent(statusCounts[t], statusTotal));
+        snprintf(cnt, sizeof(cnt), Status_Word(4), statusCounts[t], Status_Percent(statusCounts[t], statusTotal));
         Status_TextR(font, cnt, ix + iw, cy - ts * 0.5f, ts, iw * 0.5f, Fade(light, a));
         float cw = MeasureTextEx(font, cnt, ts, 2.0f).x;
         Details_Text(font, Status_TypeName((StatusType)t), (Vector2){ nx, cy - ts * 0.5f }, ts,
@@ -195,13 +189,13 @@ static void Status_Draw(Font font) {
         Details_Text(font, r->game->title, (Vector2){ rx + fs * 1.1f, ty }, fs, sysX - rx - fs * 1.5f, Fade(ink, a));
         Details_Text(font, r->system, (Vector2){ sysX, ty }, fs * 0.9f, typeX - sysX - 10.0f, Fade(light, a));
         Details_Text(font, Status_TypeName(r->type), (Vector2){ typeX, ty }, fs * 0.9f, rr - typeX - sw * 0.1f, Fade(meta, a));
-        Status_TextR(font, Status_Word(r->playable ? 3 : 4), rr, ty, fs * 0.9f, sw * 0.095f,
+        Status_TextR(font, Status_Word(r->playable ? 2 : 3), rr, ty, fs * 0.9f, sw * 0.095f,
                      Fade(r->playable ? statusColors[ST_NATIVE] : light, a));
         if (k < vis - 1)
             DrawLineEx((Vector2){ rx + fs * 1.1f, ry + rowH }, (Vector2){ rr, ry + rowH }, 1.0f, Fade(line, a * 0.7f));
     }
 
-    DrawInfoBarEx(font, Status_Word(6), a, 0.0f);
+    DrawInfoBarEx(font, Status_Word(5), a, 0.0f);
 }
 
 #endif /* NSO_STATUSPANEL_H */
