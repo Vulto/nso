@@ -951,6 +951,11 @@ static float enterT = 0.0f;
 static Font enterLogoFont, enterTextFont;
 static bool enterLogoOk = false, enterTextOk = false;
 #define ENTER_LOGO_CP 0xE22A
+/* Per-system "select jingle": plays once the system's full-screen image is completely shown
+ * (the gray transition finished, no overlay), after the click of the A press. Only Nintendo 64
+ * has one for now (the coin); -1 = none. */
+static int SystemSelectJingle(const PlatformEntry *p) { return p == &n64_platform ? (int)SFX_COIN : -1; }
+static bool enterJinglePending = false;
 
 
 static bool screenSliding = false;
@@ -3908,6 +3913,7 @@ static void StartEnterMosaic(void) {
     currentState = SPLASH;
     splashTimer = 0.0f;
     enterT = 0.0f;   /* the A press: enteranim.h runs from here */
+    enterJinglePending = true;
 }
 
 /* Full-screen system art (letterboxed to fit, like the original menu). */
@@ -4028,7 +4034,15 @@ static void UpdateSplash(float dt) {
     float step = dt > 0.1f ? 0.1f : dt;   /* a hitch must not skip the sequence */
     const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step in seconds per frame (frame capture) */
     if (fixed && atof(fixed) > 0.0) step = (float)atof(fixed);
-    if (enterT < EnterAnim_Total()) { enterT += step; return; }   /* transition still running */
+    if (enterT < EnterAnim_Total()) {   /* transition still running */
+        enterT += step;
+        if (enterT >= EnterAnim_Total() && enterJinglePending) {   /* destination at 100%, no overlay */
+            enterJinglePending = false;
+            int jingle = SystemSelectJingle(ActiveSystem()->platform);
+            if (jingle >= 0) Sfx_Play((SfxId)jingle);
+        }
+        return;
+    }
     splashTimer += dt;
     if (loaded && splashTimer >= SPLASH_MIN_HOLD_SEC) {
         screenSliding = true;
@@ -4354,7 +4368,7 @@ int main(int argc, char **argv) {
             autoSelected = true;
             int idx = atoi(autoSel);
             if (idx >= 0 && idx < SYSTEM_COUNT) currentSystem = idx;
-            if (ActiveSystem()->platform == &n64_platform) Sfx_Play(SFX_COIN);
+            Sfx_Play(SFX_CLICK);
             StartEnterMosaic();
         }
 
@@ -4621,8 +4635,7 @@ int main(int argc, char **argv) {
 
                     if (canNavigate && !overlayConsumedConfirm &&
                         (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
-                        if (ActiveSystem()->platform == &n64_platform) Sfx_Play(SFX_COIN);
-                        else Sfx_Play(SFX_CLICK);
+                        Sfx_Play(SFX_CLICK);   /* the selection; the system's jingle follows the transition */
                         StartEnterMosaic();
                     }
                     break;
