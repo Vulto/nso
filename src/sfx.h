@@ -17,7 +17,15 @@ void Sfx_Init(void);
 void Sfx_Shutdown(void);
 void Sfx_Play(SfxId id);
 int  Sfx_Has(SfxId id);       /* 1 when the sound is loaded (audio device and file present) */
-int  Sfx_Playing(SfxId id);   /* 1 while it is still playing */
+int  Sfx_Playing(SfxId id);   /* 1 until the whole sound has actually been heard (see Sfx_StillAudible) */
+
+/* raylib clears "playing" the moment the mixer has handed the LAST frame to the output device, but
+ * the device still holds that audio (period buffers + backend latency): the sound is heard for a
+ * while after IsSoundPlaying() turns false. So a sound counts as finished only when the mixer is done
+ * AND its real length (frames / sample rate) plus the output latency margin has elapsed since the
+ * moment it was started. */
+#define SFX_OUTPUT_LATENCY_SEC 0.25
+int  Sfx_StillAudible(int mixerPlaying, double elapsedSec, double lengthSec);
 
 #endif /* NSO_SFX_H */
 
@@ -29,6 +37,7 @@ const char *GetDataPath(const char *relativePath);
 
 static Sound sfxSounds[SFX_COUNT];
 static bool sfxOwnDevice;
+static double sfxStartedAt[SFX_COUNT];   /* GetTime() of the last Sfx_Play, 0 = never */
 
 void Sfx_Init(void)
 {
@@ -71,6 +80,7 @@ void Sfx_Play(SfxId id)
     if ((int)id < 0 || id >= SFX_COUNT) return;
     if (!IsSoundValid(sfxSounds[id])) return;
     PlaySound(sfxSounds[id]);
+    sfxStartedAt[id] = GetTime() + 1e-9;   /* never exactly 0 */
 }
 
 int Sfx_Has(SfxId id)
@@ -78,9 +88,17 @@ int Sfx_Has(SfxId id)
     return (int)id >= 0 && id < SFX_COUNT && IsSoundValid(sfxSounds[id]);
 }
 
+int Sfx_StillAudible(int mixerPlaying, double elapsedSec, double lengthSec)
+{
+    return mixerPlaying || elapsedSec < lengthSec + SFX_OUTPUT_LATENCY_SEC;
+}
+
 int Sfx_Playing(SfxId id)
 {
-    return Sfx_Has(id) && IsSoundPlaying(sfxSounds[id]);
+    if (!Sfx_Has(id) || sfxStartedAt[id] == 0.0) return 0;
+    Sound s = sfxSounds[id];
+    double length = s.stream.sampleRate ? (double)s.frameCount / (double)s.stream.sampleRate : 0.0;
+    return Sfx_StillAudible(IsSoundPlaying(s), GetTime() - sfxStartedAt[id], length);
 }
 
 #endif /* SFX_IMPLEMENTATION_ONCE */
