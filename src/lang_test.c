@@ -75,6 +75,29 @@ int main(void)
         CHECK(Cfg_Put("a=1\na=2\n", "a", "3", out, sizeof(out)) && strcmp(out, "a=3\n") == 0);
         CHECK(Cfg_Put("b=2\n", "a", "1", out, sizeof(out)) && strcmp(out, "b=2\na=1\n") == 0);
         CHECK(!Cfg_Put("b=2\n", "a", "1", out, 6));                 /* too small */
+        CHECK(Cfg_Remove("a=1\nb=2\n", "a", out, sizeof(out)) && strcmp(out, "b=2\n") == 0);
+        CHECK(Cfg_Remove("b=2\n", "a", out, sizeof(out)) && strcmp(out, "b=2\n") == 0);
+        CHECK(Cfg_Remove("a=1\na=2\nb=3", "a", out, sizeof(out)) && strcmp(out, "b=3\n") == 0);
+    }
+
+    {
+        char out[4200], v[32];
+        bool pixel = false, scan = false;
+        /* No marker: ignore leftover .screen and any ba98df1 toggle keys; force ON+ON. */
+        CHECK(Cfg_RetroScreenLoad("nes.screen=crt\nnes.pixel=0\nnes.scanlines=0\n", "nes", &pixel, &scan));
+        CHECK(pixel && scan);
+        CHECK(Cfg_RetroScreenStamp("nes.screen=crt\nnes.pixel=0\nn64.screen=pixel\n", "nes", out, sizeof(out)));
+        CHECK(Cfg_Get(out, "nes.pixel", v, sizeof(v)) && strcmp(v, "1") == 0);
+        CHECK(Cfg_Get(out, "nes.scanlines", v, sizeof(v)) && strcmp(v, "1") == 0);
+        CHECK(Cfg_Get(out, "nes.screen_ver", v, sizeof(v)) && strcmp(v, NSO_RETRO_SCREEN_VER) == 0);
+        CHECK(!Cfg_Get(out, "nes.screen", v, sizeof(v)));
+        CHECK(Cfg_Get(out, "n64.screen", v, sizeof(v)) && strcmp(v, "pixel") == 0);
+        /* Marker present: keep the user's later choices, including off. */
+        CHECK(!Cfg_RetroScreenLoad("nes.screen_ver=2\nnes.pixel=0\nnes.scanlines=1\n", "nes", &pixel, &scan));
+        CHECK(!pixel && scan);
+        pixel = false; scan = false;
+        CHECK(!Cfg_RetroScreenLoad("snes.screen_ver=2\n", "snes", &pixel, &scan));
+        CHECK(pixel && scan);   /* missing keys stay at the ON+ON default */
     }
 
     NsoMsg m;

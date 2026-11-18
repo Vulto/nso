@@ -2329,10 +2329,11 @@ enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also independent "<id>.pixel" and
- * "<id>.scanlines", each "0" or "1"). Older NES/SNES files with
- * "<id>.screen" = 4:3|pixel|crt are migrated: pixel -> Pixel Perfect on,
- * crt -> Scanlines on, 4:3 -> both off. N64/GameCube embeds still use
- * .screen as EMBED_SCREEN_* (default Pixel Perfect; not shown in Settings). */
+ * "<id>.scanlines", each "0" or "1", default both on). A one-time
+ * "<id>.screen_ver" = "2" stamp forces both on and drops leftover
+ * "<id>.screen"; after that, the user's choices are kept. N64/GameCube
+ * embeds still use .screen as EMBED_SCREEN_* (default Pixel Perfect; not
+ * shown in Settings). */
 typedef struct {
     int versions;
     bool rumble;
@@ -2347,6 +2348,7 @@ static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
 static void SysSettings_LoadAll(void) {
     char cfg[2112], text[4096], v[32];
     size_t n = 0;
+    bool retroReset = false;
     Lang_ConfigPath(cfg, sizeof(cfg));
     FILE *f = fopen(cfg, "r");
     if (f) { n = fread(text, 1, sizeof(text) - 1, f); fclose(f); }
@@ -2354,30 +2356,34 @@ static void SysSettings_LoadAll(void) {
     for (int i = 0; i < SYSTEM_COUNT; i++) {
         const char *id = systems[i].platform->id;
         char key[64];
-        /* defaults: NA, rumble on, controls hidden, pixel on, scanlines off */
-        SysSettings s = { 0, true, false, 1, true, false };
+        /* defaults: NA, rumble on, controls hidden, Pixel Perfect + Scanlines on */
+        SysSettings s = { 0, true, false, 1, true, true };
         snprintf(key, sizeof(key), "%s.versions", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.versions = strcmp(v, "na_eu") == 0 ? 1 : 0;
         snprintf(key, sizeof(key), "%s.rumble", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.rumble = strcmp(v, "0") != 0;
         snprintf(key, sizeof(key), "%s.show_controls", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.showControls = strcmp(v, "0") != 0;
-        snprintf(key, sizeof(key), "%s.screen", id);
-        if (Cfg_Get(text, key, v, sizeof(v)))
-            for (int m = 0; m < 3; m++) if (strcmp(v, SCREEN_MODE_KEYS[m]) == 0) s.screen = m;
         if (strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0) {
-            bool havePixel = false, haveScan = false;
-            snprintf(key, sizeof(key), "%s.pixel", id);
-            if (Cfg_Get(text, key, v, sizeof(v))) { s.pixel = strcmp(v, "0") != 0; havePixel = true; }
-            snprintf(key, sizeof(key), "%s.scanlines", id);
-            if (Cfg_Get(text, key, v, sizeof(v))) { s.scanlines = strcmp(v, "0") != 0; haveScan = true; }
-            if (!havePixel && !haveScan) {
-                if (s.screen == 0) { s.pixel = false; s.scanlines = false; }
-                else if (s.screen == 1) { s.pixel = true; s.scanlines = false; }
-                else if (s.screen == 2) { s.pixel = false; s.scanlines = true; }
-            }
+            if (Cfg_RetroScreenLoad(text, id, &s.pixel, &s.scanlines))
+                retroReset = true;
+        } else {
+            snprintf(key, sizeof(key), "%s.screen", id);
+            if (Cfg_Get(text, key, v, sizeof(v)))
+                for (int m = 0; m < 3; m++) if (strcmp(v, SCREEN_MODE_KEYS[m]) == 0) s.screen = m;
         }
         sysSettings[i] = s;
+    }
+    if (retroReset) {
+        char a[4200], b[4200];
+        bool ok = Cfg_RetroScreenStamp(text, "nes", a, sizeof(a))
+               && Cfg_RetroScreenStamp(a, "snes", b, sizeof(b));
+        if (ok) {
+            FILE *w = fopen(cfg, "w");
+            if (w) { ok = fputs(b, w) >= 0; ok = (fclose(w) == 0) && ok; }
+            else ok = false;
+        }
+        if (!ok) fprintf(stderr, "NSO: cannot reset NES/SNES Game Screen in %s\n", cfg);
     }
 }
 
@@ -2400,6 +2406,8 @@ static void SysSettings_Save(int sys) {
         ok &= Cfg_SaveKey(cfg, key, s->pixel ? "1" : "0");
         snprintf(key, sizeof(key), "%s.scanlines", id);
         ok &= Cfg_SaveKey(cfg, key, s->scanlines ? "1" : "0");
+        snprintf(key, sizeof(key), "%s.screen_ver", id);
+        ok &= Cfg_SaveKey(cfg, key, NSO_RETRO_SCREEN_VER);
     }
     if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
@@ -2740,14 +2748,16 @@ static void SidebarPanelRetro_Draw(Font font, Color red) {
     DrawFitText(font, T(S_SET_CTRL_DISPLAY), (Vector2){ hx, sh * 0.774f }, hsize, sw - hx, WHITE);
 
     float r = sh * 0.016f;
-    float ph = sh * 0.22f;
-    Rectangle preview = { bx, sh * 0.132f, bw, ph };
-    DrawRectangleLinesEx(preview, th * 0.6f, WHITE);
-    Rectangle thumb = { preview.x + th, preview.y + th, preview.width - 2.0f * th, ph - 2.0f * th };
+    /* Same thumbnail size as the pre-ba98df1 Game Screen cards. */
+    float ch = sh * 0.155f;
+    Rectangle frame = { bx, sh * 0.132f, sw * 0.112f + 2.0f * th, ch };
+    DrawRectangleLinesEx(frame, th * 0.6f, WHITE);
+    Rectangle thumb = { frame.x + th, frame.y + th, sw * 0.112f, ch - 2.0f * th };
     DrawRetroThumb(thumb, snes, st->scanlines);
 
     static const StrId labels[2] = { S_SET_PIXEL, S_SET_SCANLINES };
-    static const float rowY[2] = { 0.42f, 0.54f };
+    /* Raised to sit under the small thumb without a large gap. */
+    static const float rowY[2] = { 0.36f, 0.48f };
     bool on[2] = { st->pixel, st->scanlines };
     float bh = sh * 0.069f;
     for (int k = 0; k < 2; k++) {

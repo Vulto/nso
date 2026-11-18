@@ -70,7 +70,19 @@ bool Lang_Save(const char *path, NsoLang lang);   /* keeps the file's other keys
  * read-modify-write of the file. */
 bool Cfg_Get(const char *text, const char *key, char *dst, size_t n);
 bool Cfg_Put(const char *text, const char *key, const char *value, char *out, size_t n);
+bool Cfg_Remove(const char *text, const char *key, char *out, size_t n);
 bool Cfg_SaveKey(const char *path, const char *key, const char *value);
+
+/* NES/SNES Game Screen: "<id>.pixel" and "<id>.scanlines" (0/1), default both
+ * on. "<id>.screen_ver" = "2" means the one-time reset has been applied
+ * (both toggles forced on, leftover "<id>.screen" dropped) and later user
+ * choices are kept. Cfg_RetroScreenLoad returns true when that stamp is
+ * still needed (*pixel and *scanlines are then both true, ignoring old
+ * values). Cfg_RetroScreenStamp writes ON+ON, the marker, and drops
+ * "<id>.screen". */
+#define NSO_RETRO_SCREEN_VER "2"
+bool Cfg_RetroScreenLoad(const char *text, const char *id, bool *pixel, bool *scanlines);
+bool Cfg_RetroScreenStamp(const char *text, const char *id, char *out, size_t n);
 
 void Msg_Clear(NsoMsg *m);
 void Msg_Set(NsoMsg *m, int id, int n, const char *arg);
@@ -436,6 +448,55 @@ bool Cfg_Put(const char *text, const char *key, const char *value, char *out, si
         if (w < 0 || (size_t)w >= n - used) return false;
     }
     return true;
+}
+
+bool Cfg_Remove(const char *text, const char *key, char *out, size_t n)
+{
+    size_t kl = key ? strlen(key) : 0, used = 0;
+    const char *p = text ? text : "";
+    if (!kl || !out || !n) return false;
+    out[0] = '\0';
+    while (*p) {
+        const char *next;
+        size_t len = cfg_line_len(p, &next);
+        if (!cfg_line_is(p, len, key, kl)) {
+            int w = snprintf(out + used, n - used, "%.*s\n", (int)len, p);
+            if (w < 0 || (size_t)w >= n - used) return false;
+            used += (size_t)w;
+        }
+        p = next ? next : "";
+    }
+    return true;
+}
+
+bool Cfg_RetroScreenLoad(const char *text, const char *id, bool *pixel, bool *scanlines)
+{
+    char key[64], v[32];
+    if (pixel) *pixel = true;
+    if (scanlines) *scanlines = true;
+    if (!id || !id[0]) return true;
+    snprintf(key, sizeof(key), "%s.screen_ver", id);
+    if (!Cfg_Get(text, key, v, sizeof(v)) || strcmp(v, NSO_RETRO_SCREEN_VER) != 0)
+        return true;
+    snprintf(key, sizeof(key), "%s.pixel", id);
+    if (pixel && Cfg_Get(text, key, v, sizeof(v))) *pixel = strcmp(v, "0") != 0;
+    snprintf(key, sizeof(key), "%s.scanlines", id);
+    if (scanlines && Cfg_Get(text, key, v, sizeof(v))) *scanlines = strcmp(v, "0") != 0;
+    return false;
+}
+
+bool Cfg_RetroScreenStamp(const char *text, const char *id, char *out, size_t n)
+{
+    char a[4200], b[4200], c[4200], key[64];
+    if (!id || !id[0] || !out || !n) return false;
+    snprintf(key, sizeof(key), "%s.pixel", id);
+    if (!Cfg_Put(text ? text : "", key, "1", a, sizeof(a))) return false;
+    snprintf(key, sizeof(key), "%s.scanlines", id);
+    if (!Cfg_Put(a, key, "1", b, sizeof(b))) return false;
+    snprintf(key, sizeof(key), "%s.screen_ver", id);
+    if (!Cfg_Put(b, key, NSO_RETRO_SCREEN_VER, c, sizeof(c))) return false;
+    snprintf(key, sizeof(key), "%s.screen", id);
+    return Cfg_Remove(c, key, out, n);
 }
 
 bool Cfg_SaveKey(const char *path, const char *key, const char *value)
