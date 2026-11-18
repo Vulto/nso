@@ -28,6 +28,8 @@
 #include "order.h"
 #define SORT_IMPLEMENTATION
 #include "sort.h"
+#define HIDE_IMPLEMENTATION
+#include "hide.h"
 #include <time.h>
 
 #define NSO_IMPLEMENTATION
@@ -64,6 +66,14 @@ static System systems[] = {
 };
 
 static const int SYSTEM_COUNT = (int)(sizeof(systems) / sizeof(systems[0]));
+
+/* Hide unplayable (hide.h, per system): the games array keeps every title with
+ * the playable ones first; while hideOn, only the first hideShown are shown. */
+static bool hideOn[sizeof(systems) / sizeof(systems[0])];
+static bool hideReady[sizeof(systems) / sizeof(systems[0])];
+static int hideShown[sizeof(systems) / sizeof(systems[0])];
+static void Hide_Toggle(void);
+static void Hide_Resync(bool live);
 
 static Texture2D gameBoxarts[MAX_GAMES];
 
@@ -126,8 +136,15 @@ static System *ActiveSystem(void) {
     return &systems[currentSystem];
 }
 
-static int ActiveGameCount(void) {
+/* Every title of the active system, shown or not. */
+static int ActiveGameTotal(void) {
     return *ActiveSystem()->gameCount;
+}
+
+/* Titles in the grid: all of them, or the playable ones (a prefix). */
+static int ActiveGameCount(void) {
+    int s = (int)(ActiveSystem() - systems);
+    return hideOn[s] && hideReady[s] ? hideShown[s] : ActiveGameTotal();
 }
 
 static GameEntry *ActiveGames(void) {
@@ -403,10 +420,9 @@ void ManageVisibleBoxarts(int gameCount, float viewportY) {
     (void)viewportY;
     if (gameCount <= 0) return;
 
-    for (int i = 0; i < gameCount && i < MAX_GAMES; i++) {
-        if (gameBoxarts[i].id == 0) {
-            GetBoxart(i);
-        }
+    int budget = 6;   /* a few per frame: no stall when many covers come back at once */
+    for (int i = 0; i < gameCount && i < MAX_GAMES && budget > 0; i++) {
+        if (gameBoxarts[i].id == 0 && GetBoxart(i).id != 0) budget--;
     }
 }
 
@@ -1478,7 +1494,7 @@ static void ScrapeMenu_StartIndex(void)
 
 static void ScrapeMenu_Advance(void)
 {
-    int count = ActiveGameCount();
+    int count = ActiveGameTotal();   /* hidden titles get their covers too */
     GameEntry *games = ActiveGames();
     const char *playlist = Scrape_Playlist(scrapeId);
 
@@ -1539,7 +1555,7 @@ static void ScrapeMenu_Start(int replace)
         Msg_Set(&scrapeMsg, S_SCRAPE_NO_SOURCE, 0, NULL);
         return;
     }
-    count = ActiveGameCount();
+    count = ActiveGameTotal();
     if (!replace) {
         for (int i = 0; i < count; i++) {
             const char *rel = ActiveGames()[i].boxartPath;
@@ -2188,7 +2204,8 @@ static void Manage_Draw(Font font) {
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
-       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_COUNT };   /* last three: box-art scrape of this system */
+       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_HIDE,
+       SB_SET_COUNT };   /* COVERS_*, GAMES: box-art scrape of this system; HIDE: Hide unplayable */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also "<id>.screen" = 4:3|pixel|crt).
@@ -2675,8 +2692,27 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
         DrawFitText(font, T(labels[k]), (Vector2){ bx + sw * 0.0225f, y }, osize,
                     bw - sw * 0.03f, cur ? red : WHITE);
     }
+    {   /* Hide unplayable: a checkbox row right below the scraping rows */
+        float y = sh * 1.320f, cx = sw * 0.46f, r = sh * 0.016f;
+        bool cur = (sidebarSetRow == SB_SET_HIDE);
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        DrawFitText(font, T(S_SET_HIDE), (Vector2){ bx + sw * 0.0225f, y }, osize,
+                    bw - sw * 0.03f, cur ? red : WHITE);
+        if (hideOn[currentSystem]) {
+            DrawRectangleRec(cb, red);
+            DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f },
+                       th * 1.3f, WHITE);
+            DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f },
+                       th * 1.3f, WHITE);
+        } else {
+            DrawRectangleLinesEx(cb, th, WHITE);
+        }
+    }
     Msg_Format(&scrapeMsg, status, sizeof(status));
-    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.315f }, hsize, sw - hx, WHITE);
+    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.415f }, hsize, sw - hx, WHITE);
 }
 
 #include "gamesel_ui.h"
@@ -3062,7 +3098,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         return;
     }
     if (sidebarPanelFocus) {
-        if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; return; }
+        if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; Hide_Resync(true); return; }
         if (up && sidebarSetRow > 0) { sidebarSetRow--; Sfx_Play(SFX_PLUCK); }
         if (down && sidebarSetRow < SB_SET_COUNT - 1) { sidebarSetRow++; Sfx_Play(SFX_PLUCK); }
         if (ok) {
@@ -3070,6 +3106,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
             SysSettings *st = &sysSettings[currentSystem];
             if (sidebarSetRow == SB_SET_GAMES) {
                 GameSel_Open();
+                return;
+            }
+            if (sidebarSetRow == SB_SET_HIDE) {
+                Hide_Toggle();
                 return;
             }
             if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
@@ -3146,18 +3186,24 @@ static void Order_LoadAll(void) {
 
 static void Order_SaveActive(void) {
     static char buf[MAX_GAMES * 256];
-    const char *titles[MAX_GAMES];
+    const char *titles[MAX_GAMES], *full[MAX_GAMES];
     char dir[2048], path[2112];
-    int count = ActiveGameCount();
+    int count = ActiveGameTotal(), shown = ActiveGameCount();
     if (count <= 0 || count > MAX_GAMES) return;
     for (int i = 0; i < count; i++) titles[i] = ActiveGames()[i].title;
+    Order_Path(currentSystem, path, sizeof(path));
+    if (shown < count) {   /* Hide unplayable: the hidden titles keep their old slots */
+        char *old = FileExists(path) ? LoadFileText(path) : NULL;
+        Hide_MergeOrder(old, titles, count, shown, full);
+        if (old) UnloadFileText(old);
+        memcpy(titles, full, sizeof(titles[0]) * (size_t)count);
+    }
     if (Order_Format(buf, sizeof(buf), titles, count) != 0) {
         fprintf(stderr, "NSO: game order too long, not saved\n");
         return;
     }
     snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
     MakeDirectory(dir);
-    Order_Path(currentSystem, path, sizeof(path));
     if (!SaveFileText(path, buf)) fprintf(stderr, "NSO: cannot save %s\n", path);
 }
 
@@ -3404,8 +3450,8 @@ static void BeginMosaicEnterIntro(void) {
 static void StartEnterMosaic(void) {
     if (screenSliding || scrapeBusy) return;
 
-    int count = ActiveGameCount();
-    if (count <= 0) return;
+    Hide_Resync(false);   /* games installed since the last visit */
+    if (ActiveGameTotal() <= 0) return;   /* nothing playable still opens the (empty) grid */
 
     GameIdx = 0;
     viewportY = 0.0f;
@@ -3488,7 +3534,7 @@ static Rectangle SelectedCardRect(float scale) {
     return (Rectangle){ x, y, w, h };
 }
 
-static void DrawMosaicSlots(Color background) {
+static void DrawMosaicSlots(Color background, Font font) {
     ClearBackground(background);
 
     int count = ActiveGameCount();
@@ -3501,6 +3547,11 @@ static void DrawMosaicSlots(Color background) {
         }
 
         DrawSlotImages(&drawGrid, boxarts, count);
+    } else if (ActiveGameTotal() > 0) {   /* Hide unplayable with nothing playable */
+        const char *msg = T(S_NO_PLAYABLE);
+        float x0 = SidebarRailWidth(), w = (float)GetScreenWidth() - x0, size = (float)font.baseSize * 1.2f;
+        float tw = fminf(MeasureTextEx(font, msg, size, 1.0f).x, w * 0.8f);
+        DrawFitText(font, msg, (Vector2){ x0 + (w - tw) * 0.5f, (float)GetScreenHeight() * 0.5f }, size, w * 0.8f, WHITE);
     }
 }
 
@@ -3514,7 +3565,7 @@ static void DrawMosaic(Color background, Font font) {
 
         if (mosaicRT.id) {
             BeginTextureMode(mosaicRT);
-            DrawMosaicSlots(background);
+            DrawMosaicSlots(background, font);
             EndTextureMode();
             DrawBlurredMosaicBackdrop(background);
             /* Details: the sharp grid dissolves into the blur in step with the card. */
@@ -3522,11 +3573,11 @@ static void DrawMosaic(Color background, Font font) {
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
                        Fade(WHITE, 1.0f - detailsT));
         } else {
-            DrawMosaicSlots(background);
+            DrawMosaicSlots(background, font);
         }
         DrawSidebar(SystemBG, font);
     } else {
-        DrawMosaicSlots(background);
+        DrawMosaicSlots(background, font);
         DrawSidebar(SystemBG, font);
     }
 

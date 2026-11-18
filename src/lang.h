@@ -42,6 +42,8 @@ typedef enum {
     S_GS_SELECT, S_GS_START, S_GS_NO_ROMS, S_GS_HINT, S_GS_HINT_RUN, S_GS_INSTALLER, S_GS_INSTALLED,
     S_GS_QUEUED, S_GS_DOWNLOADING, S_GS_WAIT_BUILD, S_GS_BUILDING, S_GS_COVER, S_GS_READY,
     S_GS_NO_INSTALLER, S_GS_FAILED, S_GS_CANCELLED, S_GS_DONE,
+    /* Settings > Hide unplayable, and the grid when nothing is playable */
+    S_SET_HIDE, S_NO_PLAYABLE,
     /* embedded game pause menu (embed.h) */
     S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
     S_EMB_SLOT, S_EMB_NODATA, S_EMB_DATE,
@@ -173,6 +175,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SORT_PLAYED] = "By time last played",
         [S_SORT_TIME] = "By total play time",
         [S_GS_SELECT] = "Select games",
+        [S_SET_HIDE] = "Hide unplayable",
+        [S_NO_PLAYABLE] = "No playable games here. Turn off Hide unplayable in Settings.",
         [S_GS_START] = "Download and install (%d)",
         [S_GS_NO_ROMS] = "No ROMs in repos/roms for this system",
         [S_GS_HINT] = "A: check   B: back",
@@ -287,6 +291,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SORT_PLAYED] = "Por último jogado",
         [S_SORT_TIME] = "Por tempo total de jogo",
         [S_GS_SELECT] = "Selecionar jogos",
+        [S_SET_HIDE] = "Ocultar não jogáveis",
+        [S_NO_PLAYABLE] = "Nenhum jogo jogável aqui. Desative Ocultar não jogáveis em Configurações.",
         [S_GS_START] = "Baixar e instalar (%d)",
         [S_GS_NO_ROMS] = "Nenhuma ROM em repos/roms para este sistema",
         [S_GS_HINT] = "A: marcar   B: voltar",

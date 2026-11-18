@@ -91,8 +91,8 @@ static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
  * textures and tile scales travel along and the cursor stays on its game. */
 static void SortPanel_Apply(int sys, SortMode mode, bool live) {
     GameEntry *games = systems[sys].games;
-    int count = *systems[sys].gameCount;
-    if (count <= 1 || count > MAX_GAMES) return;
+    int count = *systems[sys].gameCount, shown = count;
+    if (count <= 0 || count > MAX_GAMES) return;
     const char *titles[MAX_GAMES];
     int perm[MAX_GAMES];
     for (int i = 0; i < count; i++) titles[i] = games[i].title;
@@ -111,6 +111,14 @@ static void SortPanel_Apply(int sys, SortMode mode, bool live) {
         if (mode == SORT_RELEASE) SortPanel_DatesLoad(sys, titles, keys, count);
         Sort_Perm(mode, titles, keys, count, perm);
     }
+    if (hideOn[sys]) {   /* playable titles first (same order inside each group), the rest hidden */
+        bool ok[MAX_GAMES];
+        int order[MAX_GAMES];
+        for (int i = 0; i < count; i++) { order[i] = perm[i]; ok[i] = GameIsLaunchable(&games[i]); }
+        shown = Hide_Perm(ok, order, count, perm);
+    }
+    hideShown[sys] = shown;
+    hideReady[sys] = hideOn[sys];
     GameEntry tmp[MAX_GAMES];
     for (int k = 0; k < count; k++) tmp[k] = games[perm[k]];
     memcpy(games, tmp, sizeof(GameEntry) * (size_t)count);
@@ -121,6 +129,32 @@ static void SortPanel_Apply(int sys, SortMode mode, bool live) {
     memcpy(gameBoxarts, art, sizeof(Texture2D) * (size_t)count);
     memcpy(animScales, scale, sizeof(float) * (size_t)count);
     for (int k = 0; k < count; k++) if (perm[k] == GameIdx) { GameIdx = k; break; }
+    for (int k = shown; k < count; k++) {   /* hidden covers are not kept on the GPU */
+        if (gameBoxarts[k].id != 0) UnloadTexture(gameBoxarts[k]);
+        gameBoxarts[k] = (Texture2D){ 0 };
+    }
+    GameIdx = Hide_Clamp(GameIdx, shown);
+}
+
+static void Hide_Save(int sys) {
+    char dir[2048], cfg[2112], key[64];
+    snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
+    MakeDirectory(dir);
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    snprintf(key, sizeof(key), "%s.hide_unplayable", systems[sys].platform->id);
+    if (!Cfg_SaveKey(cfg, key, Hide_CfgValue(hideOn[sys]))) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+}
+
+/* Settings > Hide unplayable: flip the shown system, re-list it at once. */
+static void Hide_Toggle(void) {
+    hideOn[currentSystem] = !hideOn[currentSystem];
+    Hide_Save(currentSystem);
+    SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+}
+
+/* Something may have been installed: list the shown system again. */
+static void Hide_Resync(bool live) {
+    if (hideOn[currentSystem]) SortPanel_Apply(currentSystem, sortMode[currentSystem], live);
 }
 
 static void SortPanel_Save(int sys) {
@@ -144,9 +178,10 @@ static void SortPanel_LoadAll(void) {
     for (int s = 0; s < SYSTEM_COUNT; s++) {
         char key[64];
         snprintf(key, sizeof(key), "%s.sort", systems[s].platform->id);
-        if (!Cfg_Get(text, key, v, sizeof(v))) continue;
-        sortMode[s] = Sort_ModeParse(v);
-        if (sortMode[s] != SORT_CUSTOM) SortPanel_Apply(s, sortMode[s], false);
+        if (Cfg_Get(text, key, v, sizeof(v))) sortMode[s] = Sort_ModeParse(v);
+        snprintf(key, sizeof(key), "%s.hide_unplayable", systems[s].platform->id);
+        if (Cfg_Get(text, key, v, sizeof(v))) hideOn[s] = Hide_CfgParse(v);
+        if (sortMode[s] != SORT_CUSTOM || hideOn[s]) SortPanel_Apply(s, sortMode[s], false);
     }
     UnloadFileText(text);
 }

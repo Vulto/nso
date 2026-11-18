@@ -38,7 +38,7 @@ static void GameSel_Open(void) {
     static char names[GS_MAX_ROWS][256];
     const char *sorted[GS_MAX_ROWS], *bases[GS_MAX_ROWS], *titles[MAX_GAMES];
     static char baseBuf[GS_MAX_ROWS][256];
-    int matched[GS_MAX_ROWS], n = 0, gc = ActiveGameCount();
+    int matched[GS_MAX_ROWS], n = 0, gc = ActiveGameTotal();   /* hidden titles are the ones to install */
     GameEntry *games = ActiveGames();
 
     gsOpen = true;
