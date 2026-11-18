@@ -134,7 +134,7 @@ static void Status_Draw(Font font) {
     float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
     char heading[96];
     if (statusSystemName[0])
-        snprintf(heading, sizeof(heading), "%s  —  %s", statusSystemName, Status_Word(0));
+        snprintf(heading, sizeof(heading), "%s %s", statusSystemName, Status_Word(0));
     else
         snprintf(heading, sizeof(heading), "%s", Status_Word(0));
     Details_Text(font, heading, (Vector2){ lx, card.y + sh * 0.03f }, sh * 0.030f, lcw, Fade(meta, a));
