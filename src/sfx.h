@@ -16,6 +16,8 @@ typedef enum {
 void Sfx_Init(void);
 void Sfx_Shutdown(void);
 void Sfx_Play(SfxId id);
+int  Sfx_Has(SfxId id);       /* 1 when the sound is loaded (audio device and file present) */
+int  Sfx_Playing(SfxId id);   /* 1 while it is still playing */
 
 #endif /* NSO_SFX_H */
 
@@ -69,6 +71,16 @@ void Sfx_Play(SfxId id)
     if ((int)id < 0 || id >= SFX_COUNT) return;
     if (!IsSoundValid(sfxSounds[id])) return;
     PlaySound(sfxSounds[id]);
+}
+
+int Sfx_Has(SfxId id)
+{
+    return (int)id >= 0 && id < SFX_COUNT && IsSoundValid(sfxSounds[id]);
+}
+
+int Sfx_Playing(SfxId id)
+{
+    return Sfx_Has(id) && IsSoundPlaying(sfxSounds[id]);
 }
 
 #endif /* SFX_IMPLEMENTATION_ONCE */

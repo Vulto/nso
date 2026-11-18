@@ -943,8 +943,7 @@ static int introFrames = 0;
 /* The splash is the loading screen: covers decode on a worker thread and
  * upload on the main thread (CoverLoader_*). It slides away once
  * loading is done AND the fade finished, after a short minimum hold. */
-static const float SPLASH_MIN_HOLD_SEC = 0.2f;
-static float splashTimer = 0.0f;   /* time since the fade completed */
+static float splashTimer = 0.0f;   /* time since the image was 100% shown; it slides after ENTER_MIN_SHOW_SEC */
 /* Enter-a-system transition (enteranim.h): seconds since A on the system tile, the
  * wordmark glyph (Nerd Font U+E22A, the Nintendo logo) and the "PC Ports" text. */
 static float enterT = 0.0f;
@@ -956,6 +955,7 @@ static bool enterLogoOk = false, enterTextOk = false;
  * has one for now (the coin); -1 = none. */
 static int SystemSelectJingle(const PlatformEntry *p) { return p == &n64_platform ? (int)SFX_COIN : -1; }
 static bool enterJinglePending = false;
+static int splashJingle = -1;   /* the select jingle started for this entry, -1 if none */
 
 
 static bool screenSliding = false;
@@ -3914,6 +3914,7 @@ static void StartEnterMosaic(void) {
     splashTimer = 0.0f;
     enterT = 0.0f;   /* the A press: enteranim.h runs from here */
     enterJinglePending = true;
+    splashJingle = -1;
 }
 
 /* Full-screen system art (letterboxed to fit, like the original menu). */
@@ -4039,12 +4040,13 @@ static void UpdateSplash(float dt) {
         if (enterT >= EnterAnim_Total() && enterJinglePending) {   /* destination at 100%, no overlay */
             enterJinglePending = false;
             int jingle = SystemSelectJingle(ActiveSystem()->platform);
-            if (jingle >= 0) Sfx_Play((SfxId)jingle);
+            if (jingle >= 0 && Sfx_Has((SfxId)jingle)) { Sfx_Play((SfxId)jingle); splashJingle = jingle; }
         }
         return;
     }
     splashTimer += dt;
-    if (loaded && splashTimer >= SPLASH_MIN_HOLD_SEC) {
+    if (EnterAnim_SlideReady(loaded, splashTimer, splashJingle >= 0,
+                             splashJingle >= 0 && Sfx_Playing((SfxId)splashJingle))) {
         screenSliding = true;
         slideDirection = -1;
         slideOffset = 0.0f;

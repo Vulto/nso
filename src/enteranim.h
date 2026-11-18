@@ -49,6 +49,13 @@ float EnterAnim_ExitTotal(void);
 float EnterAnim_ExitCover(float t);
 int EnterAnim_ExitSwitched(float t);
 
+/* When the giant full-screen system image may slide left to reveal the covers: only when BOTH the
+ * system's sound has finished AND every cover is loaded. A system with a select jingle (hasSound)
+ * waits for the whole jingle to end; one without stays at least ENTER_MIN_SHOW_SEC, counted from the
+ * moment the image is 100% shown (end of the enter crossfade). Whatever is pressed meanwhile waits. */
+#define ENTER_MIN_SHOW_SEC 1.0f
+int EnterAnim_SlideReady(int coversLoaded, float shownSec, int hasSound, int soundPlaying);
+
 #endif /* NSO_ENTERANIM_H */
 
 #ifdef ENTERANIM_IMPLEMENTATION
@@ -119,6 +126,13 @@ float EnterAnim_ExitCover(float t)
 }
 
 int EnterAnim_ExitSwitched(float t) { return t >= ENTER_FADE_SEC; }
+
+int EnterAnim_SlideReady(int coversLoaded, float shownSec, int hasSound, int soundPlaying)
+{
+    if (!coversLoaded) return 0;
+    if (hasSound) return !soundPlaying;
+    return shownSec >= ENTER_MIN_SHOW_SEC;
+}
 
 float EnterAnim_GhostProgress(float t)
 {

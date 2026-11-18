@@ -59,6 +59,12 @@ int main(void)
         if (EnterAnim_Cover(at(f + 1)) + 1e-6f < EnterAnim_Cover(at(f))) { fprintf(stderr, "FAIL cover monotonic %d\n", f); fails++; }
         if (EnterAnim_Cross(at(f + 1)) + 1e-6f < EnterAnim_Cross(at(f))) { fprintf(stderr, "FAIL cross monotonic %d\n", f); fails++; }
     }
+    /* slide to the covers: sound finished AND covers loaded; no sound: at least 1 s from 100% shown */
+    if (EnterAnim_SlideReady(1, 0.0f, 0, 0) || EnterAnim_SlideReady(1, 0.999f, 0, 0)) { fprintf(stderr, "FAIL no-sound slide too early\n"); fails++; }
+    if (!EnterAnim_SlideReady(1, 1.0f, 0, 0) || !EnterAnim_SlideReady(1, 3.0f, 0, 0)) { fprintf(stderr, "FAIL no-sound slide ready\n"); fails++; }
+    if (EnterAnim_SlideReady(1, 5.0f, 1, 1) || EnterAnim_SlideReady(1, 0.0f, 1, 1)) { fprintf(stderr, "FAIL slide while sound plays\n"); fails++; }
+    if (!EnterAnim_SlideReady(1, 0.0f, 1, 0)) { fprintf(stderr, "FAIL slide after sound\n"); fails++; }
+    if (EnterAnim_SlideReady(0, 9.0f, 0, 0) || EnterAnim_SlideReady(0, 9.0f, 1, 0)) { fprintf(stderr, "FAIL slide before covers loaded\n"); fails++; }
     if (fails) return 1;
     puts("enteranim_test: ok");
     return 0;
