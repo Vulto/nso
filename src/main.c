@@ -2432,13 +2432,27 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
             Vector2 g = { c.x + s * 0.12f, c.y - s * 0.1f };
             float r = s * 0.36f;
             float e = on ? sinf(p * PI * 0.5f) : 1.0f;             /* ease out */
-            float turn = 0.6f + (float)dir * e * PI * amp;
-            if (!on) turn = 0.6f;
+            float turn = on ? (float)dir * e * PI * amp : 0.0f;
+            float ith = th * 0.8f;
             IconArc(g, r, r, 0.0f, 360.0f, th, col);
-            DrawLineEx((Vector2){ g.x - r, g.y }, (Vector2){ g.x + r, g.y }, th * 0.8f, col);
-            IconArc(g, r, r * 0.45f, 180.0f, 360.0f, th * 0.7f, col);
-            IconArc(g, r * fabsf(cosf(turn)), r, -90.0f, 90.0f, th * 0.8f, col);
-            IconArc(g, r * fabsf(sinf(turn)) * 0.999f, r, 90.0f, 270.0f, th * 0.8f, col);
+            /* 3 latitudes (north, equator, south) as chords */
+            DrawLineEx((Vector2){ g.x - r, g.y }, (Vector2){ g.x + r, g.y }, ith, col);
+            float lat = 0.38f * r;
+            float hx = sqrtf(r * r - lat * lat);
+            DrawLineEx((Vector2){ g.x - hx, g.y - lat }, (Vector2){ g.x + hx, g.y - lat }, ith, col);
+            DrawLineEx((Vector2){ g.x - hx, g.y + lat }, (Vector2){ g.x + hx, g.y + lat }, ith, col);
+            /* 3 meridians, 30° apart; at rest one is the vertical diameter */
+            for (int i = -1; i <= 1; i++) {
+                float lon = turn + (float)i * (PI / 6.0f);
+                float sl = sinf(lon);
+                float rx = r * fabsf(sl);
+                if (rx < 0.5f)
+                    DrawLineEx((Vector2){ g.x, g.y - r }, (Vector2){ g.x, g.y + r }, ith, col);
+                else if (rx < r * 0.97f) {
+                    if (sl >= 0.0f) IconArc(g, rx, r, -90.0f,  90.0f, ith, col);
+                    else            IconArc(g, rx, r,  90.0f, 270.0f, ith, col);
+                }
+            }
             IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f }, s * 0.55f, th * 0.85f, col, fill, true);
         } break;
         default: {   /* gear turns one tooth (60 deg) once */
