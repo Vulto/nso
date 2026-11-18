@@ -799,6 +799,9 @@ typedef enum {
 static MosaicIntroPhase mosaicIntroPhase = MOSAIC_INTRO_NONE;
 static float mosaicIntroTimer = 0.0f;
 static float embedBackT = -1.0f;   /* >= 0: embedded game shrinking into its card */
+/* NSO menu > Quit of an external game: its process is still shutting down while the card-return
+ * animation plays and after it. No black cover and no second enter intro for that wait. */
+static bool externalQuitting = false;
 
 /* Leave mosaic → systems: reverse of enter (info out → shrink → slide; no delay). */
 typedef enum {
@@ -4225,6 +4228,7 @@ int main(int argc, char **argv) {
                     gamePid = LaunchGame(restartGame);
                     if (NsoProcOk(gamePid)) {
                         waitingForGame = true;
+                        externalQuitting = false;
                         currentState = MOSAIC;
                         if (!GameHasExternalMenu(restartGame)) MinimizeWindow();
                     } else {
@@ -4238,8 +4242,10 @@ int main(int argc, char **argv) {
                     waitingForGame = false;
                     RestoreWindow();
                     currentState = MOSAIC;
-                    /* Same enter intro as systems → mosaic (delay, grow, then info fade). */
-                    if (embedBackT < 0.0f) BeginMosaicEnterIntro();
+                    /* Same enter intro as systems → mosaic (delay, grow, then info fade);
+                     * after a Quit the card-return animation already started it. */
+                    if (embedBackT < 0.0f && !externalQuitting) BeginMosaicEnterIntro();
+                    externalQuitting = false;
                 }
             }
         }
@@ -4378,6 +4384,7 @@ int main(int argc, char **argv) {
                     }
                 } else if (NsoProcOk(gamePid = LaunchGame(launched))) {
                     waitingForGame = true;
+                    externalQuitting = false;
                     isLaunching = false;
                     if (!GameHasExternalMenu(launched)) MinimizeWindow();
                 } else {
@@ -4402,6 +4409,7 @@ int main(int argc, char **argv) {
                     Embed_ExternalSetChildVisible(false);
                     currentState = MOSAIC;
                     embedBackT = 0.0f;
+                    externalQuitting = waitingForGame;
                     BeginMosaicEnterIntro();
                 } else {
                     if (externalResult == EMBED_EXTERNAL_RESUME) {
@@ -4662,7 +4670,7 @@ int main(int argc, char **argv) {
                            p, 1.0f - (1.0f - t) * (1.0f - t), 0.35f * p + 0.65f * u * u * (3.0f - 2.0f * u));
         }
 
-        if (waitingForGame && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame) {
+        if (waitingForGame && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame && !externalQuitting) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
         } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
