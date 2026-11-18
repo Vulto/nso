@@ -10,10 +10,13 @@
 #define NSO_ENTERANIM_H
 
 #define ENTER_REF_FPS 59.7f
-/* The reference's 97 frames plus 20 ms, spread proportionally over every phase (all curves keep
- * their shape, only stretched in time). */
+/* The lead-in (106-123) and the hold (134-176) are the reference's frames plus 20 ms in total
+ * spread proportionally; the two gray-layer fades are fixed at 300 ms each: the dim
+ * (123-134, layer gains alpha) and the crossfade (176-203, layer loses alpha). Every curve keeps
+ * its shape, only its time is mapped. */
 #define ENTER_EXTRA_SEC 0.020f
 #define ENTER_STRETCH ((97.0f / ENTER_REF_FPS + ENTER_EXTRA_SEC) / (97.0f / ENTER_REF_FPS))
+#define ENTER_FADE_SEC 0.300f   /* the dim, the crossfade, and both halves of the exit */
 #define ENTER_COVER_R 17
 #define ENTER_COVER_G 17
 #define ENTER_COVER_B 17
@@ -21,6 +24,8 @@
 
 /* Seconds from A to the end of the crossfade (frame 203). */
 float EnterAnim_Total(void);
+/* Seconds since A at which reference frame f is shown (inverse of the timeline's time map). */
+float EnterAnim_TimeOfFrame(float f);
 /* Opacity of the (17,17,17) layer over the main menu / tiles: 0 until frame 123. */
 float EnterAnim_Cover(float t);
 /* Ghost of the pressed tile: 0..1 progress over frames 106-134 and its opacity. */
@@ -37,27 +42,60 @@ float EnterAnim_LetterAngle(float t, int i, int n);
 /* Opacity of the destination screen over the (17,17,17) layer: 0 until 176, 1 at 203. */
 float EnterAnim_Cross(float t);
 
+/* Leaving a system's menu back to the main menu (no logos): the (17,17,17) layer gains alpha for
+ * ENTER_FADE_SEC with the dim's curve, the main menu is drawn behind it the instant it is opaque
+ * (EnterAnim_ExitSwitched), then it loses alpha for ENTER_FADE_SEC along the mirrored curve. */
+float EnterAnim_ExitTotal(void);
+float EnterAnim_ExitCover(float t);
+int EnterAnim_ExitSwitched(float t);
+
 #endif /* NSO_ENTERANIM_H */
 
 #ifdef ENTERANIM_IMPLEMENTATION
 #ifndef ENTERANIM_IMPLEMENTATION_ONCE
 #define ENTERANIM_IMPLEMENTATION_ONCE
 
-static float enter_frame(float t) { return 106.0f + t / ENTER_STRETCH * ENTER_REF_FPS; }
+/* Phase boundaries in reference frames and their durations in seconds. */
+static const float enter_pf[5] = { 106.0f, 123.0f, 134.0f, 176.0f, 203.0f };
+static float enter_pd(int k)
+{
+    if (k == 1 || k == 3) return ENTER_FADE_SEC;
+    return (enter_pf[k + 1] - enter_pf[k]) / ENTER_REF_FPS * ENTER_STRETCH;
+}
+
+static float enter_frame(float t)
+{
+    for (int k = 0; k < 4; k++) {
+        float d = enter_pd(k);
+        if (t < d || k == 3) return enter_pf[k] + (t / d) * (enter_pf[k + 1] - enter_pf[k]);
+        t -= d;
+    }
+    return enter_pf[4];
+}
+
+float EnterAnim_TimeOfFrame(float f)
+{
+    float t = 0.0f;
+    for (int k = 0; k < 4; k++) {
+        if (f <= enter_pf[k + 1]) return t + (f - enter_pf[k]) / (enter_pf[k + 1] - enter_pf[k]) * enter_pd(k);
+        t += enter_pd(k);
+    }
+    return t;
+}
 
 static float enter_clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
 
 /* Linear ramp between frames a and b. */
 static float enter_ramp(float f, float a, float b) { return enter_clamp01((f - a) / (b - a)); }
 
-float EnterAnim_Total(void) { return (203.0f - 106.0f) / ENTER_REF_FPS * ENTER_STRETCH; }
+float EnterAnim_Total(void) { return enter_pd(0) + enter_pd(1) + enter_pd(2) + enter_pd(3); }
 
-float EnterAnim_Cover(float t)
+/* The dim's curve over reference frames 123..134, as a function of the frame. */
+static float enter_dim_frame(float f)
 {
     static const float pts[][2] = { { 123, 0.00f }, { 124, 0.03f }, { 125, 0.12f }, { 128, 0.22f },
                                     { 130, 0.33f }, { 132, 0.50f }, { 133, 0.62f }, { 134, 1.00f } };
     const int n = (int)(sizeof(pts) / sizeof(pts[0]));
-    float f = enter_frame(t);
     if (f <= pts[0][0]) return 0.0f;
     for (int i = 1; i < n; i++) {
         if (f <= pts[i][0])
@@ -65,6 +103,22 @@ float EnterAnim_Cover(float t)
     }
     return 1.0f;
 }
+
+float EnterAnim_Cover(float t) { return enter_dim_frame(enter_frame(t)); }
+
+float EnterAnim_ExitTotal(void) { return 2.0f * ENTER_FADE_SEC; }
+
+float EnterAnim_ExitCover(float t)
+{
+    float u = t / ENTER_FADE_SEC;
+    if (u <= 0.0f) return 0.0f;
+    if (u < 1.0f) return enter_dim_frame(123.0f + u * 11.0f);
+    u -= 1.0f;
+    if (u >= 1.0f) return 0.0f;
+    return enter_dim_frame(123.0f + (1.0f - u) * 11.0f);
+}
+
+int EnterAnim_ExitSwitched(float t) { return t >= ENTER_FADE_SEC; }
 
 float EnterAnim_GhostProgress(float t)
 {

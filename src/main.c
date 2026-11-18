@@ -956,6 +956,10 @@ static bool enterLogoOk = false, enterTextOk = false;
 static bool screenSliding = false;
 static float slideOffset = 0.0f;
 static int slideDirection = 0; /* -1 enter mosaic, +1 back to systems */
+/* Leaving a system's menu (slideDirection > 0): seconds into the gray fade-through (enteranim.h)
+ * and whether the main menu has already replaced the games grid behind the layer. */
+static float leaveT = 0.0f;
+static bool leaveSwitched = false;
 
 
 static Color MenuGlow(void) {
@@ -4103,29 +4107,15 @@ static void DrawMosaic(Color background, Font font) {
 
 static void SlideEffect(Color mosaicBg, Font font)
 {
-    /* Mosaic underneath: entering slides the splash art away, leaving
-     * slides the card menu back in. */
-    DrawMosaic(mosaicBg, font);
-
-    if (slideDirection < 0) {
-        DrawSystemArt(slideOffset);
-    } else {
-        DrawSystemMenu(slideOffset);
-    }
-
-    slideOffset += SLIDE_SPEED * (float)slideDirection;
-
-    if (slideDirection < 0) {
-        if (slideOffset <= -(float)GetScreenWidth()) {
-            slideOffset = -(float)GetScreenWidth();
-            screenSliding = false;
-            currentState = MOSAIC;
-            BeginMosaicEnterIntro();
-        }
-    } else {
-        if (slideOffset >= 0.0f) {
-            slideOffset = 0.0f;
-            screenSliding = false;
+    if (slideDirection > 0) {
+        /* Leaving: a (17,17,17) layer gains alpha over the games grid; the moment it is opaque the
+         * main menu is drawn instead (systems and controllers), then the layer loses alpha. */
+        float step = GetFrameTime() > 0.1f ? 0.1f : GetFrameTime();
+        const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step per frame (frame capture) */
+        if (fixed && atof(fixed) > 0.0) step = (float)atof(fixed);
+        leaveT += step;
+        if (!leaveSwitched && EnterAnim_ExitSwitched(leaveT)) {
+            leaveSwitched = true;
             currentState = SYSTEMS;
             sidebarExpandPending = false;
             sidebarOpen = false;
@@ -4139,10 +4129,32 @@ static void SlideEffect(Color mosaicBg, Font font)
             InfoBar_Reset();
             UnloadAllBoxarts();
         }
+        if (leaveSwitched) DrawSystemMenu(0.0f);
+        else DrawMosaic(mosaicBg, font);
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
+                      Fade((Color){ ENTER_COVER_R, ENTER_COVER_G, ENTER_COVER_B, 255 }, EnterAnim_ExitCover(leaveT)));
+        if (leaveT >= EnterAnim_ExitTotal()) {
+            screenSliding = false;
+            slideOffset = 0.0f;
+        }
+        return;
+    }
+
+    /* Mosaic underneath: entering slides the splash art away. */
+    DrawMosaic(mosaicBg, font);
+    DrawSystemArt(slideOffset);
+
+    slideOffset += SLIDE_SPEED * (float)slideDirection;
+
+    if (slideOffset <= -(float)GetScreenWidth()) {
+        slideOffset = -(float)GetScreenWidth();
+        screenSliding = false;
+        currentState = MOSAIC;
+        BeginMosaicEnterIntro();
     }
 }
 
-/* Start the system-cover slide only (after info out + shrink). */
+/* Start the leave fade-through only (after info out + shrink). */
 static void BeginLeaveMosaicSlide(void) {
     sidebarExpandPending = false;
     sidebarOpen = false;
@@ -4162,6 +4174,8 @@ static void BeginLeaveMosaicSlide(void) {
     screenSliding = true;
     slideDirection = 1;
     slideOffset = -(float)GetScreenWidth();
+    leaveT = 0.0f;
+    leaveSwitched = false;
 }
 
 /* Reverse of enter post-slide: info fade out → shrink → slide (no delay). */

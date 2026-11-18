@@ -5,7 +5,7 @@
 #include "enteranim.h"
 
 static int fails = 0;
-static float at(int frame) { return (float)(frame - 106) / ENTER_REF_FPS * ENTER_STRETCH; }
+static float at(int frame) { return EnterAnim_TimeOfFrame((float)frame); }
 
 static void near(const char *what, float got, float want, float tol)
 {
@@ -33,7 +33,20 @@ int main(void)
     near("cross 203", EnterAnim_Cross(at(203)), 1.0f, 0.001f);
     near("ghost start", EnterAnim_GhostAlpha(at(106)), 0.0f, 0.001f);
     near("ghost end", EnterAnim_GhostAlpha(at(134)), 0.0f, 0.001f);
-    near("total", EnterAnim_Total(), 97.0f / ENTER_REF_FPS + 0.020f, 0.0005f);
+    near("total", EnterAnim_Total(), (17.0f + 42.0f) / ENTER_REF_FPS * ENTER_STRETCH + 2.0f * ENTER_FADE_SEC, 0.0005f);
+    near("dim 300 ms", at(134) - at(123), 0.300f, 0.0005f);
+    near("cross 300 ms", at(203) - at(176), 0.300f, 0.0005f);
+    near("lead + hold keep +20 ms", (at(123) - at(106)) + (at(176) - at(134)), 59.0f / ENTER_REF_FPS + 0.020f * 59.0f / 97.0f, 0.0005f);
+    near("exit total", EnterAnim_ExitTotal(), 0.600f, 0.0005f);
+    near("exit start", EnterAnim_ExitCover(0.0f), 0.0f, 0.001f);
+    near("exit opaque", EnterAnim_ExitCover(0.2999f), 1.0f, 0.02f);
+    near("exit mid in", EnterAnim_ExitCover(0.150f), EnterAnim_Cover(at(123) + 0.150f), 0.001f);
+    near("exit mirrored", EnterAnim_ExitCover(0.300f + 0.100f), EnterAnim_ExitCover(0.300f - 0.100f), 0.001f);
+    near("exit end", EnterAnim_ExitCover(0.600f), 0.0f, 0.001f);
+    if (EnterAnim_ExitSwitched(0.2999f) || !EnterAnim_ExitSwitched(0.300f)) { fprintf(stderr, "FAIL exit switch moment\n"); fails++; }
+    for (float x = 0.0f; x < 0.299f; x += 0.01f)   /* gains alpha, then loses it */
+        if (EnterAnim_ExitCover(x + 0.01f) + 1e-6f < EnterAnim_ExitCover(x)
+            || EnterAnim_ExitCover(0.6f - x - 0.01f) + 1e-6f < EnterAnim_ExitCover(0.6f - x)) { fprintf(stderr, "FAIL exit monotonic %.2f\n", (double)x); fails++; }
     near("letters start edge-on", EnterAnim_LetterAngle(at(135), 0, 7), -ENTER_FLIP_DEG, 0.01f);
     near("last letter later", EnterAnim_LetterAngle(at(136), 6, 7), -ENTER_FLIP_DEG, 0.01f);
     if (!(EnterAnim_LetterAngle(at(137), 0, 7) > EnterAnim_LetterAngle(at(137), 6, 7))) { fprintf(stderr, "FAIL letters not staggered\n"); fails++; }
