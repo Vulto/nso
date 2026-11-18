@@ -83,6 +83,14 @@ static bool nso_menu_window_pid(Display *dpy, Window w, pid_t group)
     return match;
 }
 
+/* SDL/Vulkan ports (the N64Recomp ones) keep a 10x10 unmapped helper window with
+ * the game's PID alive for the whole run, besides the real one that maps later. */
+static bool nso_menu_viewable(Display *dpy, Window w)
+{
+    XWindowAttributes attrs;
+    return XGetWindowAttributes(dpy, w, &attrs) && attrs.map_state == IsViewable;
+}
+
 static Window nso_menu_find_window(Display *dpy, Window root, pid_t group, int depth)
 {
     Window parent, *children = NULL;
@@ -90,7 +98,7 @@ static Window nso_menu_find_window(Display *dpy, Window root, pid_t group, int d
     Window found = None;
     if (depth > 8 || !XQueryTree(dpy, root, &root, &parent, &children, &count)) return None;
     for (unsigned int i = 0; i < count && found == None; ++i) {
-        if (nso_menu_window_pid(dpy, children[i], group)) found = children[i];
+        if (nso_menu_window_pid(dpy, children[i], group) && nso_menu_viewable(dpy, children[i])) found = children[i];
         else found = nso_menu_find_window(dpy, children[i], group, depth + 1);
     }
     if (children) XFree(children);
@@ -111,9 +119,9 @@ static int nso_menu_ignore_x_error(Display *dpy, XErrorEvent *ev)
  * scanning the tree for windows that were missed. */
 static Window nso_menu_wait_window(Display *dpy, Window root, pid_t group)
 {
-    Window pending[16];
-    int npending = 0;
-    Window cand = None, found = None;
+    Window pending[16], cands[16];
+    int npending = 0, ncands = 0;
+    Window found = None;
     double scan_at = 0.0;
     int (*old_handler)(Display *, XErrorEvent *) = XSetErrorHandler(nso_menu_ignore_x_error);
     XSelectInput(dpy, root, SubstructureNotifyMask);
@@ -128,21 +136,26 @@ static Window nso_menu_wait_window(Display *dpy, Window root, pid_t group)
             } else if (ev.type == DestroyNotify) {
                 for (int k = 0; k < npending; ++k)
                     if (pending[k] == ev.xdestroywindow.window) pending[k] = pending[--npending];
-                if (ev.xdestroywindow.window == cand) cand = None;
-            } else if (ev.type == MapNotify && cand != None && ev.xmap.window == cand) {
-                found = cand;
+                for (int k = 0; k < ncands; ++k)
+                    if (cands[k] == ev.xdestroywindow.window) cands[k] = cands[--ncands];
+            } else if (ev.type == MapNotify) {
+                /* The first of the game's windows to map is the game's: helper
+                 * windows that stay unmapped are never taken. */
+                for (int k = 0; k < ncands; ++k)
+                    if (cands[k] == ev.xmap.window) found = cands[k];
+                for (int k = 0; k < npending && found == None; ++k)   /* mapped before it was flagged */
+                    if (pending[k] == ev.xmap.window && nso_menu_window_pid(dpy, pending[k], group)) found = pending[k];
             }
         }
         if (found != None) break;
-        if (cand == None) {
-            for (int k = 0; k < npending && cand == None; ++k) {
-                if (!nso_menu_window_pid(dpy, pending[k], group)) continue;
-                XSetWindowAttributes attrs = { 0 };
-                attrs.override_redirect = True;
-                XChangeWindowAttributes(dpy, pending[k], CWOverrideRedirect, &attrs);
-                XFlush(dpy);
-                cand = pending[k];
-            }
+        for (int k = 0; k < npending && ncands < 16;) {   /* the PID is set after creation */
+            if (!nso_menu_window_pid(dpy, pending[k], group)) { ++k; continue; }
+            XSetWindowAttributes attrs = { 0 };
+            attrs.override_redirect = True;
+            XChangeWindowAttributes(dpy, pending[k], CWOverrideRedirect, &attrs);
+            XFlush(dpy);
+            cands[ncands++] = pending[k];
+            pending[k] = pending[--npending];
         }
         double now = nso_menu_now();
         if (now >= scan_at) {
