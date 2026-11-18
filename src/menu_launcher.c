@@ -97,6 +97,70 @@ static Window nso_menu_find_window(Display *dpy, Window root, pid_t group, int d
     return found;
 }
 
+static double nso_menu_now(void);
+
+static int nso_menu_ignore_x_error(Display *dpy, XErrorEvent *ev)
+{
+    (void)dpy; (void)ev;   /* the game's temporary windows vanish under us */
+    return 0;
+}
+
+/* Wait for the child's top-level window. Flag it override-redirect the moment
+ * it is created so a tiling WM never manages (and re-tiles around) it, then
+ * return once it is mapped: the caller reparents it at once. Falls back to
+ * scanning the tree for windows that were missed. */
+static Window nso_menu_wait_window(Display *dpy, Window root, pid_t group)
+{
+    Window pending[16];
+    int npending = 0;
+    Window cand = None, found = None;
+    double scan_at = 0.0;
+    int (*old_handler)(Display *, XErrorEvent *) = XSetErrorHandler(nso_menu_ignore_x_error);
+    XSelectInput(dpy, root, SubstructureNotifyMask);
+    XSync(dpy, False);
+    for (int i = 0; i < 5000 && found == None; ++i) {
+        while (found == None && XPending(dpy)) {
+            XEvent ev;
+            XNextEvent(dpy, &ev);
+            if (ev.type == CreateNotify && ev.xcreatewindow.parent == root
+                && !ev.xcreatewindow.override_redirect && npending < 16) {
+                pending[npending++] = ev.xcreatewindow.window;
+            } else if (ev.type == DestroyNotify) {
+                for (int k = 0; k < npending; ++k)
+                    if (pending[k] == ev.xdestroywindow.window) pending[k] = pending[--npending];
+                if (ev.xdestroywindow.window == cand) cand = None;
+            } else if (ev.type == MapNotify && cand != None && ev.xmap.window == cand) {
+                found = cand;
+            }
+        }
+        if (found != None) break;
+        if (cand == None) {
+            for (int k = 0; k < npending && cand == None; ++k) {
+                if (!nso_menu_window_pid(dpy, pending[k], group)) continue;
+                XSetWindowAttributes attrs = { 0 };
+                attrs.override_redirect = True;
+                XChangeWindowAttributes(dpy, pending[k], CWOverrideRedirect, &attrs);
+                XFlush(dpy);
+                cand = pending[k];
+            }
+        }
+        double now = nso_menu_now();
+        if (now >= scan_at) {
+            scan_at = now + 0.25;
+            Window seen = nso_menu_find_window(dpy, root, group, 0);
+            if (seen != None) found = seen;
+        }
+        if (found == None && !XPending(dpy)) {
+            struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000L };
+            nanosleep(&ts, NULL);
+        }
+    }
+    XSelectInput(dpy, root, 0);
+    XSync(dpy, False);
+    XSetErrorHandler(old_handler);
+    return found;
+}
+
 static void nso_menu_write_window(const char *dir, Window w)
 {
     char path[1200], tmp[1240];
@@ -318,6 +382,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
     const char *emu_dir = getenv("NSO_EMU_STATE_DIR");
     bool centre = emu_dir && *emu_dir;
 
+    Display *dpy = XOpenDisplay(NULL);   /* before the fork: no window is missed */
     pid_t game = fork();
     if (game < 0) return 2;
     if (game == 0) {
@@ -329,14 +394,10 @@ int NsoMenuLauncherMain(int argc, char **argv)
     }
     setpgid(game, game);
 
-    Display *dpy = XOpenDisplay(NULL);
     Window game_window = None;
     if (dpy) {
         Window root = DefaultRootWindow(dpy);
-        for (int i = 0; i < 500 && game_window == None; ++i) {
-            game_window = nso_menu_find_window(dpy, root, game, 0);
-            if (game_window == None) nso_menu_short_sleep();
-        }
+        game_window = nso_menu_wait_window(dpy, root, game);
         if (game_window != None) {
             XWindowAttributes host;
             if (XGetWindowAttributes(dpy, (Window)parent_id, &host)) {
