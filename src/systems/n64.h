@@ -284,7 +284,7 @@ GameEntry n64_games[] = {
         .dir = "repos/n64/bm64sa-recomp/build-cmake",
         .binary = "./BM64U2Recompiled",
         .appDir = "saves/n64/bm64sa-recomp",   /* config, saves and the stored ROM */
-        .startKeys = "Return",   /* the launcher has no autostart: Start Game */
+        .args = "--boot",   /* starts the stored ROM, no launcher click */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
