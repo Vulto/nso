@@ -62,8 +62,7 @@ int main(void)
     int counts[ST_COUNT] = { 0 }, total;
     tally_all(counts, &total);
     expect("sum of categories", counts[0] + counts[1] + counts[2] + counts[3], total);
-    expect("emulated (no emulator in the catalog)", counts[ST_EMULATED], 0);
-    if (counts[ST_RECOMP] <= 0 || counts[ST_NATIVE] <= 0 || counts[ST_NONE] <= 0) {
+    if (counts[ST_RECOMP] <= 0 || counts[ST_NATIVE] <= 0 || counts[ST_EMULATED] <= 0 || counts[ST_NONE] <= 0) {
         fprintf(stderr, "a category is empty\n");
         fails++;
     }
@@ -73,7 +72,10 @@ int main(void)
     type_of(nes_games, nes_game_count, "Mega Man 3", ST_RECOMP);
     type_of(snes_games, snes_game_count, "Super Mario World", ST_NATIVE);
     type_of(snes_games, snes_game_count, "Star Fox", ST_RECOMP);
-    type_of(snes_games, snes_game_count, "Aladdin", ST_NONE);
+    type_of(snes_games, snes_game_count, "Aladdin", ST_EMULATED);
+    type_of(snes_games, snes_game_count, "Super Mario Kart", ST_EMULATED);
+    type_of(nes_games, nes_game_count, "Contra", ST_EMULATED);
+    type_of(nes_games, nes_game_count, "Top Gun", ST_EMULATED);
     type_of(n64_games, n64_game_count, "Super Mario 64", ST_NATIVE);
     type_of(n64_games, n64_game_count, "Zelda Ocarina of Time", ST_NATIVE);
     type_of(n64_games, n64_game_count, "Blast Corps", ST_RECOMP);

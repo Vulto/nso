@@ -46,7 +46,7 @@ Reference integrations:
 | **Data root** | Base directory returned by `GetDataPath` logic in `src/main.c` (normally directory of the `nso` binary, overridable with `NSO_BASE_DIR`). Relative `GameEntry` paths resolve here unless stated otherwise. |
 | **Embedded module** | Shared object (`.so` on Linux) loaded in-process via `dlopen` implementing `embed/nsomod.h`, driven by `src/embed.h`. NSO keeps its single window; module renders offscreen and returns frames. |
 | **Child process** | Separate executable spawned by `LaunchGame` (`src/main.c`, `src/launch.h`). May be unmanaged UI-wise, generically hosted, or custom-bridge hosted. |
-| **Generic menu launcher** | Linux/X11 helper mode (`nso-menu-launcher`, `src/menu_launcher.c`) that reparents/finds child window, pauses process group, and handles Continue/Restart/To Game Selection (no suspend-point protocol). |
+| **Generic menu launcher** | Linux/X11 helper mode (`nso-menu-launcher`, `src/menu_launcher.c`) that reparents/finds child window, pauses process group, and handles Continue/Restart/To Game Selection (no suspend-point protocol, except Mednafen games: see `mednafen`/`rom`). |
 | **Custom external-menu bridge** | Child implements NSO's signal/window-id/action-file protocol and pause/resume behavior (`externalMenu=true`, optional `externalSlots`). |
 | **Suspend point** | Host-managed in-game slot state: `<stateDir>/Suspend point N.sav` with optional `<stateDir>/Suspend point N.bmp` (`N` = 1..4). Distinct from any game-native save. |
 | **Module data path** | Path resolved from `config/nso.cfg` key named by `GameEntry.embedRomKey` and passed as `NsomodConfig.data_path`. Despite legacy name, this is **not necessarily a ROM file** (SM64 uses a data directory; ROM-based modules use a ROM path). |
@@ -235,6 +235,7 @@ Host clears these from its own environment after spawn; child receives inherited
 | `args` | Extra space-separated arguments, e.g. a port's own direct-boot switch (`--boot`, `--skip-launcher`). |
 | `env` | Space-separated `NAME=VALUE` pairs set for the child only; a value starting with `@` is an NSO-relative dir (created if missing), e.g. `XDG_CONFIG_HOME=@saves/n64/<game>`. |
 | `startKeys` | X11 keysyms the generic menu launcher types once into the game window ~5 s after it appears, for ports whose launcher screen has no autostart (`Return` = its focused Start Game). |
+| `mednafen` / `rom` | Mednafen module (`nes`, `snes`) and the NSO-relative ROM. The binary is `mednafen/src/mednafen` (Mednafen source tree in the NSO root, not committed). `LaunchGame` sets `MEDNAFEN_HOME=saves/<module>/mednafen`, passes `Nso_MednafenArgv` (windowed, one state file name, Game Screen mode as scale + filter: Pixel = integer scale, 4:3 = bilinear, CRT = `goat` shader) and appends the ROM. The launcher centres the fixed-size window in NSO. With `NSO_EMU_STATE_DIR` (`<home>/mcs`) set, the launcher serves the slot protocol (`externalSlots = true`): `save N` / `load N` resume the game briefly, press Mednafen's state-slot key and F5/F7, then copy `state.mcN` to/from `<menu dir>/Suspend point N+1.sav`. |
 | `orient` | UI/orientation hint. |
 
 `config/nso.cfg` **MUST** provide every required key for enabled embedded entries and **SHOULD** document expected value type (ROM file path, data directory, etc.). Do not commit user-local secrets or copyrighted material.

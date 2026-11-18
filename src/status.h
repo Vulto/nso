@@ -59,6 +59,7 @@ static const StatusDir status_dirs[] = {
     { "repos/gamecube/melee-pc", ST_NATIVE },
     { "repos/gamecube/metroidprime", ST_NATIVE },
     { "repos/gamecube/papercut", ST_NATIVE },
+    { "mednafen/src", ST_EMULATED },
 };
 
 static const StatusDir *Status_Lookup(const char *dir)

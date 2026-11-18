@@ -47,6 +47,10 @@ typedef struct {
     const char *startKeys; /* NULL = none; X11 keysyms the menu launcher types once into
                               the game window, for ports whose launcher screen has no
                               option to start the game by itself */
+    const char *mednafen; /* NULL = none; else Mednafen module ("nes", "snes"): the binary is
+                             Mednafen and the screen mode, saves and arguments come from
+                             Nso_MednafenArgv (launch.h) */
+    const char *rom;      /* NULL = none; NSO-relative ROM file, appended as the last argument */
     bool externalMenu; /* child supplies its own external-menu bridge */
     bool externalSlots; /* child implements the external save/load slot protocol */
 } GameEntry;

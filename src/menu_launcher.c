@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -119,7 +120,7 @@ static void nso_menu_send_host_signal(void)
     if (end && !*end && pid > 1) kill((pid_t)pid, SIGUSR1);
 }
 
-static bool nso_menu_read_action(const char *dir, char *action, size_t cap)
+static bool nso_menu_read_action(const char *dir, char *action, size_t cap, int *slot)
 {
     char path[1200];
     if (!dir || !*dir || snprintf(path, sizeof(path), "%s/nso-menu-action", dir) >= (int)sizeof(path))
@@ -129,7 +130,11 @@ static bool nso_menu_read_action(const char *dir, char *action, size_t cap)
     bool ok = fgets(action, (int)cap, f) != NULL;
     fclose(f);
     remove(path);
-    if (ok) action[strcspn(action, " \t\r\n")] = '\0';
+    if (ok) {
+        char *arg = action + strcspn(action, " \t\r\n");
+        *slot = *arg ? atoi(arg + 1) : 0;
+        *arg = '\0';
+    }
     return ok;
 }
 
@@ -170,6 +175,110 @@ static void nso_menu_type_keys(Display *dpy, Window w, const char *keys)
     }
 }
 
+/* Emulator windows (NSO_EMU_STATE_DIR set) have a fixed size chosen by NSO, so
+ * they are centred in the host window instead of stretched; Mednafen moves and
+ * resizes its own window whenever the video mode changes, so this repeats. */
+static void nso_menu_place(Display *dpy, Window w, Window host)
+{
+    XWindowAttributes hattr, gattr;
+    if (!XGetWindowAttributes(dpy, host, &hattr) || !XGetWindowAttributes(dpy, w, &gattr)) return;
+    int x = (hattr.width - gattr.width) / 2, y = (hattr.height - gattr.height) / 2;
+    if (gattr.x != x || gattr.y != y) XMoveWindow(dpy, w, x, y);
+}
+
+/* NSO_EMU_STATE_DIR (Mednafen: <home>/mcs, state file "state.mc<slot>"): NSO's
+ * "Suspend point N" slots are that file copied to/from "<menu dir>/Suspend point
+ * N.sav". The game is resumed just long enough to take Mednafen's own
+ * "select state slot" and save/load keys, then stopped again. */
+static void nso_menu_tap_key(Display *dpy, KeySym sym, unsigned int hold_ms)
+{
+    KeyCode code = XKeysymToKeycode(dpy, sym);
+    struct timespec hold = { .tv_sec = hold_ms / 1000, .tv_nsec = (long)(hold_ms % 1000) * 1000000L };
+    struct timespec gap = { .tv_sec = 0, .tv_nsec = 120000000L };
+    if (!code) return;
+    XTestFakeKeyEvent(dpy, code, True, CurrentTime);
+    XSync(dpy, False);
+    nanosleep(&hold, NULL);
+    XTestFakeKeyEvent(dpy, code, False, CurrentTime);
+    XSync(dpy, False);
+    nanosleep(&gap, NULL);
+}
+
+static bool nso_menu_copy_file(const char *from, const char *to)
+{
+    char tmp[1300], buf[65536];
+    size_t n;
+    bool ok = true;
+    FILE *in = fopen(from, "rb");
+    if (!in) return false;
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp", to) >= (int)sizeof(tmp)) { fclose(in); return false; }
+    FILE *out = fopen(tmp, "wb");
+    if (!out) { fclose(in); return false; }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+        if (fwrite(buf, 1, n, out) != n) { ok = false; break; }
+    ok = ok && !ferror(in);
+    fclose(in);
+    if (fclose(out) != 0) ok = false;
+    if (ok && rename(tmp, to) != 0) ok = false;
+    if (!ok) remove(tmp);
+    return ok;
+}
+
+static bool nso_menu_slot_paths(const char *emu_dir, const char *menu_dir, int slot,
+                                char *emu_file, size_t emu_cap, char *sav, size_t sav_cap)
+{
+    if (!emu_dir || !*emu_dir || !menu_dir || !*menu_dir || slot < 0 || slot > 8) return false;
+    return snprintf(emu_file, emu_cap, "%s/state.mc%d", emu_dir, slot) < (int)emu_cap
+        && snprintf(sav, sav_cap, "%s/Suspend point %d.sav", menu_dir, slot + 1) < (int)sav_cap;
+}
+
+static void nso_menu_game_focus(Display *dpy, Window w)
+{
+    XMapRaised(dpy, w);
+    XSetInputFocus(dpy, w, RevertToParent, CurrentTime);
+    XSync(dpy, False);
+}
+
+/* Slot action while the game is paused. save: the game runs a moment, writes
+ * its state, is stopped again and the file is copied to "Suspend point N".
+ * load: the file is copied back and the game keeps running (the host does not
+ * send "resume" after a load). Returns true if the game was left running. */
+static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, int slot,
+                               const char *emu_dir, const char *menu_dir)
+{
+    char emu_file[1200], sav[1260];
+    struct timespec settle = { .tv_sec = 0, .tv_nsec = 200000000L };
+    if (!dpy || w == None || !nso_menu_slot_paths(emu_dir, menu_dir, slot, emu_file,
+                                                  sizeof(emu_file), sav, sizeof(sav)))
+        return false;
+    if (save) remove(emu_file);
+    else if (!nso_menu_copy_file(sav, emu_file)) return false;
+    nso_menu_game_focus(dpy, w);
+    kill(-game, SIGCONT);
+    nanosleep(&settle, NULL);
+    nso_menu_tap_key(dpy, (KeySym)(XK_0 + slot), 40);
+    if (!save) {
+        nso_menu_tap_key(dpy, XK_F7, 200);
+        return true;
+    }
+    nso_menu_tap_key(dpy, XK_F5, 200);
+    off_t last = -1;
+    for (int i = 0; i < 150; ++i) {
+        struct stat st;
+        off_t size = stat(emu_file, &st) == 0 ? st.st_size : -1;
+        if (size > 0 && size == last) break;
+        last = size;
+        nso_menu_short_sleep();
+        nso_menu_short_sleep();
+        nso_menu_short_sleep();
+    }
+    kill(-game, SIGSTOP);
+    XUnmapWindow(dpy, w);
+    XSync(dpy, False);
+    if (last > 0) nso_menu_copy_file(emu_file, sav);
+    return false;
+}
+
 static bool nso_menu_process_group_alive(pid_t group)
 {
     if (kill(-group, 0) == 0) return true;
@@ -206,6 +315,8 @@ int NsoMenuLauncherMain(int argc, char **argv)
     sigaction(SIGTERM, &st, NULL);
     sigaction(SIGHUP, &st, NULL);
     pid_t host = (pid_t)strtol(host_pid_text, NULL, 10);
+    const char *emu_dir = getenv("NSO_EMU_STATE_DIR");
+    bool centre = emu_dir && *emu_dir;
 
     pid_t game = fork();
     if (game < 0) return 2;
@@ -230,8 +341,9 @@ int NsoMenuLauncherMain(int argc, char **argv)
             XWindowAttributes host;
             if (XGetWindowAttributes(dpy, (Window)parent_id, &host)) {
                 XReparentWindow(dpy, game_window, (Window)parent_id, 0, 0);
-                XMoveResizeWindow(dpy, game_window, 0, 0,
-                                  (unsigned int)host.width, (unsigned int)host.height);
+                if (centre) nso_menu_place(dpy, game_window, (Window)parent_id);
+                else XMoveResizeWindow(dpy, game_window, 0, 0,
+                                       (unsigned int)host.width, (unsigned int)host.height);
                 XSelectInput(dpy, game_window, KeyPressMask | StructureNotifyMask);
                 int keycode = XKeysymToKeycode(dpy, XK_End);
                 XGrabKey(dpy, keycode, AnyModifier, game_window, False,
@@ -270,6 +382,8 @@ int NsoMenuLauncherMain(int argc, char **argv)
                 XNextEvent(dpy, &event);
                 if (event.type == KeyPress && event.xkey.keycode == XKeysymToKeycode(dpy, XK_End))
                     nso_menu_requested = 1;
+                if (centre && event.type == ConfigureNotify && event.xconfigure.window == game_window)
+                    nso_menu_place(dpy, game_window, (Window)parent_id);
             }
         }
 
@@ -290,8 +404,13 @@ int NsoMenuLauncherMain(int argc, char **argv)
 
         if (paused) {
             char action[64];
-            if (nso_menu_read_action(state_dir, action, sizeof(action))) {
-                if (strcmp(action, "resume") == 0) {
+            int slot = 0;
+            if (nso_menu_read_action(state_dir, action, sizeof(action), &slot)) {
+                if (strcmp(action, "save") == 0 || strcmp(action, "load") == 0) {
+                    if (nso_menu_emu_state(dpy, game_window, game, action[0] == 's', slot,
+                                           emu_dir, state_dir))
+                        paused = false;
+                } else if (strcmp(action, "resume") == 0) {
                     kill(-game, SIGCONT);
                     paused = false;
                     if (dpy && game_window != None) {

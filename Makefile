@@ -67,7 +67,7 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./repos_test
 	$(CC) $(CFLAGS) -o lang_test src/lang_test.c
 	./lang_test
-	$(CC) $(CFLAGS) -o launch_test src/launch_test.c
+	$(CC) $(CFLAGS) -o launch_test src/launch_test.c -lm
 	./launch_test
 	$(CC) $(CFLAGS) -o input_test src/input_test.c
 	./input_test

@@ -1,6 +1,9 @@
 # Downloaded / built game trees and user ROMs
 repos/
 
+# Mednafen source tree (own git repository; NES/SNES run through it)
+/mednafen/
+
 # Local runtime state
 saves/
 logs/

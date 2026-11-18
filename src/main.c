@@ -3274,6 +3274,7 @@ static int GamePipelineOf(const GameEntry *game) {
 static bool GameIsLaunchable(const GameEntry *game) {
     int p;
     if (!GameBinaryPresent(game)) return false;
+    if (game->rom && !FileExists(GetDataPath(game->rom))) return false;
     p = GamePipelineOf(game);
     return p < 0 || Gs_NeedsMet(&gs_pipelines[p], GsRelExists, NULL);
 }
@@ -3671,10 +3672,30 @@ NsoProc LaunchGame(const GameEntry *game) {
         if (!DirectoryExists(appDir)) MakeDirectory(appDir);
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
+    char mednafenHome[1200] = { 0 }, mednafenStates[1240];
+    char mednafenArgs[1536], mednafenRom[1200];
+    char *mednafenArgv[24];
+    int mednafenArgc = 0;
+    if (game->mednafen && game->rom) {
+        /* Mednafen keeps its config and saves under saves/<module>/mednafen. */
+        snprintf(mednafenHome, sizeof(mednafenHome), "%s", GetDataPath(TextFormat("saves/%s/mednafen", game->mednafen)));
+        snprintf(mednafenStates, sizeof(mednafenStates), "%s/mcs", mednafenHome);
+        EnsureDirectoryTree(mednafenStates);
+        snprintf(mednafenRom, sizeof(mednafenRom), "%s", GetDataPath(game->rom));
+        mednafenArgc = NsoMednafenArgv(game->mednafen, sysSettings[currentSystem].screen, mednafenRom,
+                                       GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
+                                       (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])));
+        if (!mednafenArgc) {
+            fprintf(stderr, "LaunchGame: Mednafen command line too long\n");
+            return NsoProcNone();
+        }
+        NsoSetEnv("MEDNAFEN_HOME", mednafenHome);
+        NsoSetEnv("NSO_EMU_STATE_DIR", mednafenStates);
+    }
     GameEnvSet(game);
     /* argv: [nso --menu-launcher] binary [GameEntry.args...] */
     char argsBuf[512];
-    char *argv[24];
+    char *argv[32];
     int argc = 0;
     snprintf(argsBuf, sizeof(argsBuf), "%s", game->args ? game->args : "");
     NsoProc proc;
@@ -3695,6 +3716,8 @@ NsoProc LaunchGame(const GameEntry *game) {
 #endif
     argv[argc++] = (char *)game->binary;
     argc += NsoSplitWords(argsBuf, argv + argc, (int)(sizeof(argv) / sizeof(argv[0])) - argc - 1);
+    for (int i = 0; i < mednafenArgc && argc < (int)(sizeof(argv) / sizeof(argv[0])) - 1; i++)
+        argv[argc++] = mednafenArgv[i];
     argv[argc] = NULL;
     proc = NsoSpawnArgv(gameDir, argv);
 #if !defined(_WIN32)
@@ -3703,6 +3726,10 @@ NsoProc LaunchGame(const GameEntry *game) {
     GameEnvRestore();
 
     if (game->appDir) NsoSetEnv("APP_FOLDER_PATH", NULL);
+    if (mednafenHome[0]) {
+        NsoSetEnv("MEDNAFEN_HOME", NULL);
+        NsoSetEnv("NSO_EMU_STATE_DIR", NULL);
+    }
     if (withStates) {
         NsoSetEnv("NSO_STATE_DIR", NULL);
         NsoSetEnv("NSO_STATE_LOAD", NULL);
