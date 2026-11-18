@@ -594,6 +594,9 @@ static float railSlideT = 0.0f;   /* 0 = rail in place, 1 = slid off to the left
 /* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
 static float detailsT = 0.0f;
+/* S Status card: same fade (statusT 0..1), see statuspanel.h. */
+static bool statusOpen = false;
+static float statusT = 0.0f;
 
 static float viewportY = 0.0f;
 static float targetViewportY = 0.0f;
@@ -3315,15 +3318,11 @@ static void Details_GlowRect(Rectangle r, float rad, float th, float alpha) {
     }
 }
 
-/* Details card as in the video: frosted, dimmed grid behind; one light card
- * (one rounded panel; lighter cover column left, text column right). */
-static void Details_Draw(Font font) {
-    if (detailsT <= 0.0f || GameIdx >= ActiveGameCount()) return;
-    const GameEntry *g = &ActiveGames()[GameIdx];
-    float a = detailsT;   /* linear opacity; the card never moves or resizes */
+/* The card frame shared by Details and Status: dimmed grid, one rounded panel
+ * (lighter left column). Returns the card, its left column width and radius. */
+static void Details_DrawFrame(float a, Rectangle *cardOut, float *lwOut, float *radOut) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
-    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 };
     const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 };
 
     DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * a));
@@ -3342,6 +3341,23 @@ static void Details_Draw(Font font) {
     BeginScissorMode(split, cy0, cx1 - split, ch);
     DrawRectangleRounded(card, rnd, 12, Fade(colR, a));
     EndScissorMode();
+    *cardOut = card;
+    *lwOut = lw;
+    *radOut = rad;
+}
+
+/* Details card as in the video: frosted, dimmed grid behind; one light card
+ * (one rounded panel; lighter cover column left, text column right). */
+static void Details_Draw(Font font) {
+    if (detailsT <= 0.0f || GameIdx >= ActiveGameCount()) return;
+    const GameEntry *g = &ActiveGames()[GameIdx];
+    float a = detailsT;   /* linear opacity; the card never moves or resizes */
+    float sw = (float)GetScreenWidth();
+    float sh = (float)GetScreenHeight();
+    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 };
+    Rectangle card;
+    float lw, rad;
+    Details_DrawFrame(a, &card, &lw, &rad);
 
     Texture2D tex = gameBoxarts[GameIdx];
     float cvW, cvH;
@@ -3394,6 +3410,8 @@ static void Details_Draw(Font font) {
 
     DrawInfoBarEx(font, T(S_DET_INFO), a, 0.0f);
 }
+
+#include "statuspanel.h"
 
 NsoProc LaunchGame(const GameEntry *game) {
     if (!GameIsLaunchable(game)) {
@@ -3582,7 +3600,8 @@ static void DrawMosaicSlots(Color background, Font font) {
 static void DrawMosaic(Color background, Font font) {
     Color SystemBG = GetColor(0xEE0010FF);
 
-    if (SidebarWantsBlur() || detailsT > 0.0f) {
+    float overlayT = fmaxf(detailsT, statusT);
+    if (SidebarWantsBlur() || overlayT > 0.0f) {
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
         EnsureBlurResources(sw, sh);
@@ -3593,9 +3612,9 @@ static void DrawMosaic(Color background, Font font) {
             EndTextureMode();
             DrawBlurredMosaicBackdrop(background);
             /* Details: the sharp grid dissolves into the blur in step with the card. */
-            if (!SidebarWantsBlur() && detailsT < 1.0f)
+            if (!SidebarWantsBlur() && overlayT < 1.0f)
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
-                       Fade(WHITE, 1.0f - detailsT));
+                       Fade(WHITE, 1.0f - overlayT));
         } else {
             DrawMosaicSlots(background, font);
         }
@@ -3721,7 +3740,7 @@ int main(void) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
         "0123456789"
-        " .,!?()[]{}'°-:/_+"
+        " .,!?()[]{}'°-:/_+%"
         "áàâãéêíóôõúçÁÂÃÉÊÍÓÔÕÚÇ"
         "🅐🅑🅧🅨",
         &Count
@@ -3966,6 +3985,7 @@ int main(void) {
         Repo_Poll();
         Repo_Watch();
         Details_Update(dt);
+        Status_Update(dt);
         {   /* move-mode look: linear, picom default rates (see Details) */
             float st = dt * 1000.0f / DETAILS_FADE_DELTA_MS;
             if (gridLifted) liftT = fminf(1.0f, liftT + st * DETAILS_FADE_IN_STEP);
@@ -4032,6 +4052,11 @@ int main(void) {
                         break;
                     }
 
+                    if (statusOpen || statusT > 0.0f) {
+                        Status_HandleInput(gpUp, gpDown, gpBack);
+                        break;
+                    }
+
                     if (detailsOpen || detailsT > 0.0f) {
                         Details_HandleInput(gpConfirm, gpBack);
                         break;
@@ -4071,6 +4096,12 @@ int main(void) {
                     /* T / right stick right: change order of titles. */
                     if (canNavigate && (IsKeyPressed(KEY_T) || padCRight)) {
                         SortPanel_Open();
+                        break;
+                    }
+
+                    /* S: port status overlay. */
+                    if (canNavigate && !gridLifted && IsKeyPressed(KEY_S)) {
+                        Status_Open();
                         break;
                     }
 
@@ -4165,6 +4196,7 @@ int main(void) {
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);
+            Status_Draw(font);
             if (embedBackT >= 0.0f)
                 Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(1.0f), embedBackT);
         }
