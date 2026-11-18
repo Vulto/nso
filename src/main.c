@@ -3770,6 +3770,14 @@ NsoProc LaunchGame(const GameEntry *game) {
         selfLen = readlink("/proc/self/exe", self, sizeof(self) - 1);
         if (selfLen > 0) {
             self[selfLen] = '\0';
+            /* A rebuilt/updated nso replaces the file under a running one: the kernel then
+             * reports "<path> (deleted)", which cannot be exec'd, so no external game
+             * (every Mednafen NES/SNES game, every port) would open until a restart. The
+             * path itself is the new binary. */
+            static const char deleted[] = " (deleted)";
+            if ((size_t)selfLen > sizeof(deleted) - 1
+                && strcmp(self + selfLen - (sizeof(deleted) - 1), deleted) == 0)
+                self[selfLen - (sizeof(deleted) - 1)] = '\0';
             argv[argc++] = self;
             argv[argc++] = (char *)"--menu-launcher";
             NsoSetEnv("NSO_START_KEYS", game->startKeys);
