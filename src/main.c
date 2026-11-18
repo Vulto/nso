@@ -15,6 +15,8 @@
 
 #define SCRAPE_IMPLEMENTATION
 #include "scrape.h"
+#define GAMESEL_IMPLEMENTATION
+#include "gamesel.h"
 
 #define SAVESTATE_IMPLEMENTATION
 #include "savestate.h"
@@ -625,6 +627,8 @@ static char scrapePart2[2200];   /* second download of the dates phase */
 static bool scrapeIndexNext;     /* covers follow the dates phase */
 static char scrapeDest[2200];
 static NsoMsg scrapeMsg = { -1, 0, "" };
+static bool scrapeOnly[MAX_GAMES];   /* with scrapeOnlyOn: covers of these games only (Select games) */
+static bool scrapeOnlyOn = false;
 
 /* Settings-icon spin / highlight morph from sidebar width progress (rail→open maps to 0→1). */
 static float gearSpinAngle = 0.0f;
@@ -1491,7 +1495,8 @@ static void ScrapeMenu_Advance(void)
             snprintf(prog, sizeof(prog), "%s  %d/%d", game->title ? game->title : "", scrapeGame + 1, count);
             Msg_Set(&scrapeMsg, S_RAW, 0, prog);
         }
-        if (!game->boxartPath || game->boxartPath[0] == '\0') {
+        if (!game->boxartPath || game->boxartPath[0] == '\0'
+            || (scrapeOnlyOn && (scrapeGame >= MAX_GAMES || !scrapeOnly[scrapeGame]))) {
             scrapeGame++;
             continue;
         }
@@ -1539,7 +1544,7 @@ static void ScrapeMenu_Start(int replace)
         for (int i = 0; i < count; i++) {
             const char *rel = ActiveGames()[i].boxartPath;
             char path[2048];
-            if (!rel || rel[0] == '\0') continue;
+            if (!rel || rel[0] == '\0' || (scrapeOnlyOn && (i >= MAX_GAMES || !scrapeOnly[i]))) continue;
             snprintf(path, sizeof(path), "%s", GetDataPath(rel));
             if (!FileExists(path) || GetFileLength(path) <= 0) need = 1;
         }
@@ -2183,7 +2188,7 @@ static void Manage_Draw(Font font) {
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
-       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_COUNT };   /* last two: box-art scrape of this system */
+       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_COUNT };   /* last three: box-art scrape of this system */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also "<id>.screen" = 4:3|pixel|crt).
@@ -2656,12 +2661,12 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
     float hx = sw * 0.449f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
     float th = fmaxf(2.0f, sh * 0.0028f);
     float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;
-    static const StrId labels[2] = { S_MANAGE_MISSING, S_MANAGE_REPLACE };
-    static const float ys[2] = { 1.050f, 1.140f };
+    static const StrId labels[3] = { S_MANAGE_MISSING, S_MANAGE_REPLACE, S_GS_SELECT };
+    static const float ys[3] = { 1.050f, 1.140f, 1.230f };
     char status[192];
 
     DrawFitText(font, T(S_MANAGE_COVERS), (Vector2){ hx, sh * 0.972f }, hsize, sw - hx, WHITE);
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < 3; k++) {
         float y = sh * ys[k];
         bool cur = (SB_SET_COVERS_MISSING + k == sidebarSetRow);
         Rectangle box = { bx, y - bh * 0.5f, bw, bh };
@@ -2671,8 +2676,10 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
                     bw - sw * 0.03f, cur ? red : WHITE);
     }
     Msg_Format(&scrapeMsg, status, sizeof(status));
-    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.225f }, hsize, sw - hx, WHITE);
+    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.315f }, hsize, sw - hx, WHITE);
 }
+
+#include "gamesel_ui.h"
 
 /* Settings panel plus the scrape page; scrolls down to it while a scrape row is selected. */
 static void SidebarPanels_Draw(Font font, Color red) {
@@ -2754,7 +2761,8 @@ static void DrawSidebar(Color systemBg, Font font) {
     if (slid) rlPopMatrix();
 
     if (settled && sidebarPanelFocus && sidebarItem == SB_ITEM_SETTINGS) {
-        SidebarPanels_Draw(font, systemBg);
+        if (gsOpen) GameSel_Draw(font, systemBg);
+        else SidebarPanels_Draw(font, systemBg);
     }
 }
 
@@ -3045,6 +3053,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     bool up = IsKeyPressed(KEY_UP) || gpUp, down = IsKeyPressed(KEY_DOWN) || gpDown;
     bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
     bool back = IsKeyPressed(KEY_B) || gpBack;
+    if (gsOpen && sidebarPanelFocus) {   /* Select games owns the panel (and its runs) */
+        GameSel_Input(up, down, ok, back, IsKeyPressed(KEY_LEFT) || gpLeft);
+        return;
+    }
     if (scrapeBusy) {   /* a scrape owns the menu: B cancels it */
         if (back) ScrapeMenu_Cancel();
         return;
@@ -3056,6 +3068,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         if (ok) {
             Sfx_Play(SFX_CLICK);
             SysSettings *st = &sysSettings[currentSystem];
+            if (sidebarSetRow == SB_SET_GAMES) {
+                GameSel_Open();
+                return;
+            }
             if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
                 ScrapeMenu_Start(sidebarSetRow == SB_SET_COVERS_REPLACE);
                 return;
@@ -3077,6 +3093,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         sidebarPanelFocus = true;
         sidebarSetRow = 0;
         sbPanelShift = 0.0f;
+        if (!GameSel_Busy()) gsOpen = false;
         Msg_Clear(&scrapeMsg);
         Sfx_Play(SFX_CLICK);
     } else if (ok) {
@@ -3870,6 +3887,7 @@ int main(void) {
         }
 
         ScrapeMenu_Poll();
+        GameSel_Poll();
         Repo_Poll();
         Repo_Watch();
         Details_Update(dt);
@@ -4098,6 +4116,7 @@ int main(void) {
     Embed_Stop();
     CoverLoader_Stop();
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
+    if (GameSel_Busy()) GameSel_Cancel();
     UnloadAllBoxarts();
     UnloadFont(font);
     if (hintNerdLoaded) {

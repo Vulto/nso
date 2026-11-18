@@ -4,6 +4,7 @@ SRC := src/main.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
 	src/embed.h src/sfx.h embed/nsomod.h src/sort.h src/sortpanel.h
+HDRS += src/gamesel.h src/gamesel_ui.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -65,12 +66,16 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./sort_test
 	$(CC) $(CFLAGS) -o catalog_test src/catalog_test.c
 	./catalog_test
+	$(CC) $(CFLAGS) -o gamesel_test src/gamesel_test.c
+	./gamesel_test
 	$(CC) $(CFLAGS) -o embed_test src/embed_test.c -lm
 	./embed_test
 	$(CC) $(CFLAGS) -o sfx_test src/sfx_test.c -lraylib -lm
 	./sfx_test
 	$(CC) $(CFLAGS) -o sm64reloc_test embed/sm64/reloc_test.c
 	./sm64reloc_test
+
+check: src/gamesel_test.c src/gamesel.h tools/game_install.sh
 
 # Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
 test: check nso
@@ -80,4 +85,4 @@ test: check nso
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test
+	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test

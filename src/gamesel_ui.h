@@ -1,0 +1,329 @@
+/* gamesel_ui.h - "Select games" panel (system sidebar > Settings > Image
+ * scraping > Select games). Included by main.c after the scrape page; uses its
+ * statics. Lists the ROMs in repos/roms/<folder> (read only), one check per
+ * game; "Download and install" fetches the checked games' covers + dates (the
+ * scrape, limited to them) while the ports of the games with a pipeline
+ * (gamesel.h) download two at a time and build one at a time through
+ * tools/game_install.sh (log: logs/install/<name>.log). A built game gets its
+ * config key and is playable at once. B cancels a run. */
+#ifndef NSO_GAMESEL_UI_H
+#define NSO_GAMESEL_UI_H
+
+#define GS_MAX_ROWS MAX_GAMES
+#define GS_FETCH_PARALLEL 2
+
+static bool gsOpen = false;
+static int gsSys = -1;
+static GsRow gsRows[GS_MAX_ROWS];
+static char gsRomRel[GS_MAX_ROWS][320];   /* repos/roms/<folder>/<file> */
+static char gsLabel[GS_MAX_ROWS][160];
+static int gsCount = 0;
+static int gsCursor = 0;                  /* 0 = Start, 1.. = rows */
+static int gsTop = 0;                     /* first row shown */
+static NsoProc gsFetch[GS_MAX_ROWS];
+static NsoProc gsBuild = -1;
+static int gsBuildRow = -1;
+static bool gsCoverRun = false;
+static bool gsWasRunning = false;
+static NsoMsg gsMsg = { -1, 0, "" };
+
+static int GsCmpName(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+/* Scan the system's ROM folder and match each ROM to a catalog title. */
+static void GameSel_Open(void) {
+    const char *folder = Gs_RomFolder(ActiveSystem()->platform->id);
+    char dir[2048];
+    static char names[GS_MAX_ROWS][256];
+    const char *sorted[GS_MAX_ROWS], *bases[GS_MAX_ROWS], *titles[MAX_GAMES];
+    static char baseBuf[GS_MAX_ROWS][256];
+    int matched[GS_MAX_ROWS], n = 0, gc = ActiveGameCount();
+    GameEntry *games = ActiveGames();
+
+    gsOpen = true;
+    gsSys = currentSystem;
+    gsCount = 0;
+    gsCursor = 0;
+    gsTop = 0;
+    Msg_Clear(&gsMsg);
+    for (int i = 0; i < GS_MAX_ROWS; i++) gsFetch[i] = NsoProcNone();
+    if (!folder) return;
+    snprintf(dir, sizeof(dir), "%s/repos/roms/%s", GetBaseDirectory(), folder);
+    if (!DirectoryExists(dir)) return;
+    FilePathList files = LoadDirectoryFiles(dir);
+    for (unsigned i = 0; i < files.count && n < GS_MAX_ROWS; i++) {
+        if (!IsPathFile(files.paths[i])) continue;
+        snprintf(names[n], sizeof(names[n]), "%s", GetFileName(files.paths[i]));
+        sorted[n] = names[n];
+        n++;
+    }
+    UnloadDirectoryFiles(files);
+    qsort(sorted, (size_t)n, sizeof(sorted[0]), GsCmpName);
+    for (int i = 0; i < n; i++) {
+        Gs_RomBase(sorted[i], baseBuf[i], sizeof(baseBuf[i]));
+        bases[i] = baseBuf[i];
+    }
+    if (gc > MAX_GAMES) gc = MAX_GAMES;
+    for (int i = 0; i < gc; i++) titles[i] = games[i].title ? games[i].title : "";
+    Gs_MatchAll(bases, n, titles, gc, matched);
+    for (int i = 0; i < n; i++) {
+        GsRow *r = &gsRows[i];
+        r->game = matched[i];
+        r->pipe = matched[i] >= 0 ? Gs_RowPipeline(ActiveSystem()->platform->id, bases[i], titles[matched[i]]) : -1;
+        r->on = false;
+        r->st = GS_IDLE;
+        snprintf(gsRomRel[i], sizeof(gsRomRel[i]), "repos/roms/%s/%s", folder, sorted[i]);
+        snprintf(gsLabel[i], sizeof(gsLabel[i]), "%s", matched[i] >= 0 ? titles[matched[i]] : bases[i]);
+    }
+    gsCount = n;
+}
+
+/* Kill a step and everything it started (its own session: setsid). */
+static void GameSel_Kill(NsoProc p) {
+#ifndef _WIN32
+    if (p > 0) kill(-p, SIGTERM);
+#else
+    NsoSpawnKill(p);
+#endif
+}
+
+static NsoProc GameSel_Spawn(char **args) {
+    char *argv[12];
+    int k = 0;
+#ifndef _WIN32
+    argv[k++] = "setsid";
+#endif
+    argv[k++] = "sh";
+    argv[k++] = "tools/game_install.sh";
+    for (int i = 0; args[i] && k < 11; i++) argv[k++] = args[i];
+    argv[k] = NULL;
+    return NsoSpawnArgv(GetBaseDirectory(), argv);
+}
+
+static void GameSel_LogPath(const GamePipeline *p, char *dst, size_t n) {
+    snprintf(dst, n, "logs/install/%s.log", p->name);
+}
+
+static bool GameSel_StartFetch(int r) {
+    const GamePipeline *p = &gs_pipelines[gsRows[r].pipe];
+    char log[256];
+    GameSel_LogPath(p, log, sizeof(log));
+    char *args[] = { "fetch", log, (char *)p->dir, (char *)p->url, (char *)(p->pin ? p->pin : "-"), NULL };
+    gsFetch[r] = GameSel_Spawn(args);
+    return NsoProcOk(gsFetch[r]);
+}
+
+static bool GameSel_StartBuild(int r) {
+    const GamePipeline *p = &gs_pipelines[gsRows[r].pipe];
+    char log[256], rom[2400];
+    GameSel_LogPath(p, log, sizeof(log));
+    snprintf(rom, sizeof(rom), "%s/%s", GetBaseDirectory(), gsRomRel[r]);
+    char *args[] = { "build", log, (char *)p->build, (char *)p->binary, rom, NULL };
+    gsBuild = GameSel_Spawn(args);
+    gsBuildRow = r;
+    return NsoProcOk(gsBuild);
+}
+
+/* A built game: point its config key at the data unless it already points
+ * at something that exists (the user's own setup wins). */
+static void GameSel_Configure(int r) {
+    const GamePipeline *p = &gs_pipelines[gsRows[r].pipe];
+    const char *value = Gs_CfgValue(p, gsRomRel[r]);
+    char cfg[2112], cur[1024] = "", path[2400];
+    if (!p->cfgKey || !value) return;
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    char *text = FileExists(cfg) ? LoadFileText(cfg) : NULL;
+    bool have = text && Cfg_Get(text, p->cfgKey, cur, sizeof(cur)) && cur[0];
+    if (text) UnloadFileText(text);
+    if (have) {
+        if (cur[0] == '/') snprintf(path, sizeof(path), "%s", cur);
+        else snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), cur);
+        if (FileExists(path) || DirectoryExists(path)) return;
+    }
+    if (strcmp(value, gsRomRel[r]) != 0) {   /* a directory of ours: make it */
+        snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), value);
+        if (!DirectoryExists(path)) MakeDirectory(path);
+    }
+    snprintf(path, sizeof(path), "%s/config", GetBaseDirectory());
+    MakeDirectory(path);
+    Cfg_SaveKey(cfg, p->cfgKey, value);
+}
+
+static void GameSel_Start(void) {
+    if (Gs_Running(gsRows, gsCount) || scrapeBusy || Gs_Checked(gsRows, gsCount) == 0) return;
+    Gs_Start(gsRows, gsCount);
+    Msg_Clear(&gsMsg);
+    for (int i = 0; i < MAX_GAMES; i++) scrapeOnly[i] = false;
+    bool any = false;
+    for (int i = 0; i < gsCount; i++)
+        if (gsRows[i].on && gsRows[i].game >= 0 && gsRows[i].game < MAX_GAMES) { scrapeOnly[gsRows[i].game] = true; any = true; }
+    gsCoverRun = false;
+    if (any) {
+        char cfgDir[2112];   /* the dates file goes there */
+        snprintf(cfgDir, sizeof(cfgDir), "%s/config", GetBaseDirectory());
+        MakeDirectory(cfgDir);
+        scrapeOnlyOn = true;
+        ScrapeMenu_Start(0);
+        gsCoverRun = scrapeBusy;
+        if (!gsCoverRun) scrapeOnlyOn = false;
+    }
+    if (!gsCoverRun) Gs_CoversDone(gsRows, gsCount);
+    gsWasRunning = true;
+}
+
+static void GameSel_Cancel(void) {
+    Gs_Cancel(gsRows, gsCount);
+    for (int i = 0; i < gsCount; i++) GameSel_Kill(gsFetch[i]);
+    GameSel_Kill(gsBuild);
+    if (gsCoverRun) ScrapeMenu_Cancel();
+}
+
+/* Every frame: reap steps, start the next ones, finish the cover pass. */
+static void GameSel_Poll(void) {
+    int code = 1;
+    for (int i = 0; i < gsCount; i++) {
+        if (NsoProcOk(gsFetch[i]) && NsoSpawnExited(&gsFetch[i], &code)) Gs_FetchDone(&gsRows[i], code == 0);
+    }
+    if (NsoProcOk(gsBuild) && NsoSpawnExited(&gsBuild, &code)) {
+        int r = gsBuildRow;
+        gsBuildRow = -1;
+        if (r >= 0 && r < gsCount && gsRows[r].st == GS_BUILDING) {
+            Gs_BuildDone(&gsRows[r], code == 0);
+            if (gsRows[r].st == GS_READY) GameSel_Configure(r);
+        }
+    }
+    if (gsCoverRun && !scrapeBusy) {
+        gsCoverRun = false;
+        scrapeOnlyOn = false;
+        Gs_CoversDone(gsRows, gsCount);
+    }
+    for (int r; (r = Gs_NextFetch(gsRows, gsCount, GS_FETCH_PARALLEL)) >= 0;) {
+        gsRows[r].st = GS_DOWNLOADING;
+        if (!GameSel_StartFetch(r)) Gs_FetchDone(&gsRows[r], false);
+    }
+    if (!NsoProcOk(gsBuild)) {
+        int r = Gs_NextBuild(gsRows, gsCount);
+        if (r >= 0) {
+            gsRows[r].st = GS_BUILDING;
+            if (!GameSel_StartBuild(r)) { gsBuildRow = -1; Gs_BuildDone(&gsRows[r], false); }
+        }
+    }
+    if (gsWasRunning && !Gs_Running(gsRows, gsCount)) {
+        int ready = 0;
+        for (int i = 0; i < gsCount; i++) if (gsRows[i].st == GS_READY) ready++;
+        gsWasRunning = false;
+        Msg_Set(&gsMsg, S_GS_DONE, ready, NULL);
+    }
+}
+
+static bool GameSel_Busy(void) {
+    bool procs = NsoProcOk(gsBuild);
+    for (int i = 0; i < gsCount && !procs; i++) procs = NsoProcOk(gsFetch[i]);
+    return Gs_Running(gsRows, gsCount) || procs || gsCoverRun;
+}
+
+/* Panel focus: Up/Down move, A checks a game or starts, B cancels a run or
+ * goes back to the Settings panel. */
+static void GameSel_Input(bool up, bool down, bool ok, bool back, bool left) {
+    if (GameSel_Busy()) {
+        if (back && Gs_Running(gsRows, gsCount)) { GameSel_Cancel(); Sfx_Play(SFX_CLICK); }
+        if (up && gsCursor > 0) gsCursor--;
+        if (down && gsCursor < gsCount) gsCursor++;
+        return;
+    }
+    if (back || left) { gsOpen = false; Sfx_Play(SFX_CLICK); return; }
+    if (up && gsCursor > 0) { gsCursor--; Sfx_Play(SFX_PLUCK); }
+    if (down && gsCursor < gsCount) { gsCursor++; Sfx_Play(SFX_PLUCK); }
+    if (ok) {
+        Sfx_Play(SFX_CLICK);
+        if (gsCursor == 0) GameSel_Start();
+        else Gs_Toggle(gsRows, gsCount, gsCursor - 1);
+    }
+}
+
+static StrId GameSel_StateStr(int r) {
+    switch (gsRows[r].st) {
+    case GS_QUEUED: return S_GS_QUEUED;
+    case GS_DOWNLOADING: return S_GS_DOWNLOADING;
+    case GS_WAIT_BUILD: return S_GS_WAIT_BUILD;
+    case GS_BUILDING: return S_GS_BUILDING;
+    case GS_COVER: return S_GS_COVER;
+    case GS_READY: return S_GS_READY;
+    case GS_NO_INSTALLER: return S_GS_NO_INSTALLER;
+    case GS_FAILED: return S_GS_FAILED;
+    case GS_CANCELLED: return S_GS_CANCELLED;
+    default: break;
+    }
+    if (gsRows[r].pipe < 0) return S_RAW;
+    {
+        const GamePipeline *p = &gs_pipelines[gsRows[r].pipe];
+        char path[2400];
+        snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), p->binary);
+        return FileExists(path) ? S_GS_INSTALLED : S_GS_INSTALLER;
+    }
+}
+
+/* Same look as the Settings panel: white box = cursor, checkbox on the left. */
+static void GameSel_Draw(Font font, Color red) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float hx = sw * 0.449f, cx = sw * 0.46f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
+    float th = fmaxf(2.0f, sh * 0.0028f), r = sh * 0.016f;
+    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;
+    float ssize = (float)font.baseSize * 0.75f;
+    float step = sh * 0.076f, top = sh * 0.272f;
+    int visible = (int)((sh * 0.86f - top) / step) + 1;
+    char line[200];
+
+    DrawFitText(font, T(S_GS_SELECT), (Vector2){ hx, sh * 0.092f }, hsize, sw - hx, WHITE);
+    {   /* Start row */
+        float y = sh * 0.172f;
+        bool cur = gsCursor == 0;
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        snprintf(line, sizeof(line), T(S_GS_START), Gs_Checked(gsRows, gsCount));
+        DrawFitText(font, line, (Vector2){ bx + sw * 0.0225f, y }, osize, bw - sw * 0.03f, cur ? red : WHITE);
+    }
+    if (gsCount == 0) {
+        DrawFitText(font, T(S_GS_NO_ROMS), (Vector2){ hx, top }, hsize, sw - hx - sw * 0.02f, WHITE);
+    }
+    if (gsCursor - 1 < gsTop) gsTop = gsCursor > 0 ? gsCursor - 1 : 0;
+    if (gsCursor - 1 >= gsTop + visible) gsTop = gsCursor - visible;
+    for (int k = 0; k < visible && gsTop + k < gsCount; k++) {
+        int i = gsTop + k;
+        float y = top + step * (float)k;
+        bool cur = gsCursor == i + 1;
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
+        if (gsRows[i].on) {
+            DrawRectangleRec(cb, red);
+            DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f }, th * 1.3f, WHITE);
+            DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f }, th * 1.3f, WHITE);
+        } else {
+            DrawRectangleLinesEx(cb, th, WHITE);
+        }
+        StrId sid = GameSel_StateStr(i);
+        float stW = 0.0f;
+        if (sid != S_RAW) {
+            const char *st = T(sid);
+            stW = MeasureTextEx(font, st, ssize, 1.0f).x;
+            DrawFitText(font, st, (Vector2){ bx + bw - stW - sw * 0.012f, y }, ssize, stW + 1.0f, cur ? red : WHITE);
+        }
+        DrawFitText(font, gsLabel[i], (Vector2){ bx + sw * 0.0225f, y }, osize,
+                    bw - sw * 0.035f - stW, cur ? red : WHITE);
+    }
+    {   /* footer: cover pass progress, result or the keys */
+        char status[192] = "";
+        if (gsCoverRun) Msg_Format(&scrapeMsg, status, sizeof(status));
+        else Msg_Format(&gsMsg, status, sizeof(status));
+        const char *hint = T(Gs_Running(gsRows, gsCount) ? S_GS_HINT_RUN : S_GS_HINT);
+        if (status[0]) snprintf(line, sizeof(line), "%s     %s", status, hint);
+        else snprintf(line, sizeof(line), "%s", hint);
+        DrawFitText(font, line, (Vector2){ hx, sh * 0.935f }, ssize, sw - hx - sw * 0.02f, WHITE);
+    }
+}
+
+#endif /* NSO_GAMESEL_UI_H */
