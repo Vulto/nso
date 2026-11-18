@@ -3097,240 +3097,8 @@ static bool GameIsLaunchable(const GameEntry *game) {
     return GameBinaryPresent(game);
 }
 
-/* ---- Save states overlay (grid: S, or X Details -> Save States) ----
- * Lists the .sav files in stateDir newest first with their .bmp thumbnails; file
- * operations go through savestate.h. */
-#define MAX_STATES 64
-
-typedef struct {
-    char name[SS_NAME_MAX + 1];
-    long mtime;
-    Texture2D thumb;
-} StateItem;
-
-static StateItem states[MAX_STATES];
-static int stateCount = 0;
-static int stateSel = 0;
-static bool statesOpen = false;
-static char statesDir[1100];
-static char stateLoadPath[1200];   /* consumed by the next LaunchGame */
-static bool stateDeleteArmed = false;
-static bool stateRenaming = false;
-static char renameBuf[SS_NAME_MAX + 1];
-static NsoMsg stateMsg = { -1, 0, "" };
-/* Opened by a confirm press (Details): ignore confirm until it is released. */
-static bool stateConfirmLatch = false;
-
-static void States_Unload(void) {
-    for (int i = 0; i < stateCount; i++) {
-        if (states[i].thumb.id) UnloadTexture(states[i].thumb);
-    }
-    stateCount = 0;
-}
-
-static int StateNewerFirst(const void *a, const void *b) {
-    const StateItem *x = a, *y = b;
-    if (x->mtime != y->mtime) return (y->mtime > x->mtime) ? 1 : -1;
-    return strcmp(y->name, x->name);
-}
-
-/* Rescan the directory; keep the selection on `keep` if it still exists. */
-static void States_Refresh(const char *keep) {
-    States_Unload();
-    if (DirectoryExists(statesDir)) {
-        FilePathList list = LoadDirectoryFilesEx(statesDir, ".sav", false);
-        for (unsigned int i = 0; i < list.count && stateCount < MAX_STATES; i++) {
-            const char *name = GetFileNameWithoutExt(list.paths[i]);
-            if (!Ss_ValidName(name)) continue;
-            StateItem *it = &states[stateCount];
-            snprintf(it->name, sizeof(it->name), "%s", name);
-            it->mtime = GetFileModTime(list.paths[i]);
-            it->thumb = (Texture2D){0};
-            char bmp[1200];
-            if (Ss_Path(bmp, sizeof(bmp), statesDir, it->name, ".bmp") == 0 && FileExists(bmp)) {
-                it->thumb = LoadTexture(bmp);
-            }
-            stateCount++;
-        }
-        UnloadDirectoryFiles(list);
-    }
-    qsort(states, (size_t)stateCount, sizeof(states[0]), StateNewerFirst);
-    for (int i = 0; keep && i < stateCount; i++) {
-        if (strcmp(states[i].name, keep) == 0) stateSel = i;
-    }
-    if (stateSel >= stateCount) stateSel = stateCount - 1;
-    if (stateSel < 0) stateSel = 0;
-}
-
-static void States_Open(const GameEntry *game) {
-    if (!game || !game->stateDir) return;
-    snprintf(statesDir, sizeof(statesDir), "%s", GetDataPath(game->stateDir));
-    stateSel = 0;
-    stateDeleteArmed = false;
-    stateRenaming = false;
-    stateConfirmLatch = false;
-    Msg_Clear(&stateMsg);
-    States_Refresh(NULL);
-    statesOpen = true;
-    InfoBar_Request(INFO_BAR_NONE);
-}
-
-static void States_Close(void) {
-    States_Unload();
-    statesOpen = false;
-    stateRenaming = false;
-    InfoBar_Request(INFO_BAR_MOSAIC);
-}
-
-/* Returns true when the user picked a state to load (stateLoadPath set). */
-static bool States_HandleInput(bool gpLeft, bool gpRight, bool gpConfirm, bool gpBack) {
-    bool gp = IsGamepadAvailable(0);
-    bool gpX = padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X));
-    bool gpY = padCDown || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y));
-    StateItem *cur = (stateCount > 0) ? &states[stateSel] : NULL;
-    bool confirmHeld = false;
-
-    if (stateConfirmLatch) {
-        confirmHeld = IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_A)
-            || (gp && (IsGamepadButtonDown(0, NSO_BTN_A)
-                       || IsGamepadButtonDown(0, GAMEPAD_BUTTON_MIDDLE_RIGHT)));
-        if (!confirmHeld) stateConfirmLatch = false;
-    }
-
-    if (stateRenaming) {
-        int c;
-        size_t len = strlen(renameBuf);
-        while ((c = GetCharPressed()) != 0) {
-            if (c >= 32 && c < 127 && len < SS_NAME_MAX) {
-                renameBuf[len++] = (char)c;
-                renameBuf[len] = '\0';
-            }
-        }
-        if (IsKeyPressed(KEY_BACKSPACE) && len > 0) renameBuf[--len] = '\0';
-        if (IsKeyPressed(KEY_TAB)) {
-            stateRenaming = false;
-            Msg_Set(&stateMsg, S_SS_RENAME_CANCELLED, 0, NULL);
-        } else if (IsKeyPressed(KEY_ENTER) && cur) {
-            char newName[SS_NAME_MAX + 1];
-            snprintf(newName, sizeof(newName), "%s", renameBuf);
-            if (!Ss_ValidName(newName)) {
-                Msg_Set(&stateMsg, S_SS_INVALID_NAME, 0, NULL);
-            } else if (Ss_Rename(statesDir, cur->name, newName) != 0) {
-                Msg_Set(&stateMsg, S_SS_RENAME_FAILED, 0, NULL);
-            } else {
-                stateRenaming = false;
-                Msg_Set(&stateMsg, S_SS_RENAMED, 0, NULL);
-                States_Refresh(newName);
-            }
-        }
-        return false;
-    }
-
-    bool del = IsKeyPressed(KEY_DELETE) || gpX;
-    if (!del && GetKeyPressed() != 0) stateDeleteArmed = false;
-
-    if (IsKeyPressed(KEY_B) || gpBack) {
-        States_Close();
-        return false;
-    }
-    if ((IsKeyPressed(KEY_LEFT) || gpLeft) && stateSel > 0) stateSel--;
-    if ((IsKeyPressed(KEY_RIGHT) || gpRight) && stateSel + 1 < stateCount) stateSel++;
-    if (!cur) return false;
-
-    if (!confirmHeld && (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
-        if (Ss_Path(stateLoadPath, sizeof(stateLoadPath), statesDir, cur->name, ".sav") != 0) {
-            stateLoadPath[0] = '\0';
-            Msg_Set(&stateMsg, S_SS_PATH_TOO_LONG, 0, NULL);
-            return false;
-        }
-        States_Close();
-        return true;
-    }
-    if (del) {
-        if (!stateDeleteArmed) {
-            stateDeleteArmed = true;
-            Msg_Set(&stateMsg, S_SS_CONFIRM_DELETE, 0, cur->name);
-        } else {
-            stateDeleteArmed = false;
-            if (Ss_Delete(statesDir, cur->name) != 0) {
-                Msg_Set(&stateMsg, S_SS_DELETE_FAILED, 0, NULL);
-            } else {
-                Msg_Set(&stateMsg, S_SS_DELETED, 0, NULL);
-                States_Refresh(NULL);
-            }
-        }
-    } else if (IsKeyPressed(KEY_C) || gpY) {
-        char copyName[SS_NAME_MAX + 1];
-        if (Ss_Copy(statesDir, cur->name, copyName, sizeof(copyName)) != 0) {
-            Msg_Set(&stateMsg, S_SS_COPY_FAILED, 0, NULL);
-        } else {
-            Msg_Set(&stateMsg, S_SS_COPIED, 0, copyName);
-            States_Refresh(copyName);
-        }
-    } else if (IsKeyPressed(KEY_R)) {
-        stateRenaming = true;
-        snprintf(renameBuf, sizeof(renameBuf), "%s", cur->name);
-        while (GetCharPressed() != 0) {} /* drop the 'r' itself */
-        Msg_Clear(&stateMsg);
-    }
-    return false;
-}
-
-static void States_Draw(Font font, const char *title) {
-    float sw = (float)GetScreenWidth();
-    float sh = (float)GetScreenHeight();
-    float fs = (float)font.baseSize;
-    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.82f));
-
-    char head[160];
-    snprintf(head, sizeof(head), T(S_SS_TITLE), title ? title : "");
-    DrawTextEx(font, head, (Vector2){ sw * 0.08f, sh * 0.10f }, fs * 1.3f, 2.0f, WHITE);
-
-    float cardW = 384.0f, cardH = 336.0f, gap = 48.0f;  /* 256x224 x1.5 */
-    float cx = sw * 0.5f - cardW * 0.5f;
-    float y = sh * 0.5f - cardH * 0.5f - 20.0f;
-
-    if (stateCount == 0) {
-        const char *t = T(S_SS_EMPTY);
-        Vector2 m = MeasureTextEx(font, t, fs, 2.0f);
-        DrawTextEx(font, t, (Vector2){ (sw - m.x) * 0.5f, sh * 0.5f - m.y }, fs, 2.0f, LIGHTGRAY);
-    }
-    for (int i = 0; i < stateCount; i++) {
-        Rectangle r = { cx + (float)(i - stateSel) * (cardW + gap), y, cardW, cardH };
-        if (r.x + r.width < 0.0f || r.x > sw) continue;
-        if (states[i].thumb.id) {
-            DrawTexturePro(states[i].thumb,
-                           (Rectangle){ 0, 0, (float)states[i].thumb.width, (float)states[i].thumb.height },
-                           r, (Vector2){ 0 }, 0.0f, WHITE);
-        } else {
-            DrawRectangleRec(r, DARKGRAY);
-            DrawTextEx(font, T(S_SS_NO_IMAGE), (Vector2){ r.x + 20, r.y + 20 }, fs, 2.0f, LIGHTGRAY);
-        }
-        if (i == stateSel) {
-            float pulse = 0.5f + 0.5f * sinf((float)GetTime() * 3.0f);
-            Color glow = ColorLerp((Color){ 80, 200, 255, 255 }, (Color){ 160, 110, 255, 255 }, pulse);
-            DrawRectangleRoundedLinesEx((Rectangle){ r.x - 6, r.y - 6, r.width + 12, r.height + 12 },
-                                        0.04f, 8, 5.0f, glow);
-        }
-        const char *label = (i == stateSel && stateRenaming) ? TextFormat("%s|", renameBuf) : states[i].name;
-        DrawTextEx(font, label, (Vector2){ r.x, r.y + r.height + 16 }, fs * 0.8f, 2.0f,
-                   (i == stateSel && stateRenaming) ? YELLOW : WHITE);
-        char when[64];
-        time_t t = (time_t)states[i].mtime;
-        struct tm *tm = localtime(&t);
-        if (tm && strftime(when, sizeof(when), "%Y-%m-%d %H:%M", tm) > 0) {
-            DrawTextEx(font, when, (Vector2){ r.x, r.y + r.height + 16 + fs }, fs * 0.65f, 2.0f, LIGHTGRAY);
-        }
-    }
-    char msgText[256];
-    Msg_Format(&stateMsg, msgText, sizeof(msgText));
-    if (msgText[0]) {
-        Vector2 m = MeasureTextEx(font, msgText, fs * 0.8f, 2.0f);
-        DrawTextEx(font, msgText, (Vector2){ (sw - m.x) * 0.5f, y + cardH + fs * 2.6f }, fs * 0.8f, 2.0f, YELLOW);
-    }
-    DrawInfoBarEx(font, stateRenaming ? T(S_SS_INFO_RENAME) : T(S_SS_INFO),
-                  1.0f, 0.0f);
-}
+/* Path consumed by the next LaunchGame / StartEmbeddedGame (NSO_STATE_LOAD). */
+static char stateLoadPath[1200];
 
 /* ---- Y Move: user game order, config/order-<system id>.txt ---- */
 static void Order_Path(int sys, char *dst, size_t n) {
@@ -3434,13 +3202,6 @@ static void Details_HandleInput(bool gpConfirm, bool gpBack) {
     int repo = Details_Repo(g);
     if (Repo_Offer(repo)) {   /* Install is the highlighted row while offered */
         if (confirm) Repo_Enqueue(repo, true);
-        return;
-    }
-    if (g->stateDir && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm)) {
-        detailsOpen = false;
-        detailsT = 0.0f;
-        States_Open(g);   /* B there returns to the grid */
-        stateConfirmLatch = true;   /* this press must not also Load */
     }
 }
 
@@ -3482,8 +3243,8 @@ static void Details_Draw(Font font) {
     float a = detailsT;   /* linear opacity; the card never moves or resizes */
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
-    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 }, body = { 85, 90, 91, 255 };
-    const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 }, rule = { 205, 211, 213, 255 };
+    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 };
+    const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 };
 
     DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.40f * a));
 
@@ -3540,28 +3301,15 @@ static void Details_Draw(Font font) {
     Details_Text(font, TextFormat("%s: %s", T(S_DET_SOURCE), source),
                  (Vector2){ tx, sh * 0.253f - ms * 0.5f }, ms, tw, Fade(meta, a));
 
-    /* Action rows where the video has its description; highlighted row
-     * gets the gradient glow, the others sit on a thin rule. */
-    bool install = Repo_Offer(repo);
-    struct { const char *label; bool sel; bool box; } rows[2];
-    int n = 0;
-    if (install) rows[n++] = (typeof(rows[0])){ T(S_DET_INSTALL), true, true };
-    if (g->stateDir) rows[n++] = (typeof(rows[0])){ T(S_DET_SAVES), !install, true };
-    else rows[n++] = (typeof(rows[0])){ T(S_DET_NO_SAVES), false, false };
-    float rs = sh * 0.033f, rh = sh * 0.085f, ry = sh * 0.32f;
-    float rx = tx - sw * 0.012f, rw = sw * 0.56f;
-    for (int i = 0; i < n; i++) {
+    /* Install is the only Details action row (highlighted while offered). */
+    if (Repo_Offer(repo)) {
+        float rs = sh * 0.033f, rh = sh * 0.085f, ry = sh * 0.32f;
+        float rx = tx - sw * 0.012f, rw = sw * 0.56f;
         Rectangle rr = { rx, ry, rw, rh };
-        if (rows[i].sel) {
-            DrawRectangleRounded(rr, 2.0f * rad / rh, 12, Fade((Color){ 250, 252, 252, 255 }, a));
-            Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
-        } else if (rows[i].box) {
-            DrawLineEx((Vector2){ rx, ry + rh }, (Vector2){ rx + rw, ry + rh }, fmaxf(1.0f, sh * 0.0014f),
-                       Fade(rule, a));
-        }
-        Details_Text(font, rows[i].label, (Vector2){ tx, ry + (rh - rs) * 0.5f }, rs, rw - sw * 0.03f,
-                     Fade(rows[i].sel ? ink : body, a));
-        ry += rh + sh * 0.012f;
+        DrawRectangleRounded(rr, 2.0f * rad / rh, 12, Fade((Color){ 250, 252, 252, 255 }, a));
+        Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
+        Details_Text(font, T(S_DET_INSTALL), (Vector2){ tx, ry + (rh - rs) * 0.5f }, rs, rw - sw * 0.03f,
+                     Fade(ink, a));
     }
 
     DrawInfoBarEx(font, T(S_DET_INFO), a, 0.0f);
@@ -3604,7 +3352,7 @@ NsoProc LaunchGame(const GameEntry *game) {
 
 /* Embedded card: module = dir/binary, game data (SMB: the ROM, SMW: the port's
  * directory) = config/nso.cfg <embedRomKey> (NSO-relative or absolute; never
- * copied). A state picked in the grid's Save States resumes in the module. */
+ * copied). */
 static bool StartEmbeddedGame(const GameEntry *game) {
     char cfg[2112], text[4096], rom[1024], module[2304], romPath[2048];
     size_t n = 0;
@@ -4134,10 +3882,10 @@ int main(void) {
         }
 
         /* A on an install notice builds that game (one press). Not while a
-         * game, the save states, Details, a scrape or a slide owns input. */
+         * game, Details, a scrape or a slide owns input. */
         bool noticeTookInput = false;
         if (Repo_NoticeActionable() && !screenSliding && !isLaunching && !waitingForGame
-            && !statesOpen && !detailsOpen && detailsT <= 0.0f && !scrapeBusy && !OverlayActive()
+            && !detailsOpen && detailsT <= 0.0f && !scrapeBusy && !OverlayActive()
             && currentState != LAUNCHING && currentState != SPLASH && currentState != EMBED
             && (IsKeyPressed(KEY_A) || gpConfirm)) {
             Repo_Enqueue(repoNotice.repo, true);
@@ -4172,21 +3920,6 @@ int main(void) {
 
                 case MOSAIC:
                     if (waitingForGame) break;
-
-                    if (statesOpen) {
-                        if (States_HandleInput(gpLeft, gpRight, gpConfirm, gpBack)) {
-                            if (GameIdx < gameCount && GameIsLaunchable(&ActiveGames()[GameIdx])) {
-                                Sfx_Play(SFX_CLICK);
-                                isLaunching = true;
-                                launchingGameIdx = GameIdx;
-                                currentState = LAUNCHING;
-                                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
-                            } else {
-                                stateLoadPath[0] = '\0'; /* never leak into another launch */
-                            }
-                        }
-                        break;
-                    }
 
                     if (SortPanel_Active()) {
                         SortPanel_Input(gpUp, gpDown, gpConfirm, gpBack);
@@ -4256,15 +3989,9 @@ int main(void) {
                         break;
                     }
 
-                    /* X / gamepad X: details panel (its Save States row opens the overlay). */
+                    /* X / gamepad X: details panel. */
                     if (onGame && (IsKeyPressed(KEY_X) || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X)))) {
                         Details_Open();
-                        break;
-                    }
-
-                    /* S: save states of the selected game (keyboard shortcut). */
-                    if (onGame && ActiveGames()[GameIdx].stateDir && IsKeyPressed(KEY_S)) {
-                        States_Open(&ActiveGames()[GameIdx]);
                         break;
                     }
 
@@ -4347,9 +4074,6 @@ int main(void) {
             Details_Draw(font);
             if (embedBackT >= 0.0f)
                 Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(1.0f), embedBackT);
-            if (statesOpen && GameIdx < ActiveGameCount()) {
-                States_Draw(font, ActiveGames()[GameIdx].title);
-            }
         }
 
         if (isLaunching) {   /* every game: the card grows into the 4:3 game frame */
@@ -4374,7 +4098,6 @@ int main(void) {
     Embed_Stop();
     CoverLoader_Stop();
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
-    States_Unload();
     UnloadAllBoxarts();
     UnloadFont(font);
     if (hintNerdLoaded) {
