@@ -36,7 +36,7 @@ typedef enum {
     /* in-system sidebar (grid B/O menu) and its Settings panel */
     S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS,
     S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
-    S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_CTRL_DISPLAY,
+    S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_SCANLINES, S_SET_CTRL_DISPLAY,
     /* sort panel (grid T) */ S_SORT_HEAD, S_SORT_CUSTOM, S_SORT_TITLE, S_SORT_RELEASE, S_SORT_PLAYED, S_SORT_TIME,
     /* "Select games" (Settings > Image scraping, gamesel_ui.h) */
     S_GS_SELECT, S_GS_START, S_GS_NO_ROMS, S_GS_HINT, S_GS_HINT_RUN, S_GS_INSTALLER, S_GS_INSTALLED,
@@ -167,6 +167,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_43] = "4:3",
         [S_SET_PIXEL] = "Pixel Perfect",
         [S_SET_CRT] = "CRT Filter",
+        [S_SET_SCANLINES] = "Scanlines",
         [S_SET_CTRL_DISPLAY] = "Control Display",
         [S_SORT_HEAD] = "Change order of titles",
         [S_SORT_CUSTOM] = "By custom order",
@@ -284,6 +285,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_43] = "4:3",
         [S_SET_PIXEL] = "Pixel Perfect",
         [S_SET_CRT] = "Filtro CRT",
+        [S_SET_SCANLINES] = "Scanlines",
         [S_SET_CTRL_DISPLAY] = "Exibição de controles",
         [S_SORT_HEAD] = "Alterar ordem dos títulos",
         [S_SORT_CUSTOM] = "Ordem personalizada",

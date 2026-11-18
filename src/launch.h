@@ -417,45 +417,49 @@ static inline int NsoSplitWords(char *buf, char **words, int max)
     return n;
 }
 
-/* Mednafen command line for GameEntry.mednafen. Mednafen's windowed mode is a
- * fixed-size window (scale x native size) that cannot be resized, so NSO's
- * Settings > Game Screen mode (screen: 0 = 4:3, 1 = pixel perfect, 2 = CRT; same
- * order as main.c SCREEN_MODE_KEYS) picks the scale for the host window
- * (host_w x host_h) and the menu launcher centres the window: pixel = largest
- * integer scale, square pixels; 4:3 = as large as fits at 4:3, bilinear; CRT =
- * the same plus Mednafen's "goat" CRT shader. One save-state file name lets
- * NSO address slots, then the ROM. argv[0..] point into buf; returns the word
- * count, 0 if it did not fit. */
-static inline int NsoMednafenArgv(const char *module, int screen, const char *rom,
-                                  int host_w, int host_h,
+/* Mednafen command line for GameEntry.mednafen (NES and SNES modules).
+ * Mednafen's windowed mode is a fixed-size window (scale x native size) that
+ * cannot be resized, so NSO's Settings > Game Screen toggles pick the scale
+ * for the host window (host_w x host_h) and the menu launcher centres it.
+ * Pixel Perfect on: largest integer scale, square pixels, videoip 0. Off: as
+ * large as fits (non-integer), same aspect, videoip 1. Scanlines on:
+ * -<module>.scanlines 90 (90% opacity; nes/snes.scanlines is an integer
+ * -100 through 100). Off: scanlines 0, so the setting cannot leak. The two
+ * are independent (both on is integer scale plus scanlines). Shader is
+ * always none. One save-state file name lets NSO address slots, then the
+ * ROM. argv[0..] point into buf; returns the word count, 0 if it did not fit. */
+static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines,
+                                  const char *rom, int host_w, int host_h,
                                   char *buf, size_t cap, char **argv, int max)
 {
     const float lines = module && strcmp(module, "snes") == 0 ? 239.0f : 224.0f;
     float xs, ys;
-    char opt[5][64], xscale[32], yscale[32];
+    char opt[6][64], xscale[32], yscale[32];
     int n = 0, i;
     size_t used = 0;
     if (!module || !rom || !buf || !argv || host_w < 256 || host_h < 224) return 0;
-    if (screen == 1) {
+    if (pixel) {
         int w = host_w / 256, h = (int)((float)host_h / lines);
         xs = ys = (float)(w < h ? w : h);
         if (xs < 1.0f) xs = ys = 1.0f;
-    } else {   /* 256x224 shown at 4:3: width/height scale = 7/6 */
-        ys = (float)host_h / lines;
-        xs = ys * 7.0f / 6.0f;
-        if (xs * 256.0f > (float)host_w) { xs = (float)host_w / 256.0f; ys = xs * 6.0f / 7.0f; }
+    } else {
+        float sx = (float)host_w / 256.0f, sy = (float)host_h / lines;
+        xs = ys = sx < sy ? sx : sy;
+        if (xs < 1.0f) xs = ys = 1.0f;
     }
     snprintf(opt[0], sizeof(opt[0]), "-%s.xscale", module);
     snprintf(opt[1], sizeof(opt[1]), "-%s.yscale", module);
     snprintf(opt[2], sizeof(opt[2]), "-%s.correct_aspect", module);
     snprintf(opt[3], sizeof(opt[3]), "-%s.shader", module);
     snprintf(opt[4], sizeof(opt[4]), "-%s.videoip", module);
+    snprintf(opt[5], sizeof(opt[5]), "-%s.scanlines", module);
     snprintf(xscale, sizeof(xscale), "%.4f", (double)xs);
     snprintf(yscale, sizeof(yscale), "%.4f", (double)ys);
     const char *words[] = { "-video.fs", "0", "-filesys.fname_state", "state.%X",
                             opt[0], xscale, opt[1], yscale, opt[2], "0",
-                            opt[3], screen == 2 ? "goat" : "none",
-                            opt[4], screen == 1 ? "0" : "1", rom };
+                            opt[3], "none",
+                            opt[4], pixel ? "0" : "1",
+                            opt[5], scanlines ? "90" : "0", rom };
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
         size_t len = strlen(words[i]) + 1;

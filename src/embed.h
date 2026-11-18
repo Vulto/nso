@@ -4,7 +4,7 @@
  * e.g. embed/smb/build/libsmbmod.so; API in embed/nsomod.h). NSO dlopen()s
  * it, calls one game frame per console frame from its own loop, uploads the
  * RGB framebuffer (NES 256x240, SNES 256x224, N64 640x480) to a texture drawn per
- * "<system>.screen", feeds the samples (mono or stereo) to a raylib
+ * the system's screen settings, feeds the samples (mono or stereo) to a raylib
  * AudioStream, and draws a pause menu on top (End or
  * the Guide button) laid out like Switch Online's: items right-aligned left
  * of a divider over the blurred, dimmed, frozen game frame. Load / Create
@@ -21,8 +21,10 @@
 #include "raylib.h"
 #include "../embed/nsomod.h"
 
-/* "<system>.screen" values, same order as main.c SCREEN_MODE_KEYS. */
+/* Legacy "<system>.screen" values for N64/GameCube embeds (not shown in Settings).
+ * NES/SNES use EmbedScreen (Pixel Perfect + Scanlines toggles) instead. */
 enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
+typedef struct { bool pixel; bool scanlines; bool fill43; } EmbedScreen;
 enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_QUIT,
        EMBED_MENU_COUNT };
 /* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime). */
@@ -33,7 +35,8 @@ enum { EMBED_EXTERNAL_NONE, EMBED_EXTERNAL_RESUME, EMBED_EXTERNAL_QUIT, EMBED_EX
 
 /* Where a fw x fh picture goes on a sw x sh screen.
  * Pixel Perfect: largest integer scale, square pixels (1080p: 4x, NES 1024x960).
- * 4:3 and CRT: full height at 4:3 (1080p: 1440x1080). Centred, whole pixels. */
+ * 4:3 and CRT: full height at 4:3 (1080p: 1440x1080). Centred, whole pixels.
+ * Used for N64/GameCube embeds. */
 static inline Rectangle Embed_DestRect(int mode, float sw, float sh, int fw, int fh)
 {
     float w, h;
@@ -48,6 +51,32 @@ static inline Rectangle Embed_DestRect(int mode, float sw, float sh, int fw, int
         if (w > sw) { w = sw; h = floorf(w * 3.0f / 4.0f); }
     }
     return (Rectangle){ floorf((sw - w) * 0.5f), floorf((sh - h) * 0.5f), w, h };
+}
+
+/* NES/SNES Game Screen: Pixel Perfect on = largest integer scale, square
+ * pixels; off = as large as fits (non-integer), same aspect. Centred, whole
+ * pixels. */
+static inline Rectangle Embed_DestRectFit(bool pixel, float sw, float sh, int fw, int fh)
+{
+    float w, h;
+    if (pixel) {
+        int s = (int)fminf(sw / (float)fw, sh / (float)fh);
+        if (s < 1) s = 1;
+        w = (float)(fw * s);
+        h = (float)(fh * s);
+    } else {
+        float s = fminf(sw / (float)fw, sh / (float)fh);
+        if (s < 1.0f) s = 1.0f;
+        w = floorf((float)fw * s);
+        h = floorf((float)fh * s);
+    }
+    return (Rectangle){ floorf((sw - w) * 0.5f), floorf((sh - h) * 0.5f), w, h };
+}
+
+static inline Rectangle Embed_DestForScreen(EmbedScreen sc, float sw, float sh, int fw, int fh)
+{
+    if (sc.fill43) return Embed_DestRect(EMBED_SCREEN_43, sw, sh, fw, fh);
+    return Embed_DestRectFit(sc.pixel, sw, sh, fw, fh);
 }
 
 /* NSO draws at 60 FPS, the console ran at fps (NES/SNES ~60.0988): frames to
@@ -106,10 +135,10 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
 /* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
-void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc);
+void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc);
 /* After Embed_Update returned false: the frozen frame at t (0..1) of the way into card. */
-void Embed_DrawBack(int screenMode, Rectangle card, float t);
-void Embed_DrawExternalResumeFrame(int screenMode);
+void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t);
+void Embed_DrawExternalResumeFrame(EmbedScreen screen);
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
@@ -150,10 +179,10 @@ bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool s
 void Embed_ExternalSetChildVisible(bool visible) { (void)visible; }
 int Embed_ExternalResult(void) { return EMBED_EXTERNAL_NONE; }
 bool Embed_Update(float dt) { (void)dt; return false; }
-void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
-{ (void)font; (void)screenMode; (void)text; (void)blur; (void)blurDirLoc; }
-void Embed_DrawBack(int screenMode, Rectangle card, float t) { (void)screenMode; (void)card; (void)t; }
-void Embed_DrawExternalResumeFrame(int screenMode) { (void)screenMode; }
+void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
+{ (void)font; (void)screen; (void)text; (void)blur; (void)blurDirLoc; }
+void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t) { (void)screen; (void)card; (void)t; }
+void Embed_DrawExternalResumeFrame(EmbedScreen screen) { (void)screen; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
 #else
@@ -1000,17 +1029,17 @@ static void Embed_DrawSlots(Font font, const char *const text[EMBED_TXT_COUNT], 
     }
 }
 
-void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
+void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
 {
     if (!embed.active) return;
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float k = sh / 1080.0f;
     float a = Embed_MenuOpacity();
     ClearBackground(BLACK);
-    Rectangle dst = Embed_DestRect(screenMode, sw, sh, embed.fbw, embed.fbh);
+    Rectangle dst = Embed_DestForScreen(screen, sw, sh, embed.fbw, embed.fbh);
     DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,
                    (Vector2){ 0 }, 0.0f, WHITE);
-    if (screenMode == EMBED_SCREEN_CRT) {   /* a dark band under every NES line */
+    if (screen.scanlines) {   /* a dark band under every NES line */
         float lh = dst.height / embed.fbh;
         for (int y = 0; y < embed.fbh; y++)
             DrawRectangleRec((Rectangle){ dst.x, dst.y + y * lh + lh * 0.6f, dst.width, fmaxf(1.0f, lh * 0.4f) },
@@ -1085,19 +1114,19 @@ void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUN
     }
 }
 
-void Embed_DrawBack(int screenMode, Rectangle card, float t)
+void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t)
 {
     if (!embed.active) return;
-    Rectangle a = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight(),
+    Rectangle a = Embed_DestForScreen(screen, (float)GetScreenWidth(), (float)GetScreenHeight(),
                                  embed.fbw, embed.fbh);
     float q = 1.0f - t;
     Embed_DrawZoom(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q);
 }
 
-void Embed_DrawExternalResumeFrame(int screenMode)
+void Embed_DrawExternalResumeFrame(EmbedScreen screen)
 {
     if (!embed.active || !embed.external) return;
-    Rectangle dst = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight(),
+    Rectangle dst = Embed_DestForScreen(screen, (float)GetScreenWidth(), (float)GetScreenHeight(),
                                    embed.fbw, embed.fbh);
     ClearBackground(BLACK);
     DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,

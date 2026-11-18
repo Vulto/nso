@@ -25,6 +25,16 @@ int main(void)
     CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_PIXEL, 1920, 1080, 256, 224), 448, 92, 1024, 896));
     CHECK(RectIs(Embed_DestRect(EMBED_SCREEN_43, 1920, 1080, 256, 224), 240, 0, 1440, 1080));
 
+    /* NES/SNES Fit: Pixel Perfect matches the integer path; off keeps aspect at a non-integer scale. */
+    CHECK(RectIs(Embed_DestRectFit(true, 1920, 1080, 256, 240), 448, 60, 1024, 960));
+    CHECK(RectIs(Embed_DestRectFit(false, 1920, 1080, 256, 240), 384, 0, 1152, 1080));
+    CHECK(RectIs(Embed_DestRectFit(false, 800, 1080, 256, 240), 0, 165, 800, 750));
+    CHECK(RectIs(Embed_DestRectFit(false, 100, 100, 256, 240), -78, -70, 256, 240));
+    CHECK(RectIs(Embed_DestRectFit(true, 1920, 1080, 256, 224), 448, 92, 1024, 896));
+    CHECK(RectIs(Embed_DestRectFit(false, 1920, 1080, 256, 224), 343, 0, 1234, 1080));
+    CHECK(RectIs(Embed_DestForScreen((EmbedScreen){ false, true, true }, 1920, 1080, 256, 240), 240, 0, 1440, 1080));
+    CHECK(RectIs(Embed_DestForScreen((EmbedScreen){ true, true, false }, 1920, 1080, 256, 240), 448, 60, 1024, 960));
+
     /* 60 FPS ticks give ~60.0988 game frames per second, never more than 2
      * per tick, and a stall is dropped instead of fast-forwarded. */
     double acc = 0.0;
