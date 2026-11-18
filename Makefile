@@ -1,9 +1,9 @@
 CC ?= cc
-CFLAGS := -std=c23 -Wall -Wextra -O2 -Isrc
-SRC := src/main.c
+CFLAGS := -std=c23 -Wall -Wextra -Isrc -Wextra -Werror
+SRC := src/main.c src/menu_launcher.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
-	src/embed.h src/sfx.h embed/nsomod.h src/sort.h src/sortpanel.h
+	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h
 HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h
 HDRS += src/status.h src/statuspanel.h
 
@@ -24,16 +24,26 @@ all: linux
 linux: nso
 
 nso: $(SRC) $(HDRS)
-	$(CC) $(CFLAGS) -o nso $(SRC) -lraylib -lm -ldl
+	$(CC) $(CFLAGS) -pthread -o nso $(SRC) -lraylib -lm -ldl -lX11 -lXtst
 
 # In-process modules: SMB Vanilla (repos/nes/smbvanilla), Mega Man 3
-# (repos/nes/mm3-recomp), smw (repos/snes/smw), sm64ex (repos/n64/sm64ex);
-# never edits them
+# (repos/nes/mm3-recomp), SMW, Star Fox SNES recomp, sm64ex, and AeroGauge
+# (repos/n64/aerogauge-recomp, which carries its NSO adapter).
 embed:
 	$(MAKE) -C embed/smb
 	$(MAKE) -C embed/mm3
 	$(MAKE) -C embed/smw
+	cmake -S repos/snes/starfox-recomp -B repos/snes/starfox-recomp/build -DCMAKE_BUILD_TYPE=Release
+	cmake --build repos/snes/starfox-recomp/build --target StarFoxNSOMod --parallel
 	$(MAKE) -C embed/sm64
+	cmake -S repos/n64/aerogauge-recomp -B repos/n64/aerogauge-recomp/build -DCMAKE_BUILD_TYPE=Release
+	cmake --build repos/n64/aerogauge-recomp/build --target aerogauge_nso --parallel
+
+# Build SoH from source so Zelda's NSO save-state bridge is present.
+soh-nso:
+	cmake -S repos/n64/soh-src -B repos/n64/soh-src/build-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+	cmake --build repos/n64/soh-src/build-cmake --target soh GenerateSohOtr --parallel 4
+	cmake -E copy_if_different repos/n64/soh-src/build-cmake/soh/soh.o2r repos/n64/soh/soh.o2r
 
 windows:
 	$(WINCC) $(CFLAGS) -o nso.exe $(SRC) -lraylib -lopengl32 -lgdi32 -lwinmm -lpthread
@@ -92,3 +102,5 @@ test: check nso
 
 clean:
 	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test status_test
+
+.PHONY: embed soh-nso windows test clean

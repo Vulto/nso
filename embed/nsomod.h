@@ -2,10 +2,12 @@
  * (src/embed.h dlopen()s embed/<game>/build/lib<game>mod.so and calls
  * nsomod_get_api()). Each module wraps one native port, untouched:
  * embed/smb (SMB Vanilla, NES), embed/mm3 (Megaman3NESRecomp, NES), embed/smw
- * (snesrev smw, SNES), embed/sm64 (sm64ex, N64).
- *  - no window, no device, no sleeping, no printing of its own;
- *  - the host calls frame() once per console frame at fps;
- *  - one instance, one thread. */
+ * (snesrev smw, SNES), embed/starfox (StarFoxSNESRecomp, SNES), embed/sm64
+ * (sm64ex, N64).
+ *  - no user-facing window or menu; NSO owns the controller overlay and pause UI;
+ *  - the host calls frame() at fps and audio_pull() on its audio path;
+ *  - API calls are serialized by NSO. A port may own worker threads internally,
+ *    but shutdown() must stop/join work that can access the module. */
 #ifndef NSOMOD_H
 #define NSOMOD_H
 
@@ -17,7 +19,7 @@
 extern "C" {
 #endif
 
-#define NSOMOD_API_VERSION 1
+#define NSOMOD_API_VERSION 2
 
 typedef struct NsomodInput {        /* SNES pad; NES games ignore x, y, l, r */
     bool up, down, left, right;
@@ -51,6 +53,10 @@ typedef struct NsomodApi {
     bool (*state_save)(const char *path);
     bool (*state_load)(const char *path);
     void (*shutdown)(void);
+    /* Preserve a live session at Game Selection. NSO does not call shutdown
+       on exit and invokes init again on re-entry; explicit Restart still
+       calls shutdown/init. */
+    bool keep_loaded;
 } NsomodApi;
 
 #define NSOMOD_ENTRY "nsomod_get_api"

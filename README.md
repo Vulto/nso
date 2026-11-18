@@ -66,6 +66,10 @@ make test
 In supported ports (the patched SNES games) F5 saves a state without leaving
 and F12 (or Home) saves and returns to NSO.
 
+On Linux/X11, child-process games also share NSO's in-game menu: press End or
+the controller Guide button to Continue, Reset Game, or return To Game
+Selection. Embedded games keep their module menu and suspend-point support.
+
 ### Settings screen (gear icon)
 
 On the main menu press Down to select the gear, then Enter/A. Left/Right
@@ -118,6 +122,24 @@ The launcher can clone, build, and launch the following source ports (see
 
 **GameCube:** Dusklight, melee-pc, Metroid Prime, Paper Cut
 
+**Zelda Ocarina of Time (Ship of Harkinian):** build the checked-out source with
+`make soh-nso`. In game, F5 saves to an NSO suspend point, F6 changes the slot,
+and F7 loads it. Press End or the controller Guide button to open the same NSO
+pause menu used by the embedded games, with Continue, Load/Create Suspend Point,
+Restart, and To Game Selection.
+Open the NSO Save States panel to resume a point on the next launch.
+SoH's snapshots keep SoH's own limitation: they can fail across scene and
+load-zone transitions.
+
+**Perfect Dark:** on Linux/X11, End or the controller Guide button opens NSO's
+shared pause menu. Continue resumes; Restart relaunches the game; To Game
+Selection exits to NSO. In-game suspend points are unavailable because the
+port does not provide a safe live-session snapshot.
+
+**Star Fox (SNES):** runs as an in-process module and uses NSO's pause menu
+and suspend-point slots. Set `snes.starfox_rom` in `config/nso.cfg` to your
+ROM; `make embed` builds the module alongside the other embedded games.
+
 ### Static recompilations
 
 Also built from source (never prebuilt releases), from the static
@@ -128,7 +150,7 @@ game's `repos/<system>/<game>-recomp/` folder under the name the gear screen
 shows (NES ones need no ROM to build and ask for it when the game starts).
 
 **SNES:** F-Zero, Go Go Ackman, Kirby Super Star, Super Mario All-Stars,
-Super Mario RPG, Mega Man X2, Mega Man X3, Star Fox
+Super Mario RPG, Mega Man X2, Mega Man X3
 
 **NES:** Dr. Mario, Faxanadu, The Legend of Zelda, Mega Man 3, Metroid
 

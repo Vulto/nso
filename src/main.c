@@ -8,6 +8,11 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <pthread.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
+#include "menu_launcher.h"
 
 #include "launch.h"
 #include "raylib.h"
@@ -114,11 +119,11 @@ typedef struct {
     int screenH;
     int originX;   /* left inset reserved for sidebar rail */
     int contentW;  /* usable width for game slots */
-    int slotW;     /* rounded cell size (nav / legacy int math) */
-    int slotH;
-    float cellW;   /* exact cell size: cols * cellW == contentW */
-    float cellH;
-    int slotsPerRow;
+    float totalH;
+    Rectangle slots[MAX_GAMES];
+    Rectangle items[MAX_GAMES];
+    int itemRows[MAX_GAMES];
+    int rowCount;
 } GridLayout;
 
 static float SidebarRailWidth(void) {
@@ -178,6 +183,48 @@ static void FitAspectInCell(float cellW, float cellH, float aspect,
     }
 }
 
+static float GridItemAspect(int index) {
+    if (index >= 0 && index < MAX_GAMES
+        && gameBoxarts[index].id != 0
+        && gameBoxarts[index].width > 0
+        && gameBoxarts[index].height > 0) {
+        return (float)gameBoxarts[index].width / (float)gameBoxarts[index].height;
+    }
+    return Nso_OrientAspect(GameOrientAt(index));
+}
+
+static float GridUSAAspect(void) {
+    int count = ActiveGameCount();
+    if (count > MAX_GAMES) count = MAX_GAMES;
+    for (int i = 0; i < count; i++) {
+        if (GameOrientAt(i) == SLOT_ORIENT_USA) return GridItemAspect(i);
+    }
+    return Nso_OrientAspect(SLOT_ORIENT_USA);
+}
+
+static float GridItemNativeHeight(int index) {
+    if (index >= 0 && index < MAX_GAMES
+        && gameBoxarts[index].id != 0
+        && gameBoxarts[index].height > 0) {
+        return (float)gameBoxarts[index].height;
+    }
+    return (float)ASSET_MAX_BOXART_H;
+}
+
+static float GridNativeHeight(void) {
+    int count = ActiveGameCount();
+    if (count > MAX_GAMES) count = MAX_GAMES;
+    float total = 0.0f;
+    int loaded = 0;
+    for (int i = 0; i < count; i++) {
+        if (gameBoxarts[i].id != 0 && gameBoxarts[i].height > 0) {
+            total += (float)gameBoxarts[i].height;
+            loaded++;
+        }
+    }
+    return loaded > 0 ? total / (float)loaded : (float)ASSET_MAX_BOXART_H;
+}
+
 GridLayout GetGridLayout(void) {
     GridLayout g;
     g.screenW = GetScreenWidth();
@@ -187,39 +234,104 @@ GridLayout GetGridLayout(void) {
     g.contentW = g.screenW - g.originX;
     if (g.contentW < 1) g.contentW = 1;
 
-    /* Grid cell aspect from platform global orient (games orient fits inside). */
-    float aspect = Nso_OrientAspect(ActivePlatformOrient());
-
-    float idealH = (float)g.screenH / MOSAIC_VISIBLE_ROWS;
-    float idealW = idealH * aspect;
-    if (idealW < 1.0f) idealW = 1.0f;
-
-    int cols = (int)((float)g.contentW / idealW);
-    if (cols < 1) cols = 1;
-
-    /* Fill content width exactly; preserve aspect. Bump column count if tiles
-     * grow so tall that fewer than ~3.1 rows would be visible. */
-    float cellW = 1.0f;
-    float cellH = 1.0f;
-    for (;;) {
-        cellW = (float)g.contentW / (float)cols;
-        cellH = cellW / aspect;
-        if (cellH < 1.0f) cellH = 1.0f;
-
-        float visibleRows = (float)g.screenH / cellH;
-        if (visibleRows + 0.001f >= MOSAIC_VISIBLE_ROWS || cols >= g.contentW) {
-            break;
-        }
-        cols++;
+    int count = ActiveGameCount();
+    if (count > MAX_GAMES) count = MAX_GAMES;
+    if (count <= 0) {
+        g.totalH = 0.0f;
+        g.rowCount = 0;
+        return g;
     }
 
-    g.slotsPerRow = cols;
-    g.cellW = cellW;
-    g.cellH = cellH;
-    g.slotW = (int)(cellW + 0.5f);
-    g.slotH = (int)(cellH + 0.5f);
-    if (g.slotW < 1) g.slotW = 1;
-    if (g.slotH < 1) g.slotH = 1;
+    /* USA uses two horizontal units and JAPAN one. The unit budget follows
+     * the screen width; each row's height is derived from its actual art. */
+    float usaAspect = GridUSAAspect();
+    float idealH = fminf((float)g.screenH / MOSAIC_VISIBLE_ROWS,
+                         GridNativeHeight());
+    float idealW = idealH * usaAspect;
+    if (idealW < 1.0f) idealW = 1.0f;
+    int usaCols = (int)((float)g.contentW / idealW);
+    if (usaCols < 1) usaCols = 1;
+    for (;;) {
+        float usaCellW = (float)g.contentW / (float)usaCols;
+        float usaCellH = usaCellW / usaAspect;
+        if (usaCellH < 1.0f) usaCellH = 1.0f;
+        float visibleRows = (float)g.screenH / usaCellH;
+        if (visibleRows + 0.001f >= MOSAIC_VISIBLE_ROWS || usaCols >= g.contentW) break;
+        usaCols++;
+    }
+
+    int rowCapacity = usaCols * 2;
+    float targetAspect = (float)g.contentW / idealH;
+    if (targetAspect < 0.01f) targetAspect = 0.01f;
+    float y = 0.0f;
+    int first = 0;
+    int row = 0;
+    while (first < count) {
+        int usedUnits = 0;
+        int end = first;
+        float rowAspect = 0.0f;
+        float bestDiff = INFINITY;
+        int bestEnd = first;
+        float bestAspect = 0.0f;
+        while (end < count) {
+            int units = GameOrientAt(end) == SLOT_ORIENT_JAPAN ? 1 : 2;
+            if (end > first && usedUnits + units > rowCapacity) break;
+            if (units > rowCapacity) break;
+            usedUnits += units;
+            rowAspect += GridItemAspect(end);
+            end++;
+
+            float diff = fabsf(rowAspect - targetAspect);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestEnd = end;
+                bestAspect = rowAspect;
+            } else if (rowAspect >= targetAspect) {
+                break;
+            }
+        }
+        if (bestEnd == first) {
+            bestEnd = first + 1;
+            bestAspect = GridItemAspect(first);
+        }
+
+        /* Keep a short final row at the target display height. It remains
+         * tightly packed; only the unused tail of the row is left empty. */
+        float remainingAspect = 0.0f;
+        int remainingUnits = 0;
+        for (int i = first; i < count; i++) {
+            remainingAspect += GridItemAspect(i);
+            remainingUnits += GameOrientAt(i) == SLOT_ORIENT_JAPAN ? 1 : 2;
+        }
+        bool shortFinalRow = remainingUnits <= rowCapacity
+            && remainingAspect < targetAspect;
+        if (shortFinalRow) {
+            bestEnd = count;
+            bestAspect = remainingAspect;
+        }
+
+        float maxNativeHeight = GridItemNativeHeight(first);
+        for (int i = first + 1; i < bestEnd; i++) {
+            float nativeHeight = GridItemNativeHeight(i);
+            if (nativeHeight < maxNativeHeight) maxNativeHeight = nativeHeight;
+        }
+        float rowH = shortFinalRow ? idealH : (float)g.contentW / bestAspect;
+        rowH = fminf(rowH, maxNativeHeight);
+        float x = (float)g.originX;
+        for (int i = first; i < bestEnd; i++) {
+            float itemW = GridItemAspect(i) * rowH;
+            Rectangle slot = { x, y, itemW, rowH };
+            g.slots[i] = slot;
+            g.itemRows[i] = row;
+            g.items[i] = slot;
+            x += itemW;
+        }
+        first = bestEnd;
+        y += rowH;
+        row++;
+    }
+    g.rowCount = row;
+    g.totalH = y;
     return g;
 }
 
@@ -228,50 +340,45 @@ float GridMaxScroll(const GridLayout *g, int itemCount) {
         return 0.0f;
     }
 
-    int totalRows = (itemCount + g->slotsPerRow - 1) / g->slotsPerRow;
-    /* Full rows that fit; partial 4th row peeks without counting as "full". */
-    int visibleRows = (int)((float)g->screenH / g->cellH);
-    if (visibleRows < 1) {
-        visibleRows = 1;
-    }
-
-    if (totalRows <= visibleRows) {
-        return 0.0f;
-    }
-
-    return (float)(totalRows - visibleRows) * g->cellH;
+    return fmaxf(0.0f, g->totalH - (float)g->screenH);
 }
 
-float GridTargetViewportY(const GridLayout *g, int selectedIndex, int itemCount) {
+float GridTargetViewportY(const GridLayout *g, int selectedIndex, int itemCount,
+                          float currentViewportY) {
     if (!g || itemCount <= 0) {
         return 0.0f;
     }
 
-    int totalRows = (itemCount + g->slotsPerRow - 1) / g->slotsPerRow;
-    int visibleRows = (int)((float)g->screenH / g->cellH);
+    if (selectedIndex < 0 || selectedIndex >= itemCount) return 0.0f;
+    Rectangle item = g->slots[selectedIndex];
+    float target = currentViewportY;
+    if (item.y < currentViewportY) target = item.y;
+    else if (item.y + item.height > currentViewportY + (float)g->screenH)
+        target = item.y + item.height - (float)g->screenH;
+    return fminf(GridMaxScroll(g, itemCount), fmaxf(0.0f, target));
+}
 
-    if (visibleRows < 1) {
-        visibleRows = 1;
+static int GridNavigate(const GridLayout *g, int idx, int count, OrderNav dir) {
+    if (!g || count <= 0 || idx < 0 || idx >= count) return idx;
+    int row = g->itemRows[idx];
+    if (dir == ORDER_NAV_LEFT) return idx > 0 && g->itemRows[idx - 1] == row ? idx - 1 : idx;
+    if (dir == ORDER_NAV_RIGHT) return idx + 1 < count ? idx + 1 : idx;
+    if (g->rowCount <= 1) return idx;
+    int targetRow = dir == ORDER_NAV_UP ? (row + g->rowCount - 1) % g->rowCount
+                                        : (row + 1) % g->rowCount;
+    float center = g->items[idx].x + g->items[idx].width * 0.5f;
+    int best = idx;
+    float bestDistance = INFINITY;
+    for (int i = 0; i < count; i++) {
+        if (g->itemRows[i] != targetRow) continue;
+        float candidate = g->items[i].x + g->items[i].width * 0.5f;
+        float distance = fabsf(candidate - center);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = i;
+        }
     }
-
-    if (totalRows <= visibleRows) {
-        return 0.0f;
-    }
-
-    int selectedRow = selectedIndex / g->slotsPerRow;
-    int topRow = 0;
-
-    if (selectedRow >= visibleRows) {
-        topRow = selectedRow - visibleRows + 1;
-    }
-
-    int maxTopRow = totalRows - visibleRows;
-
-    if (topRow > maxTopRow) {
-        topRow = maxTopRow;
-    }
-
-    return (float)topRow * g->cellH;
+    return best;
 }
 
 float GridClampViewportY(const GridLayout *g, float viewportY, int itemCount) {
@@ -606,6 +713,14 @@ static int launchingGameIdx = 0;
 
 static NsoProc gamePid;
 static bool waitingForGame = false;
+static bool externalRestartOnExit = false;
+#ifndef _WIN32
+static volatile sig_atomic_t externalMenuSignal = 0;
+static void NsoExternalMenuSignal(int signalNumber) {
+    (void)signalNumber;
+    externalMenuSignal = 1;
+}
+#endif
 
 static bool sidebarOpen = false;
 static float sidebarWidth = 0.0f;
@@ -653,7 +768,7 @@ static bool scrapeOnlyOn = false;
 
 /* Settings-icon spin / highlight morph from sidebar width progress (rail→open maps to 0→1). */
 static float gearSpinAngle = 0.0f;
-static const float GEAR_STRIP_ROUNDNESS = 0.35f;
+static const float SIDEBAR_HIGHLIGHT_ROUNDNESS = 0.26f;
 
 /* Blur backdrop RTs + optional shader (recreated on resize). */
 static RenderTexture2D mosaicRT = {0};
@@ -2267,22 +2382,25 @@ static void SysSettings_Save(int sys) {
 static int sidebarItem = SB_ITEM_SINGLE;
 static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
 static int sidebarSetRow = 0;
-/* One-shot icon animation per item: plays once when the item becomes
- * selected (dir +1) and once, shorter and softer, when it loses selection
- * (dir -1); then the icon rests. */
+/* One-shot icon animation per item; selection changes animate only the new
+ * item, while opening or confirming can replay the current item. */
 static double sbAnimStart[SB_ITEM_COUNT] = { -100.0, -100.0, -100.0, -100.0 };
 static int sbAnimDir[SB_ITEM_COUNT];
 static const float SB_ANIM_ENTER_SEC = 0.55f;
-static const float SB_ANIM_LEAVE_SEC = 0.30f;
+static float sbGearRestAngle = 0.0f;
+static float sbGearFromAngle = 0.0f;
 
 static void SidebarAnim_Play(int item, int dir) {
     sbAnimStart[item] = GetTime();
     sbAnimDir[item] = dir;
+    if (item == SB_ITEM_SETTINGS) {
+        sbGearFromAngle = sbGearRestAngle;
+        sbGearRestAngle += (float)dir * 80.0f;
+    }
 }
 
 static void Sidebar_Select(int item) {
     if (item == sidebarItem) return;
-    SidebarAnim_Play(sidebarItem, -1);
     sidebarItem = item;
     SidebarAnim_Play(item, +1);
     Sfx_Play(SFX_PLUCK);
@@ -2290,8 +2408,7 @@ static void Sidebar_Select(int item) {
 
 /* Progress 0..1 of the item's one-shot, or -1 when it is at rest. */
 static float SidebarAnim_Progress(int item) {
-    float dur = sbAnimDir[item] > 0 ? SB_ANIM_ENTER_SEC : SB_ANIM_LEAVE_SEC;
-    float p = (float)(GetTime() - sbAnimStart[item]) / dur;
+    float p = (float)(GetTime() - sbAnimStart[item]) / SB_ANIM_ENTER_SEC;
     return (p >= 0.0f && p < 1.0f) ? p : -1.0f;
 }
 
@@ -2409,9 +2526,11 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
             }
             IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f }, s * 0.55f, th * 0.85f, col, fill, true);
         } break;
-        default: {   /* gear turns one tooth (60 deg) once */
+        default: {   /* gear turns 80 degrees and holds its new position */
             float e = on ? 1.0f - (1.0f - p) * (1.0f - p) : 0.0f;  /* ease out */
-            IconGear(c, s, th, (float)dir * 60.0f * amp * e, col);
+            float angle = on ? sbGearFromAngle + (sbGearRestAngle - sbGearFromAngle) * e
+                             : sbGearRestAngle;
+            IconGear(c, s, th, angle, col);
         } break;
     }
 }
@@ -2778,7 +2897,7 @@ static void DrawSidebar(Color systemBg, Font font) {
             /* Morph like the old gear strip: rail = padded rounded square,
              * open = full-width sharp bar (pink while the panel has focus). */
             float pad = (railW - boxS) * 0.5f * (1.0f - t);
-            float roundness = GEAR_STRIP_ROUNDNESS * (1.0f - t);
+            float roundness = SIDEBAR_HIGHLIGHT_ROUNDNESS * (1.0f - t);
             Rectangle bar = { pad, y - boxS * 0.5f, boxS + (sidebarWidth - boxS) * t, boxS };
             if (t <= 0.0f) bar.width = boxS;
             Color bc = (sidebarPanelFocus && settled) ? pink : WHITE;
@@ -2836,13 +2955,10 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
 
     int origin_x = layout->originX;
     int content_w = layout->contentW;
-    int cols = layout->slotsPerRow;
     int screen_h = layout->screenH;
-    float cellW = layout->cellW;
-    float cellH = layout->cellH;
     float v_offset = viewportY;
 
-    if (cols < 1 || cellW <= 0.0f || cellH <= 0.0f) return;
+    if (layout->rowCount < 1) return;
 
     float mv = liftT;
     if (mv > 0.0f) DrawRectangle(0, 0, GetScreenWidth(), screen_h, Fade(MOVE_BG, mv));
@@ -2852,27 +2968,20 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
     for (int i = 0; i < numImgs; i++) {
         if (i == GameIdx) continue;
 
-        int col = i % cols;
-        int row = i / cols;
-        float x = (float)origin_x + (float)col * cellW;
-        float y = (float)row * cellH;
-
-        float fitW, fitH;
-        FitAspectInCell(cellW, cellH, Nso_OrientAspect(GameOrientAt(i)), &fitW, &fitH);
+        Rectangle item = layout->items[i];
+        Rectangle slot = layout->slots[i];
+        float x = item.x;
+        float y = item.y;
 
         float tile_scale = animScales[i] * othersScale;
         float draw_y = y - v_offset;
-        float draw_w = fitW * tile_scale;
-        float draw_h = fitH * tile_scale;
-        float ox = x + (cellW - draw_w) * 0.5f;
-        float oy = draw_y + (cellH - draw_h) * 0.5f;
+        float draw_w = item.width * tile_scale;
+        float draw_h = item.height * tile_scale;
+        float ox = x + (item.width - draw_w) * 0.5f;
+        float oy = draw_y + (item.height - draw_h) * 0.5f;
 
-        if (draw_y + cellH > 0.0f && draw_y < (float)screen_h) {
-            DrawRectangleLinesEx(
-                (Rectangle){ox - 0.5f, oy - 0.5f, draw_w + 1.0f, draw_h + 1.0f},
-                1.0f,
-                BLACK);
-
+        if (slot.y + slot.height - v_offset > 0.0f
+            && slot.y - v_offset < (float)screen_h) {
             DrawTexturePro(images[i],
                            (Rectangle){0, 0, (float)images[i].width, (float)images[i].height},
                            (Rectangle){ox, oy, draw_w, draw_h},
@@ -2886,10 +2995,9 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
     }
 
     if (GameIdx >= 0 && GameIdx < numImgs) {
-        int col = GameIdx % cols;
-        int row = GameIdx / cols;
-        float x = (float)origin_x + (float)col * cellW;
-        float y = (float)row * cellH;
+        Rectangle item = layout->items[GameIdx];
+        float x = item.x;
+        float y = item.y;
 
         /* Lifted cover glides between slots (also back on B) instead of
          * jumping; plain cursor moves outside move mode still jump. */
@@ -2912,16 +3020,12 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
             glideIdx = -1;
         }
 
-        float fitW, fitH;
-        FitAspectInCell(cellW, cellH, Nso_OrientAspect(GameOrientAt(GameIdx)),
-                        &fitW, &fitH);
-
         float scale = animScales[GameIdx];
-        float scaled_w = fitW * scale;
-        float scaled_h = fitH * scale;
+        float scaled_w = item.width * scale;
+        float scaled_h = item.height * scale;
         float draw_y = y - v_offset;
-        float draw_x = x + (cellW - scaled_w) * 0.5f;
-        float draw_y_scaled = draw_y + (cellH - scaled_h) * 0.5f;
+        float draw_x = x + (item.width - scaled_w) * 0.5f;
+        float draw_y_scaled = draw_y + (item.height - scaled_h) * 0.5f;
         ClampTileToContent(&draw_x, &draw_y_scaled, scaled_w, scaled_h,
                            origin_x, content_w, screen_h, MOSAIC_CURSOR_PAD);
 
@@ -3001,7 +3105,7 @@ static void CollapseSidebarToRail(void) {
 static void ExpandSidebarMenu(void) {
     sidebarExpandPending = false;
     sidebarPanelFocus = false;
-    SidebarAnim_Play(sidebarItem, +1);   /* the selected row plays once as it opens */
+    SidebarAnim_Play(sidebarItem, +1);   /* play the selected row as the menu opens */
     sidebarClosing = false;
     sidebarOpen = true;
 
@@ -3361,7 +3465,7 @@ static void Details_Draw(Font font) {
 
     Texture2D tex = gameBoxarts[GameIdx];
     float cvW, cvH;
-    FitAspectInCell(sw * 0.208f, sh * 0.30f, Nso_OrientAspect(GameOrientAt(GameIdx)), &cvW, &cvH);
+    FitAspectInCell(sw * 0.208f, sh * 0.30f, GridItemAspect(GameIdx), &cvW, &cvH);
     Rectangle cr = { card.x + (lw - cvW) * 0.5f, sh * 0.139f, cvW, cvH };
     if (tex.id) {
         DrawTexturePro(tex, (Rectangle){ 0, 0, (float)tex.width, (float)tex.height }, cr,
@@ -3413,6 +3517,102 @@ static void Details_Draw(Font font) {
 
 #include "statuspanel.h"
 
+static bool GameHasExternalMenu(const GameEntry *game)
+{
+#ifndef _WIN32
+    /* Module games already use embed.h directly; every child game can use the
+     * generic X11 bridge unless it has its own external-menu implementation. */
+    return game && (game->externalMenu || !game->embedRomKey);
+#else
+    (void)game;
+    return false;
+#endif
+}
+
+static bool GameUsesMenuLauncher(const GameEntry *game)
+{
+#ifndef _WIN32
+    return game && !game->externalMenu && !game->embedRomKey;
+#else
+    (void)game;
+    return false;
+#endif
+}
+
+static bool GameMenuDirectory(char *out, size_t cap, const GameEntry *game)
+{
+    char relative[256];
+    int n;
+    if (!game || !out || cap == 0) return false;
+    if (game->stateDir && game->stateDir[0]) {
+        snprintf(relative, sizeof(relative), "%s", game->stateDir);
+    } else {
+        const char *system = ActiveSystem() && ActiveSystem()->platform
+            ? ActiveSystem()->platform->id : "games";
+        snprintf(relative, sizeof(relative), "saves/menu/%s/%d", system, launchingGameIdx);
+    }
+    n = snprintf(out, cap, "%s", GetDataPath(relative));
+    return n > 0 && (size_t)n < cap;
+}
+
+static void EnsureDirectoryTree(const char *path)
+{
+    char current[1200];
+    size_t len = strlen(path);
+    if (!len || len >= sizeof(current)) return;
+    memcpy(current, path, len + 1);
+    for (char *p = current + 1; *p; ++p) {
+        if (*p == '/') {
+            *p = '\0';
+            if (!DirectoryExists(current)) MakeDirectory(current);
+            *p = '/';
+        }
+    }
+    if (!DirectoryExists(current)) MakeDirectory(current);
+}
+
+/* GameEntry.env: set each NAME=VALUE for the next spawn ('@' = NSO-relative
+ * path), then put NSO's own values back once the child has its copy. */
+#define GAME_ENV_MAX 8
+static char gameEnvSpec[512];
+static char *gameEnvWords[GAME_ENV_MAX];
+static char *gameEnvSaved[GAME_ENV_MAX];
+static int gameEnvCount = 0;
+
+static void GameEnvSet(const GameEntry *game)
+{
+    gameEnvCount = 0;
+    if (!game->env || !game->env[0]) return;
+    snprintf(gameEnvSpec, sizeof(gameEnvSpec), "%s", game->env);
+    gameEnvCount = NsoSplitWords(gameEnvSpec, gameEnvWords, GAME_ENV_MAX);
+    for (int i = 0; i < gameEnvCount; i++) {
+        char *eq = strchr(gameEnvWords[i], '=');
+        const char *old;
+        if (!eq) { gameEnvSaved[i] = NULL; continue; }
+        *eq = '\0';
+        old = getenv(gameEnvWords[i]);
+        gameEnvSaved[i] = old ? strdup(old) : NULL;
+        if (eq[1] == '@') {
+            char path[1200];
+            snprintf(path, sizeof(path), "%s", GetDataPath(eq + 2));
+            if (!DirectoryExists(path)) MakeDirectory(path);
+            NsoSetEnv(gameEnvWords[i], path);
+        } else {
+            NsoSetEnv(gameEnvWords[i], eq + 1);
+        }
+    }
+}
+
+static void GameEnvRestore(void)
+{
+    for (int i = 0; i < gameEnvCount; i++) {
+        NsoSetEnv(gameEnvWords[i], gameEnvSaved[i]);
+        free(gameEnvSaved[i]);
+        gameEnvSaved[i] = NULL;
+    }
+    gameEnvCount = 0;
+}
+
 NsoProc LaunchGame(const GameEntry *game) {
     if (!GameIsLaunchable(game)) {
         fprintf(stderr, "LaunchGame: game is display-only or invalid\n");
@@ -3422,6 +3622,19 @@ NsoProc LaunchGame(const GameEntry *game) {
     /* Games with save states get NSO_STATE_DIR (where to write states) and,
      * when resuming, NSO_STATE_LOAD (state to load at start). */
     bool withStates = game->stateDir && game->stateDir[0] != '\0';
+    bool withMenu = GameHasExternalMenu(game);
+    char menuDir[1200] = { 0 };
+    if (withMenu && GameMenuDirectory(menuDir, sizeof(menuDir), game)) {
+        EnsureDirectoryTree(menuDir);
+#if !defined(_WIN32)
+        char windowPath[1240], actionPath[1240];
+        snprintf(windowPath, sizeof(windowPath), "%s/nso-menu-window", menuDir);
+        snprintf(actionPath, sizeof(actionPath), "%s/nso-menu-action", menuDir);
+        remove(windowPath);
+        remove(actionPath);
+#endif
+        NsoSetEnv("NSO_MENU_DIR", menuDir);
+    }
     if (withStates) {
         char stateDir[1100];
         snprintf(stateDir, sizeof(stateDir), "%s", GetDataPath(game->stateDir));
@@ -3431,6 +3644,19 @@ NsoProc LaunchGame(const GameEntry *game) {
         NsoSetEnv("NSO_STATE_DIR", stateDir);
         NsoSetEnv("NSO_STATE_LOAD", stateLoadPath[0] ? stateLoadPath : NULL);
     }
+#if !defined(_WIN32)
+    if (withMenu) {
+        char parentPid[32];
+        snprintf(parentPid, sizeof(parentPid), "%ld", (long)getpid());
+        NsoSetEnv("NSO_MENU_PARENT_PID", parentPid);
+        void *nativeWindow = GetWindowHandle();
+        if (nativeWindow) {
+            char parentWindow[32];
+            snprintf(parentWindow, sizeof(parentWindow), "%lu", *(unsigned long *)nativeWindow);
+            NsoSetEnv("NSO_PARENT_WINDOW_ID", parentWindow);
+        }
+    }
+#endif
     stateLoadPath[0] = '\0';
 
     /* Copy out of GetDataPath's static buffer before any further use. */
@@ -3445,13 +3671,49 @@ NsoProc LaunchGame(const GameEntry *game) {
         if (!DirectoryExists(appDir)) MakeDirectory(appDir);
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
-    NsoProc proc = NsoSpawn(gameDir, game->binary);
+    GameEnvSet(game);
+    /* argv: [nso --menu-launcher] binary [GameEntry.args...] */
+    char argsBuf[512];
+    char *argv[24];
+    int argc = 0;
+    snprintf(argsBuf, sizeof(argsBuf), "%s", game->args ? game->args : "");
+    NsoProc proc;
+#if !defined(_WIN32)
+    char self[4096];
+    ssize_t selfLen = 0;
+    if (GameUsesMenuLauncher(game)) {
+        selfLen = readlink("/proc/self/exe", self, sizeof(self) - 1);
+        if (selfLen > 0) {
+            self[selfLen] = '\0';
+            argv[argc++] = self;
+            argv[argc++] = (char *)"--menu-launcher";
+            NsoSetEnv("NSO_START_KEYS", game->startKeys);
+        } else {
+            perror("readlink /proc/self/exe failed");
+        }
+    }
+#endif
+    argv[argc++] = (char *)game->binary;
+    argc += NsoSplitWords(argsBuf, argv + argc, (int)(sizeof(argv) / sizeof(argv[0])) - argc - 1);
+    argv[argc] = NULL;
+    proc = NsoSpawnArgv(gameDir, argv);
+#if !defined(_WIN32)
+    if (selfLen > 0) NsoSetEnv("NSO_START_KEYS", NULL);
+#endif
+    GameEnvRestore();
 
     if (game->appDir) NsoSetEnv("APP_FOLDER_PATH", NULL);
     if (withStates) {
         NsoSetEnv("NSO_STATE_DIR", NULL);
         NsoSetEnv("NSO_STATE_LOAD", NULL);
     }
+#if !defined(_WIN32)
+    if (withMenu) {
+        NsoSetEnv("NSO_MENU_PARENT_PID", NULL);
+        NsoSetEnv("NSO_PARENT_WINDOW_ID", NULL);
+        NsoSetEnv("NSO_MENU_DIR", NULL);
+    }
+#endif
     return proc;
 }
 
@@ -3564,14 +3826,13 @@ static void UpdateSplash(float dt) {
 /* Selected cover at scale, as DrawSlotImages places it. */
 static Rectangle SelectedCardRect(float scale) {
     GridLayout g = GetGridLayout();
-    if (g.slotsPerRow < 1) return (Rectangle){ 0 };
-    float fitW, fitH;
-    FitAspectInCell(g.cellW, g.cellH, Nso_OrientAspect(GameOrientAt(GameIdx)), &fitW, &fitH);
-    float x = (float)g.originX + (float)(GameIdx % g.slotsPerRow) * g.cellW;
-    float y = (float)(GameIdx / g.slotsPerRow) * g.cellH - viewportY;
-    float w = fitW * scale, h = fitH * scale;
-    x += (g.cellW - w) * 0.5f;
-    y += (g.cellH - h) * 0.5f;
+    if (g.rowCount < 1 || GameIdx < 0 || GameIdx >= ActiveGameCount()) return (Rectangle){ 0 };
+    Rectangle item = g.items[GameIdx];
+    float x = item.x;
+    float y = item.y - viewportY;
+    float w = item.width * scale, h = item.height * scale;
+    x += (item.width - w) * 0.5f;
+    y += (item.height - h) * 0.5f;
     ClampTileToContent(&x, &y, w, h, g.originX, g.contentW, g.screenH, MOSAIC_CURSOR_PAD);
     return (Rectangle){ x, y, w, h };
 }
@@ -3709,7 +3970,17 @@ static void RequestLeaveMosaic(void) {
 }
 
 // ====================== MAIN PROGRAM ======================
-int main(void) {
+int main(int argc, char **argv) {
+#ifndef _WIN32
+    if (argc >= 3 && strcmp(argv[1], "--menu-launcher") == 0) {
+        return NsoMenuLauncherMain(argc - 2, argv + 2);
+    }
+    struct sigaction externalMenuAction = { 0 };
+    externalMenuAction.sa_handler = NsoExternalMenuSignal;
+    sigemptyset(&externalMenuAction.sa_mask);
+    sigaction(SIGUSR1, &externalMenuAction, NULL);
+#endif
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");
     SetGamepadMappings(NSO_PAD_MAPPINGS);
     SetWindowTitle("NSO");
@@ -3780,6 +4051,7 @@ int main(void) {
 
     InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
 
+    bool externalResumeAfterFrame = false;
     while (!WindowShouldClose()) {
 
         bool gp = IsGamepadAvailable(0);
@@ -3814,7 +4086,7 @@ int main(void) {
         bool gpDown = gpReady && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || eLY > 0);
         bool gpConfirm = gpReady && Nso_PadConfirmPressed(0);
         /* Select opens the full sidebar; keep Back as B only (not Select). */
-        bool gpSelect = gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
+//        bool gpSelect = gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
         bool gpBack = gpReady && Nso_PadBackPressed(0);
 
         padCUp = gpReady && eRY < 0;
@@ -3847,13 +4119,69 @@ int main(void) {
 
         if (waitingForGame && NsoProcOk(gamePid)) {
             if (NsoSpawnExited(&gamePid, NULL)) {
-                waitingForGame = false;
-                RestoreWindow();
-                currentState = MOSAIC;
-                /* Same enter intro as systems → mosaic (delay, grow, then info fade). */
-                BeginMosaicEnterIntro();
+                if (currentState == EMBED) Embed_Stop();
+                if (externalRestartOnExit && launchingGameIdx < ActiveGameCount()) {
+                    externalRestartOnExit = false;
+                    const GameEntry *restartGame = &ActiveGames()[launchingGameIdx];
+                    gamePid = LaunchGame(restartGame);
+                    if (NsoProcOk(gamePid)) {
+                        waitingForGame = true;
+                        currentState = MOSAIC;
+                        if (!GameHasExternalMenu(restartGame)) MinimizeWindow();
+                    } else {
+                        waitingForGame = false;
+                        RestoreWindow();
+                        currentState = MOSAIC;
+                        BeginMosaicEnterIntro();
+                    }
+                } else {
+                    externalRestartOnExit = false;
+                    waitingForGame = false;
+                    RestoreWindow();
+                    currentState = MOSAIC;
+                    /* Same enter intro as systems → mosaic (delay, grow, then info fade). */
+                    if (embedBackT < 0.0f) BeginMosaicEnterIntro();
+                }
             }
         }
+#ifndef _WIN32
+        if (externalMenuSignal) {
+            externalMenuSignal = 0;
+            if (waitingForGame && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
+                const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
+                if (GameHasExternalMenu(runningGame)) {
+                    char menuDir[1200];
+                    char windowPath[1240];
+                    unsigned long childWindow = 0;
+                    if (GameMenuDirectory(menuDir, sizeof(menuDir), runningGame)) {
+                        snprintf(windowPath, sizeof(windowPath), "%s/nso-menu-window", menuDir);
+                        FILE *windowFile = fopen(windowPath, "rb");
+                        if (windowFile) {
+                            if (fscanf(windowFile, "%lu", &childWindow) != 1) childWindow = 0;
+                            fclose(windowFile);
+                        }
+                        if (Embed_StartExternal(menuDir, childWindow, runningGame->externalSlots)) {
+                            currentState = EMBED;
+                            RestoreWindow();
+                        }
+                    }
+                }
+            }
+        }
+#endif
+
+#ifndef _WIN32
+        /* Generic child launchers own the game process and translate the
+         * Guide request into a pause plus a signal back to the host. */
+        if (waitingForGame && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
+            const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
+            bool menuPressed = IsKeyPressed(KEY_END)
+                || (IsGamepadAvailable(0)
+                    && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+            if (GameUsesMenuLauncher(runningGame) && menuPressed && NsoProcOk(gamePid))
+                kill(gamePid, SIGUSR1);
+        }
+#endif
 
         int gameCount = ActiveGameCount();
         float dt = GetFrameTime();
@@ -3925,13 +4253,10 @@ int main(void) {
                 GameIdx = gameCount - 1;
             }
 
-            targetViewportY = GridTargetViewportY(&grid, GameIdx, gameCount);
+            targetViewportY = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
             targetViewportY = GridClampViewportY(&grid, targetViewportY, gameCount);
             /* Keep preloaded art; only ensure visible set is present */
             ManageVisibleBoxarts(gameCount, viewportY);
-        } else if (currentState != MOSAIC && !layoutLocked) {
-            targetViewportY = 0;
-            viewportY = 0;
         }
 
         viewportY += (targetViewportY - viewportY) * 0.18f;
@@ -3955,7 +4280,7 @@ int main(void) {
                 } else if (NsoProcOk(gamePid = LaunchGame(launched))) {
                     waitingForGame = true;
                     isLaunching = false;
-                    MinimizeWindow();
+                    if (!GameHasExternalMenu(launched)) MinimizeWindow();
                 } else {
                     isLaunching = false;
                     currentState = MOSAIC;
@@ -3970,10 +4295,35 @@ int main(void) {
             if (embedBackT >= 1.0f) { Embed_Stop(); embedBackT = -1.0f; }
         }
         if (currentState == EMBED && !Embed_Update(dt)) {
-            embedBackT = 0.0f;   /* Embed_Stop once the frame reached its card */
-            currentState = MOSAIC;
-            BeginMosaicEnterIntro();
-            overlayConsumedConfirm = true;   /* the Quit press must not relaunch */
+            const int externalResult = Embed_ExternalResult();
+            if (externalResult != EMBED_EXTERNAL_NONE) {
+                if (externalResult == EMBED_EXTERNAL_QUIT) {
+                    /* Keep the captured frame alive for the shared card-return
+                     * animation while the child processes its quit command. */
+                    Embed_ExternalSetChildVisible(false);
+                    currentState = MOSAIC;
+                    embedBackT = 0.0f;
+                    BeginMosaicEnterIntro();
+                } else {
+                    if (externalResult == EMBED_EXTERNAL_RESUME) {
+                        /* Present one clean host frame before raising the SDL
+                         * child; swapping the GL window after XMapRaised can
+                         * expose a stale parent buffer for a frame. */
+                        externalResumeAfterFrame = true;
+                    } else if (externalResult == EMBED_EXTERNAL_RESTART) {
+                        Embed_ExternalSetChildVisible(false);
+                        externalRestartOnExit = true;
+                    }
+                    if (!externalResumeAfterFrame) Embed_Stop();
+                    currentState = MOSAIC;
+                }
+                overlayConsumedConfirm = true;
+            } else {
+                embedBackT = 0.0f;   /* Embed_Stop once the frame reached its card */
+                currentState = MOSAIC;
+                BeginMosaicEnterIntro();
+                overlayConsumedConfirm = true;   /* the Quit press must not relaunch */
+            }
         }
 
         if (currentState == MOSAIC && SidebarMenuSettled()) {
@@ -4086,7 +4436,7 @@ int main(void) {
                         }
                         int dir = GridNavPressed(gpLeft, gpRight, gpUp, gpDown);
                         if (dir >= 0) {
-                            int next = Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir);
+                            int next = GridNavigate(&grid, GameIdx, gameCount, (OrderNav)dir);
                             if (next != GameIdx) Sfx_Play(SFX_NAVIGATE);
                             Grid_MoveLifted(next);
                         }
@@ -4122,7 +4472,7 @@ int main(void) {
                     if (gameCount > 0) {
                         int dir = GridNavPressed(gpLeft, gpRight, gpUp, gpDown);
                         if (dir >= 0) {
-                            int next = Order_GridNav(GameIdx, gameCount, grid.slotsPerRow, (OrderNav)dir);
+                            int next = GridNavigate(&grid, GameIdx, gameCount, (OrderNav)dir);
                             if (next != GameIdx) Sfx_Play(SFX_NAVIGATE);
                             GameIdx = next;
                         }
@@ -4189,7 +4539,8 @@ int main(void) {
             }
         } else if (currentState == EMBED) {
             const char *const text[EMBED_TXT_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_LOAD), T(S_EMB_SAVE),
-                T(S_EMB_RESTART), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE) };
+                T(S_EMB_RESTART), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE),
+                T(S_EMB_LOADING) };
             if (Embed_MenuOpacity() > 0.0f) EnsureBlurResources(GetScreenWidth(), GetScreenHeight());
             Embed_Draw(font, sysSettings[currentSystem].screen, text, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
             DrawInfoBarEx(font, T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
@@ -4197,7 +4548,9 @@ int main(void) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);
             Status_Draw(font);
-            if (embedBackT >= 0.0f)
+            if (externalResumeAfterFrame)
+                Embed_DrawExternalResumeFrame(sysSettings[currentSystem].screen);
+            else if (embedBackT >= 0.0f)
                 Embed_DrawBack(sysSettings[currentSystem].screen, SelectedCardRect(1.0f), embedBackT);
         }
 
@@ -4210,7 +4563,7 @@ int main(void) {
                            p, 1.0f - (1.0f - t) * (1.0f - t), 0.35f * p + 0.65f * u * u * (3.0f - 2.0f * u));
         }
 
-        if (waitingForGame) {
+        if (waitingForGame && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
         } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
@@ -4218,6 +4571,12 @@ int main(void) {
         }
 
         EndDrawing();
+
+        if (externalResumeAfterFrame) {
+            Embed_ExternalSetChildVisible(true);
+            Embed_Stop();
+            externalResumeAfterFrame = false;
+        }
     }
 
     Embed_Stop();

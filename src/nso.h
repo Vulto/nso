@@ -40,6 +40,15 @@ typedef struct {
                                 or port dir) from this config key */
     const char *appDir;   /* NULL = none; else NSO-relative dir passed as APP_FOLDER_PATH
                              (N64Recomp ports keep config, saves and the stored ROM there) */
+    const char *args;     /* NULL = none; extra command-line arguments, space-separated
+                             (e.g. a port's own "boot straight into the game" switch) */
+    const char *env;      /* NULL = none; space-separated NAME=VALUE pairs set for the
+                             child only; a VALUE starting with '@' is an NSO-relative path */
+    const char *startKeys; /* NULL = none; X11 keysyms the menu launcher types once into
+                              the game window, for ports whose launcher screen has no
+                              option to start the game by itself */
+    bool externalMenu; /* child supplies its own external-menu bridge */
+    bool externalSlots; /* child implements the external save/load slot protocol */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

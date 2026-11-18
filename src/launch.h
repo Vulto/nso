@@ -400,4 +400,21 @@ static inline int NsoPrepareRomImport(const char *gameDir, const char *binary,
     return (rc < 0) ? NSO_ROM_IMPORT_FAIL : NSO_ROM_IMPORT_RAN;
 }
 
+/* Split a space-separated list (GameEntry.args / .env) into words, in place:
+ * buf is a writable copy of the list. Fills words[0..max-1] and returns how
+ * many it found (extra words are ignored). */
+static inline int NsoSplitWords(char *buf, char **words, int max)
+{
+    int n = 0;
+    char *p = buf;
+    while (p && *p && n < max) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        words[n++] = p;
+        while (*p && *p != ' ') p++;
+        if (*p) *p++ = '\0';
+    }
+    return n;
+}
+
 #endif /* NSO_LAUNCH_H */

@@ -54,6 +54,7 @@ static const StatusDir status_dirs[] = {
     { "repos/n64/paperboat/build/ninja-debug", ST_NATIVE },
     { "repos/n64/ProjectMidas-v1.0.2b-linux", ST_NATIVE },
     { "embed/bk", ST_RECOMP },
+    { "repos/n64/bk", ST_RECOMP },
     { "repos/gamecube/dusk", ST_NATIVE },
     { "repos/gamecube/melee-pc", ST_NATIVE },
     { "repos/gamecube/metroidprime", ST_NATIVE },

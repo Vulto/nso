@@ -1,6 +1,9 @@
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+#endif
 #include "launch.h"
 
 #include <stdio.h>
@@ -108,6 +111,20 @@ int main(void)
     }
 
     EXPECT(NsoPrepareRomImport(game, "./fakeimport", NULL) == NSO_ROM_IMPORT_SKIP);
+
+    {   /* GameEntry.args / .env word lists */
+        char buf[64] = "  --boot  --window 640x480 ";
+        char *w[4];
+        EXPECT(NsoSplitWords(buf, w, 4) == 3);
+        EXPECT(strcmp(w[0], "--boot") == 0);
+        EXPECT(strcmp(w[1], "--window") == 0);
+        EXPECT(strcmp(w[2], "640x480") == 0);
+        char one[16] = "A=1 B=2 C=3";
+        EXPECT(NsoSplitWords(one, w, 2) == 2);
+        EXPECT(strcmp(w[1], "B=2") == 0);
+        char none[4] = "   ";
+        EXPECT(NsoSplitWords(none, w, 4) == 0);
+    }
 
     if (fails) {
         fprintf(stderr, "launch_test: %d failure(s)\n", fails);

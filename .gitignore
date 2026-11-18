@@ -21,6 +21,7 @@ screenshot*.png
 # Compiled binaries (root only; do not ignore *_test.c sources)
 /nso
 /nso.exe
+/nso-menu-launcher
 /*_test
 
 # Windows build output

@@ -26,8 +26,10 @@ enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
 enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_QUIT,
        EMBED_MENU_COUNT };
 /* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime). */
-enum { EMBED_TXT_SLOT = EMBED_MENU_COUNT, EMBED_TXT_NODATA, EMBED_TXT_DATE, EMBED_TXT_COUNT };
+enum { EMBED_TXT_SLOT = EMBED_MENU_COUNT, EMBED_TXT_NODATA, EMBED_TXT_DATE,
+       EMBED_TXT_LOADING, EMBED_TXT_COUNT };
 #define EMBED_SLOTS 4
+enum { EMBED_EXTERNAL_NONE, EMBED_EXTERNAL_RESUME, EMBED_EXTERNAL_QUIT, EMBED_EXTERNAL_RESTART };
 
 /* Where a fw x fh picture goes on a sw x sh screen.
  * Pixel Perfect: largest integer scale, square pixels (1080p: 4x, NES 1024x960).
@@ -107,9 +109,14 @@ bool Embed_Update(float dt);
 void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc);
 /* After Embed_Update returned false: the frozen frame at t (0..1) of the way into card. */
 void Embed_DrawBack(int screenMode, Rectangle card, float t);
+void Embed_DrawExternalResumeFrame(int screenMode);
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
+bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots);
+void Embed_ExternalSetChildVisible(bool visible);
+/* Result is 0 when no child-menu result is pending, otherwise resume/quit/restart. */
+int Embed_ExternalResult(void);
 
 #endif /* NSO_EMBED_H */
 
@@ -138,14 +145,27 @@ void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, floa
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
 bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad)
 { (void)modulePath; (void)dataPath; (void)stateDir; (void)stateLoad; return false; }
+bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots)
+{ (void)stateDir; (void)childWindow; (void)stateSlots; return false; }
+void Embed_ExternalSetChildVisible(bool visible) { (void)visible; }
+int Embed_ExternalResult(void) { return EMBED_EXTERNAL_NONE; }
 bool Embed_Update(float dt) { (void)dt; return false; }
 void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
 { (void)font; (void)screenMode; (void)text; (void)blur; (void)blurDirLoc; }
 void Embed_DrawBack(int screenMode, Rectangle card, float t) { (void)screenMode; (void)card; (void)t; }
+void Embed_DrawExternalResumeFrame(int screenMode) { (void)screenMode; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
 #else
 #include <dlfcn.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#if defined(__linux__)
+#define Font X11Font
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#undef Font
+#endif
 
 #define EMBED_SAMPLE_RATE 48000
 #define EMBED_AUDIO_CHUNK 1024
@@ -157,7 +177,20 @@ void Embed_Stop(void) {}
 
 static struct {
     bool active;
+    bool external;
+    bool externalResumeRequested;
+    bool externalRestartRequested;
+    bool externalLoadRequested;
+    bool externalSlots;
+    int externalResult;
+    float externalScanTimer;
+    unsigned long externalWindow;
+    unsigned long externalParent;
+    void *externalDisplay;
+    unsigned char *externalFrameRGB;
     void *so;
+    bool reusedRetainedSo;
+    bool moduleInitialized;
     const NsomodApi *api;
     NsomodConfig cfg;
     char data[2048], module[2048];
@@ -181,14 +214,49 @@ static struct {
     int slotSel, loadSlot;                 /* loadSlot: 1..EMBED_SLOTS once the menu exit ends */
     float blackT;                          /* Embed_LoadBlack countdown */
     long slotTime[EMBED_SLOTS];            /* .sav mtime, 0 = empty */
+    char statusText[96];
+    float statusTimer;
     Texture2D thumb[EMBED_SLOTS];
+    pthread_t loadThread;
+    bool loadThreadStarted;
+    _Atomic bool loadDone, loadOk;
+    char loadPath[1200];
 } embed;
+static void *embedRetainedSo;
+static char embedRetainedPath[2048];
+
+static bool Embed_BeginLoad(const char *path);
+static void Embed_SetMenu(bool open);
+
+static void Embed_DiscardRetainedModule(void)
+{
+    if (!embedRetainedSo) return;
+    nsomod_get_api_fn get = (nsomod_get_api_fn)dlsym(embedRetainedSo, NSOMOD_ENTRY);
+    const NsomodApi *api = get ? get() : NULL;
+    if (api && api->keep_loaded && api->shutdown) api->shutdown();
+    dlclose(embedRetainedSo);
+    embedRetainedSo = NULL;
+    embedRetainedPath[0] = '\0';
+}
+
+static void Embed_SetStatus(const char *message)
+{
+    snprintf(embed.statusText, sizeof(embed.statusText), "%s", message ? message : "");
+    embed.statusTimer = 2.5f;
+}
 
 bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad)
 {
     if (embed.active) return false;
     memset(&embed, 0, sizeof(embed));
-    embed.so = dlopen(modulePath, RTLD_NOW | RTLD_LOCAL);
+    if (embedRetainedSo && strcmp(embedRetainedPath, modulePath) != 0)
+        Embed_DiscardRetainedModule();
+    if (embedRetainedSo && strcmp(embedRetainedPath, modulePath) == 0) {
+        embed.so = embedRetainedSo;
+        embed.reusedRetainedSo = true;
+    } else {
+        embed.so = dlopen(modulePath, RTLD_NOW | RTLD_LOCAL);
+    }
     if (!embed.so) return false;
     nsomod_get_api_fn get = (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY);
     embed.api = get ? get() : NULL;
@@ -197,11 +265,18 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
     embed.cfg = (NsomodConfig){ .data_path = embed.data, .sample_rate = EMBED_SAMPLE_RATE };
     if (!embed.api || embed.api->version != NSOMOD_API_VERSION || embed.api->fb_w <= 0 || embed.api->fb_h <= 0
         || (embed.api->channels != 1 && embed.api->channels != 2) || !embed.api->init(&embed.cfg)) {
-        dlclose(embed.so);
+        if (embed.so && !embed.reusedRetainedSo) dlclose(embed.so);
         memset(&embed, 0, sizeof(embed));
         return false;
     }
-    if (stateLoad && stateLoad[0] && embed.api->state_load) embed.api->state_load(stateLoad);
+    embed.moduleInitialized = true;
+    if (stateLoad && stateLoad[0] && !embed.api->state_load) {
+        embed.api->shutdown();
+        embed.moduleInitialized = false;
+        if (!embed.reusedRetainedSo) dlclose(embed.so);
+        memset(&embed, 0, sizeof(embed));
+        return false;
+    }
     embed.fbw = embed.api->fb_w;
     embed.fbh = embed.api->fb_h;
     embed.channels = embed.api->channels;
@@ -227,21 +302,50 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
         embed.audio = IsAudioStreamValid(embed.stream);
         if (embed.audio) PlayAudioStream(embed.stream);
     }
+    atomic_init(&embed.loadDone, false);
+    atomic_init(&embed.loadOk, false);
 
     SetExitKey(KEY_NULL);   /* ESC must not close NSO mid-game */
     embed.active = true;
+    if (stateLoad && stateLoad[0] && !Embed_BeginLoad(stateLoad)) {
+        Embed_Stop();
+        return false;
+    }
     return true;
 }
 
 void Embed_Stop(void)
 {
     if (!embed.active) return;
-    if (embed.so) { embed.api->shutdown(); dlclose(embed.so); }
+    if (embed.loadThreadStarted) {
+        pthread_join(embed.loadThread, NULL);
+        embed.loadThreadStarted = false;
+    }
+    if (embed.so) {
+        if (embed.api && embed.api->keep_loaded) {
+            /* A persistent module may keep its live session while NSO is at
+               Game Selection. Re-entry calls init() to resume that session. */
+            embedRetainedSo = embed.so;
+            snprintf(embedRetainedPath, sizeof(embedRetainedPath), "%s", embed.module);
+        } else {
+            if (embed.moduleInitialized && embed.api) embed.api->shutdown();
+            embed.moduleInitialized = false;
+            dlclose(embed.so);
+            if (embed.so == embedRetainedSo) {
+                embedRetainedSo = NULL;
+                embedRetainedPath[0] = '\0';
+            }
+        }
+    }
     if (embed.audio) UnloadAudioStream(embed.stream);
     if (embed.ownAudioDevice) CloseAudioDevice();
     UnloadTexture(embed.tex);
     if (embed.blurA.id) { UnloadRenderTexture(embed.blurA); UnloadRenderTexture(embed.blurB); }
     for (int i = 0; i < EMBED_SLOTS; i++) if (embed.thumb[i].id) UnloadTexture(embed.thumb[i]);
+#if defined(__linux__)
+    if (embed.externalDisplay) XCloseDisplay((Display *)embed.externalDisplay);
+#endif
+    free(embed.externalFrameRGB);
     SetExitKey(KEY_ESCAPE);
     memset(&embed, 0, sizeof(embed));
 }
@@ -305,18 +409,40 @@ static void Embed_PumpAudio(void)
  * (smw cannot reset itself without a ROM). */
 static bool Embed_Reload(void)
 {
+    if (!embed.so || !embed.api || !embed.moduleInitialized) return false;
+    if (embed.api->keep_loaded) {
+        embed.api->shutdown();
+        embed.moduleInitialized = false;
+        if (!embed.api->init(&embed.cfg)) return false;
+        embed.moduleInitialized = true;
+        embed.pendN = 0;
+        embed.last = NULL;
+        return true;
+    }
     embed.api->shutdown();
-    dlclose(embed.so);
+    embed.moduleInitialized = false;
+    void *oldSo = embed.so;
+    embed.so = NULL;
+    embed.api = NULL;
+    if (oldSo == embedRetainedSo) {
+        embedRetainedSo = NULL;
+        embedRetainedPath[0] = '\0';
+    }
+    dlclose(oldSo);
+
     embed.so = dlopen(embed.module, RTLD_NOW | RTLD_LOCAL);
     nsomod_get_api_fn get = embed.so ? (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY) : NULL;
     const NsomodApi *api = get ? get() : NULL;
     if (!api || api->version != NSOMOD_API_VERSION || api->fb_w != embed.fbw
-        || api->fb_h != embed.fbh || api->channels != embed.channels || !api->init(&embed.cfg)) {
+        || api->fb_h != embed.fbh || api->channels != embed.channels || !api->init) {
         if (embed.so) dlclose(embed.so);
         embed.so = NULL;
+        embed.api = NULL;
         return false;
     }
     embed.api = api;
+    if (!api->init(&embed.cfg)) return false;
+    embed.moduleInitialized = true;
     embed.pendN = 0;
     embed.last = NULL;   /* the old copy's buffer */
     return true;
@@ -328,6 +454,189 @@ static bool Embed_SlotPath(char *out, size_t n, int i, const char *ext)
     char name[32];
     snprintf(name, sizeof(name), "Suspend point %d", i + 1);
     return Ss_Path(out, n, embed.stateDir, name, ext) == 0;
+}
+
+static bool Embed_ExternalCommand(const char *action, int slot)
+{
+    char path[1200], tmp[1240];
+    int n = snprintf(path, sizeof(path), "%s/nso-menu-action", embed.stateDir);
+    if (!embed.external || n < 0 || (size_t)n >= sizeof(path)) return false;
+    n = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp)) return false;
+    FILE *f = fopen(tmp, "wb");
+    if (!f) return false;
+    bool ok = fprintf(f, "%s %d\n", action, slot) > 0;
+    if (fclose(f) != 0) ok = false;
+    if (ok && rename(tmp, path) != 0) ok = false;
+    if (!ok) remove(tmp);
+    return ok;
+}
+
+static unsigned char Embed_XChannel(unsigned long pixel, unsigned long mask)
+{
+    if (!mask) return 0;
+    unsigned int shift = (unsigned int)__builtin_ctzl(mask);
+    unsigned long maxValue = mask >> shift;
+    return (unsigned char)((((pixel & mask) >> shift) * 255UL + maxValue / 2) / maxValue);
+}
+
+static int embedXErrorCode;
+static int Embed_XErrorTrap(Display *display, XErrorEvent *error)
+{
+    (void)display;
+    embedXErrorCode = error->error_code;
+    return 0;
+}
+
+bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots)
+{
+    if (embed.active || !stateDir || !stateDir[0] || !childWindow) return false;
+    memset(&embed, 0, sizeof(embed));
+    embed.external = true;
+    embed.externalSlots = stateSlots;
+    embed.active = true;
+    embed.fps = 60.0;
+    snprintf(embed.stateDir, sizeof(embed.stateDir), "%s", stateDir);
+#if defined(__linux__)
+    Display *display = XOpenDisplay(NULL);
+    XWindowAttributes attrs = {};
+    Window root = 0, parent = 0;
+    Window *children = NULL;
+    unsigned int childCount = 0;
+    void *hostHandle = GetWindowHandle();
+    unsigned long expectedParent = hostHandle ? *(unsigned long *)hostHandle : 0;
+    XErrorHandler previousHandler = display ? XSetErrorHandler(Embed_XErrorTrap) : NULL;
+    embedXErrorCode = 0;
+    Status attrsOk = display ? XGetWindowAttributes(display, (Window)childWindow, &attrs) : 0;
+    Status treeOk = attrsOk ? XQueryTree(display, (Window)childWindow, &root, &parent, &children, &childCount) : 0;
+    if (display) XSync(display, False);
+    int queryError = embedXErrorCode;
+    if (display) XSetErrorHandler(previousHandler);
+    if (!display || !attrsOk || !treeOk || queryError != 0
+        || attrs.map_state != IsViewable || attrs.width <= 0 || attrs.height <= 0
+        || attrs.width > 8192 || attrs.height > 8192 || parent == root
+        || expectedParent == 0 || (unsigned long)parent != expectedParent) {
+        if (children) XFree(children);
+        if (display) XCloseDisplay(display);
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+    if (children) XFree(children);
+    previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XImage *shot = XGetImage(display, (Window)childWindow, 0, 0, (unsigned int)attrs.width,
+                             (unsigned int)attrs.height, AllPlanes, ZPixmap);
+    XSync(display, False);
+    int captureError = embedXErrorCode;
+    XSetErrorHandler(previousHandler);
+    if (!shot || captureError != 0) {
+        if (shot) XDestroyImage(shot);
+        XCloseDisplay(display);
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+    embed.fbw = attrs.width;
+    embed.fbh = attrs.height;
+    Image img = GenImageColor(embed.fbw, embed.fbh, BLACK);
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+    if (!img.data) {
+        XDestroyImage(shot);
+        XCloseDisplay(display);
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+    unsigned char *pixels = (unsigned char *)img.data;
+    for (int y = 0; y < embed.fbh; y++) {
+        for (int x = 0; x < embed.fbw; x++) {
+            unsigned long px = XGetPixel(shot, x, y);
+            size_t i = ((size_t)y * (size_t)embed.fbw + (size_t)x) * 3;
+            pixels[i + 0] = Embed_XChannel(px, shot->red_mask);
+            pixels[i + 1] = Embed_XChannel(px, shot->green_mask);
+            pixels[i + 2] = Embed_XChannel(px, shot->blue_mask);
+        }
+    }
+    XDestroyImage(shot);
+    size_t frameBytes = (size_t)embed.fbw * (size_t)embed.fbh * 3;
+    embed.externalFrameRGB = (unsigned char *)malloc(frameBytes);
+    if (!embed.externalFrameRGB) {
+        UnloadImage(img);
+        XCloseDisplay(display);
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+    memcpy(embed.externalFrameRGB, img.data, frameBytes);
+    embed.externalWindow = childWindow;
+    embed.externalParent = (unsigned long)parent;
+    embed.externalDisplay = display;
+    SetExitKey(KEY_NULL);
+    embed.tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(embed.tex, TEXTURE_FILTER_POINT);
+    if (!embed.tex.id) {
+        XCloseDisplay(display);
+        embed.externalDisplay = NULL;
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+    previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XUnmapWindow(display, (Window)childWindow);
+    XSetInputFocus(display, parent, RevertToParent, CurrentTime);
+    XSync(display, False);
+    int hideError = embedXErrorCode;
+    XSetErrorHandler(previousHandler);
+    if (hideError != 0) {
+        previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+        embedXErrorCode = 0;
+        XMapRaised(display, (Window)childWindow);
+        XSetInputFocus(display, (Window)childWindow, RevertToParent, CurrentTime);
+        XSync(display, False);
+        XSetErrorHandler(previousHandler);
+        Embed_ExternalCommand("resume", 0);
+        Embed_Stop();
+        return false;
+    }
+#else
+    Embed_ExternalCommand("resume", 0);
+    Embed_Stop();
+    return false;
+#endif
+    Embed_SetMenu(true);
+    embed.menuT = 0.0f;
+    return true;
+}
+
+int Embed_ExternalResult(void)
+{
+    return embed.externalResult;
+}
+
+void Embed_ExternalSetChildVisible(bool visible)
+{
+#if defined(__linux__)
+    Display *display = (Display *)embed.externalDisplay;
+    if (!embed.external || !display || !embed.externalWindow) return;
+    XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    if (visible) {
+        XMapRaised(display, (Window)embed.externalWindow);
+        XSetInputFocus(display, (Window)embed.externalWindow, RevertToParent, CurrentTime);
+    } else {
+        XUnmapWindow(display, (Window)embed.externalWindow);
+        if (embed.externalParent) XSetInputFocus(display, (Window)embed.externalParent, RevertToParent, CurrentTime);
+    }
+    XSync(display, False);
+    int errorCode = embedXErrorCode;
+    XSetErrorHandler(previousHandler);
+    if (errorCode != 0) fprintf(stderr, "NSO: X11 error %d while changing hosted game visibility\n", errorCode);
+#else
+    (void)visible;
+#endif
 }
 
 static void Embed_ScanSlot(int i)
@@ -348,28 +657,100 @@ static void Embed_ScanSlot(int i)
  * never clobbers the slot; the thumbnail is the frozen frame. */
 static void Embed_SaveSlot(int i)
 {
+    if (embed.external) {
+        char bmp[1200];
+        if (!embed.externalFrameRGB || !Embed_SlotPath(bmp, sizeof(bmp), i, ".bmp")) return;
+        Image frame = { .data = embed.externalFrameRGB, .width = embed.fbw, .height = embed.fbh,
+                        .mipmaps = 1, .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
+        if (!ExportImage(frame, bmp)) return;
+        if (!Embed_ExternalCommand("save", i)) { remove(bmp); return; }
+        Embed_ScanSlot(i);
+        return;
+    }
     char sav[1200], tmp[1200], bmp[1200];
+    if (!embed.moduleInitialized || !embed.api || !embed.api->state_save) {
+        Embed_SetStatus("Game cannot create suspend points");
+        return;
+    }
     if (!Embed_SlotPath(sav, sizeof(sav), i, ".sav") || !Embed_SlotPath(tmp, sizeof(tmp), i, ".sav.tmp")
-        || !Embed_SlotPath(bmp, sizeof(bmp), i, ".bmp")) return;
-    if (!embed.api->state_save(tmp) || rename(tmp, sav) != 0) { remove(tmp); return; }
+        || !Embed_SlotPath(bmp, sizeof(bmp), i, ".bmp")) {
+        Embed_SetStatus("Could not create suspend point path");
+        return;
+    }
+    if (!embed.api->state_save(tmp) || rename(tmp, sav) != 0) {
+        remove(tmp);
+        Embed_SetStatus("Suspend point save failed");
+        return;
+    }
     if (embed.last) {
         Image img = { .data = (void *)embed.last, .width = embed.fbw, .height = embed.fbh,
                       .mipmaps = 1, .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
         ExportImage(img, bmp);
     }
     Embed_ScanSlot(i);
+    Embed_SetStatus("Suspend point saved");
 }
 
 /* After the menu exit: load the slot, show its first frame under the black. */
+static void *Embed_LoadWorker(void *unused)
+{
+    (void)unused;
+    bool ok = embed.api->state_load(embed.loadPath);
+    atomic_store_explicit(&embed.loadOk, ok, memory_order_relaxed);
+    atomic_store_explicit(&embed.loadDone, true, memory_order_release);
+    return NULL;
+}
+
+static bool Embed_BeginLoad(const char *path)
+{
+    if (!path || !path[0] || !embed.moduleInitialized || !embed.api || !embed.api->state_load
+        || embed.loadThreadStarted) return false;
+    snprintf(embed.loadPath, sizeof(embed.loadPath), "%s", path);
+    atomic_store_explicit(&embed.loadDone, false, memory_order_relaxed);
+    atomic_store_explicit(&embed.loadOk, false, memory_order_relaxed);
+    if (embed.audio) PauseAudioStream(embed.stream);
+    if (pthread_create(&embed.loadThread, NULL, Embed_LoadWorker, NULL) != 0) {
+        if (embed.audio) ResumeAudioStream(embed.stream);
+        return false;
+    }
+    embed.loadThreadStarted = true;
+    return true;
+}
+
 static void Embed_LoadSlot(int i)
 {
+    if (embed.external) {
+        Embed_ExternalCommand("load", i);
+        embed.externalResumeRequested = true;
+        embed.externalLoadRequested = true;
+        return;
+    }
     char sav[1200];
-    if (!Embed_SlotPath(sav, sizeof(sav), i, ".sav") || !embed.api->state_load(sav)) return;
+    if (!Embed_SlotPath(sav, sizeof(sav), i, ".sav") || !Embed_BeginLoad(sav)) return;
+}
+
+static bool Embed_FinishLoad(void)
+{
+    if (!embed.loadThreadStarted) return false;
+    if (!atomic_load_explicit(&embed.loadDone, memory_order_acquire)) return false;
+    pthread_join(embed.loadThread, NULL);
+    embed.loadThreadStarted = false;
+    if (!atomic_load_explicit(&embed.loadOk, memory_order_relaxed)) {
+        if (embed.audio) ResumeAudioStream(embed.stream);
+        Embed_SetStatus("Suspend point load failed");
+        return true;
+    }
+    if (!embed.moduleInitialized || !embed.api) {
+        Embed_SetStatus("Game module stopped during load");
+        return true;
+    }
     NsomodInput none = { 0 };
     NsomodFrame f = embed.api->frame(&none);
     UpdateTexture(embed.tex, f.rgb24);
     embed.last = f.rgb24;
     embed.blackT = EMBED_LOAD_SEC;
+    Embed_SetStatus("Suspend point loaded");
+    return true;
 }
 
 /* Opening pauses game and audio; both resume once the exit animation ends. */
@@ -380,9 +761,24 @@ static void Embed_SetMenu(bool open)
     embed.menuSel = EMBED_MENU_CONTINUE;
     embed.slotsFocus = false;
     embed.blurReady = false;
-    for (int i = 0; i < EMBED_SLOTS; i++) Embed_ScanSlot(i);
+    if (!embed.external || embed.externalSlots)
+        for (int i = 0; i < EMBED_SLOTS; i++) Embed_ScanSlot(i);
     if (embed.audio) PauseAudioStream(embed.stream);
     Sfx_Play(SFX_AUDIO);
+}
+
+static bool Embed_MenuItemAvailable(int item)
+{
+    return !embed.external || embed.externalSlots
+        || (item != EMBED_MENU_LOAD && item != EMBED_MENU_SAVE);
+}
+
+static int Embed_NextMenuItem(int item, int direction)
+{
+    do {
+        item = (item + direction + EMBED_MENU_COUNT) % EMBED_MENU_COUNT;
+    } while (!Embed_MenuItemAvailable(item));
+    return item;
 }
 
 /* Slot list (Load / Create focused right of the divider). */
@@ -412,17 +808,52 @@ static void Embed_SlotsInput(bool gp)
 bool Embed_Update(float dt)
 {
     if (!embed.active) return false;
+    if (embed.statusTimer > 0.0f) embed.statusTimer = fmaxf(0.0f, embed.statusTimer - dt);
+    if (embed.external) {
+        embed.externalScanTimer += dt;
+        if (embed.externalScanTimer >= 0.35f) {
+            embed.externalScanTimer = 0.0f;
+            if (!embed.external || embed.externalSlots)
+                for (int i = 0; i < EMBED_SLOTS; i++) Embed_ScanSlot(i);
+        }
+    }
+    if (embed.loadThreadStarted) {
+        Embed_FinishLoad();
+        if (embed.loadThreadStarted) { embed.acc = 0.0; return true; }
+    }
     bool gp = IsGamepadAvailable(0);
-    bool toggle = IsKeyPressed(KEY_END) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+    /* Hosted child games open this menu themselves. The opening End/Guide
+     * press may also reach Raylib after focus moves to NSO; don't consume that
+     * same press as an immediate close. Continue/Back remain the close actions. */
+    bool toggle = !embed.external
+        && (IsKeyPressed(KEY_END) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE)));
 
     float st = dt / EMBED_MENU_ANIM_SEC;
     if (embed.menuOpen) embed.menuT = fminf(1.0f, embed.menuT + st);
     else if (embed.menuT > 0.0f) {   /* exit animation: still paused */
         embed.menuT = fmaxf(0.0f, embed.menuT - st);
         embed.acc = 0.0;
-        if (embed.menuT <= 0.0f && embed.quitting) return false;
         if (embed.menuT <= 0.0f && embed.loadSlot) { Embed_LoadSlot(embed.loadSlot - 1); embed.loadSlot = 0; }
-        if (embed.menuT <= 0.0f && embed.audio && embed.blackT <= 0.0f) ResumeAudioStream(embed.stream);
+        if (embed.menuT <= 0.0f && embed.external) {
+            if (embed.quitting) {
+                Embed_ExternalCommand("quit", 0);
+                embed.externalResult = EMBED_EXTERNAL_QUIT;
+                return false;
+            }
+            if (embed.externalRestartRequested) {
+                Embed_ExternalCommand("restart", 0);
+                embed.externalResult = EMBED_EXTERNAL_RESTART;
+                return false;
+            }
+            if (embed.externalResumeRequested) {
+                if (!embed.externalLoadRequested) Embed_ExternalCommand("resume", 0);
+                embed.externalResult = EMBED_EXTERNAL_RESUME;
+                return false;
+            }
+        }
+        if (embed.menuT <= 0.0f && embed.quitting) return false;
+        if (embed.menuT <= 0.0f && embed.audio && embed.blackT <= 0.0f && !embed.loadThreadStarted)
+            ResumeAudioStream(embed.stream);
         return true;
     }
     if (embed.blackT > 0.0f) {   /* suspend point loading: still paused */
@@ -434,33 +865,45 @@ bool Embed_Update(float dt)
 
     if (embed.menuOpen) {   /* paused: no game frames */
         embed.acc = 0.0;
-        if (toggle) { Embed_SetMenu(false); return true; }
+        if (toggle) {
+            if (embed.external) embed.externalResumeRequested = true;
+            Embed_SetMenu(false);
+            return true;
+        }
         if (embed.slotsFocus) { Embed_SlotsInput(gp); return true; }
-        if (IsKeyPressed(KEY_B) || Nso_PadBackPressed(0)) { Embed_SetMenu(false); return true; }
+        if (IsKeyPressed(KEY_B) || Nso_PadBackPressed(0)) {
+            if (embed.external) embed.externalResumeRequested = true;
+            Embed_SetMenu(false);
+            return true;
+        }
         if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) {
-            embed.menuSel = (embed.menuSel + EMBED_MENU_COUNT - 1) % EMBED_MENU_COUNT;
+            embed.menuSel = Embed_NextMenuItem(embed.menuSel, -1);
             Sfx_Play(SFX_NAVIGATE);
         }
         if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) {
-            embed.menuSel = (embed.menuSel + 1) % EMBED_MENU_COUNT;
+            embed.menuSel = Embed_NextMenuItem(embed.menuSel, 1);
             Sfx_Play(SFX_NAVIGATE);
         }
         bool slots = embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE;
         bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT));
         bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0);
-        if (slots && (ok || right)) {
+        if (slots && Embed_MenuItemAvailable(embed.menuSel) && (ok || right)) {
             if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; Sfx_Play(SFX_CLICK); }
         } else if (ok) {
             Sfx_Play(SFX_CLICK);
             if (embed.menuSel == EMBED_MENU_QUIT) embed.quitting = true;
             if (embed.menuSel == EMBED_MENU_RESTART) {
-                if (!Embed_Reload()) return false;
+                if (embed.external) embed.externalRestartRequested = true;
+                else if (!Embed_Reload()) return false;
             }
+            if (embed.external && embed.menuSel == EMBED_MENU_CONTINUE) embed.externalResumeRequested = true;
             Embed_SetMenu(false);
         }
         return true;
     }
     if (toggle) { Embed_SetMenu(true); return true; }
+
+    if (embed.external) return true;
 
     int n = Embed_PaceFrames(&embed.acc, dt, embed.fps);
     if (n > 0) {
@@ -561,6 +1004,7 @@ void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUN
 {
     if (!embed.active) return;
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float k = sh / 1080.0f;
     float a = Embed_MenuOpacity();
     ClearBackground(BLACK);
     Rectangle dst = Embed_DestRect(screenMode, sw, sh, embed.fbw, embed.fbh);
@@ -573,7 +1017,30 @@ void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUN
                              Fade(BLACK, 0.35f * (1.0f - a)));
     }
     if (embed.blackT > 0.0f) DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, Embed_LoadBlack(embed.blackT)));
-    if (a <= 0.0f) return;
+    if (embed.loadThreadStarted) {
+        const float fs = fmaxf(24.0f, sh * 0.045f);
+        Vector2 size = MeasureTextEx(font, text[EMBED_TXT_LOADING], fs, 0.0f);
+        DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.55f));
+        DrawTextEx(font, text[EMBED_TXT_LOADING], (Vector2){ (sw - size.x) * 0.5f,
+                   (sh - size.y) * 0.5f }, fs, 0.0f, WHITE);
+        if (embed.statusTimer > 0.0f) {
+            Vector2 status = MeasureTextEx(font, embed.statusText, fs * 0.55f, 0.0f);
+            DrawTextEx(font, embed.statusText, (Vector2){ (sw - status.x) * 0.5f, sh - 70.0f * k },
+                       fs * 0.55f, 0.0f, WHITE);
+        }
+        return;
+    }
+    if (a <= 0.0f) {
+        if (embed.statusTimer > 0.0f) {
+            float fs = fmaxf(20.0f, sh * 0.026f);
+            Vector2 status = MeasureTextEx(font, embed.statusText, fs, 0.0f);
+            DrawRectangle((int)((sw - status.x) * 0.5f - 20.0f), (int)(sh - 88.0f * k),
+                          (int)(status.x + 40.0f), (int)(52.0f * k), Fade(BLACK, 0.72f));
+            DrawTextEx(font, embed.statusText, (Vector2){ (sw - status.x) * 0.5f, sh - 76.0f * k },
+                       fs, 0.0f, WHITE);
+        }
+        return;
+    }
 
     /* Backdrop: blurred frame cross-faded in, then dimmed to ~65%. */
     if (!embed.blurReady) Embed_BuildBlur(blur, blurDirLoc);
@@ -587,12 +1054,14 @@ void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUN
     /* Switch Online layout at 1080p, scaled by height; slides in 28 px from the left.
      * Text at 1.5x the 36 px atlas: the reference's widths with this font. */
     const Color panel = { 240, 245, 244, 255 }, selInk = { 246, 80, 59, 255 };
-    float k = sh / 1080.0f, ox = roundf(-28.0f * k * (1.0f - a));
+    float ox = roundf(-28.0f * k * (1.0f - a));
     float fs = roundf(54.0f * k), divX = roundf(978.0f * k) + ox;
     DrawRectangleRec((Rectangle){ divX, roundf(40.0f * k), fmaxf(1.0f, roundf(2.0f * k)), roundf(1000.0f * k) },
                      Fade(panel, a));
+    int visibleRow = 0;
     for (int i = 0; i < EMBED_MENU_COUNT; i++) {
-        float cy = roundf((300.0f + 92.0f * i) * k);
+        if (!Embed_MenuItemAvailable(i)) continue;
+        float cy = roundf((300.0f + 92.0f * visibleRow++) * k);
         bool sel = (i == embed.menuSel);
         if (sel) {   /* grey with black text while the slots have the focus */
             float bx = roundf(240.0f * k) + ox;
@@ -603,8 +1072,17 @@ void Embed_Draw(Font font, int screenMode, const char *const text[EMBED_TXT_COUN
         DrawTextEx(font, text[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
                    fs, 0.0f, Fade(!sel ? WHITE : embed.slotsFocus ? BLACK : selInk, a));
     }
-    if (embed.stateDir[0] && (embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE))
+    if (embed.stateDir[0] && (!embed.external || embed.externalSlots)
+        && (embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE))
         Embed_DrawSlots(font, text, k, ox, a, panel, selInk);
+    if (embed.statusTimer > 0.0f) {
+        float statusFs = fmaxf(20.0f, 28.0f * k);
+        Vector2 status = MeasureTextEx(font, embed.statusText, statusFs, 0.0f);
+        DrawRectangle((int)((sw - status.x) * 0.5f - 20.0f), (int)(sh - 88.0f * k),
+                      (int)(status.x + 40.0f), (int)(52.0f * k), Fade(BLACK, 0.72f * a));
+        DrawTextEx(font, embed.statusText, (Vector2){ (sw - status.x) * 0.5f, sh - 76.0f * k },
+                   statusFs, 0.0f, Fade(WHITE, a));
+    }
 }
 
 void Embed_DrawBack(int screenMode, Rectangle card, float t)
@@ -614,6 +1092,16 @@ void Embed_DrawBack(int screenMode, Rectangle card, float t)
                                  embed.fbw, embed.fbh);
     float q = 1.0f - t;
     Embed_DrawZoom(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q);
+}
+
+void Embed_DrawExternalResumeFrame(int screenMode)
+{
+    if (!embed.active || !embed.external) return;
+    Rectangle dst = Embed_DestRect(screenMode, (float)GetScreenWidth(), (float)GetScreenHeight(),
+                                   embed.fbw, embed.fbh);
+    ClearBackground(BLACK);
+    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,
+                   (Vector2){ 0 }, 0.0f, WHITE);
 }
 #endif /* _WIN32 */
 
