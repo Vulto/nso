@@ -342,9 +342,11 @@ static bool GameBinaryPresent(const GameEntry *game) {
     return FileExists(path);
 }
 
-/* Grid tint: games that are not installed yet are dimmed. */
+static bool GameIsLaunchable(const GameEntry *game);
+
+/* Grid tint: games that cannot launch yet are dimmed. */
 static Color GameTint(int gameIdx) {
-    return GameBinaryPresent(&ActiveGames()[gameIdx]) ? WHITE : (Color){ 110, 110, 110, 255 };
+    return GameIsLaunchable(&ActiveGames()[gameIdx]) ? WHITE : (Color){ 110, 110, 110, 255 };
 }
 
 /* gameIdx is local to the active system */
@@ -3150,8 +3152,23 @@ static bool OverlayActive(void) {
         || mosaicExitPhase != MOSAIC_EXIT_NONE;
 }
 
+/* Select-games pipeline (gamesel.h) of a catalog game, -1 = none. */
+static int GamePipelineOf(const GameEntry *game) {
+    for (int s = 0; s < SYSTEM_COUNT; s++) {
+        const GameEntry *g = systems[s].games;
+        if (game >= g && game < g + *systems[s].gameCount)
+            return Gs_FindPipeline(systems[s].platform->id, game->title);
+    }
+    return -1;
+}
+
+/* Playable: the binary plus whatever its pipeline says the game also needs
+ * (assets, the provisioned ROM). */
 static bool GameIsLaunchable(const GameEntry *game) {
-    return GameBinaryPresent(game);
+    int p;
+    if (!GameBinaryPresent(game)) return false;
+    p = GamePipelineOf(game);
+    return p < 0 || Gs_NeedsMet(&gs_pipelines[p], GsRelExists, NULL);
 }
 
 /* Path consumed by the next LaunchGame / StartEmbeddedGame (NSO_STATE_LOAD). */
@@ -3404,8 +3421,15 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (game->romImport) {
         NsoPrepareRomImport(gameDir, game->binary, game->romImport);
     }
+    if (game->appDir) {
+        char appDir[1200];
+        snprintf(appDir, sizeof(appDir), "%s", GetDataPath(game->appDir));
+        if (!DirectoryExists(appDir)) MakeDirectory(appDir);
+        NsoSetEnv("APP_FOLDER_PATH", appDir);
+    }
     NsoProc proc = NsoSpawn(gameDir, game->binary);
 
+    if (game->appDir) NsoSetEnv("APP_FOLDER_PATH", NULL);
     if (withStates) {
         NsoSetEnv("NSO_STATE_DIR", NULL);
         NsoSetEnv("NSO_STATE_LOAD", NULL);

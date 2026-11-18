@@ -443,6 +443,9 @@ GameEntry n64_games[] = {
     {
         .title = "Blast Corps",
         .boxartPath = "assets/images/systems/n64/blastcorps.png",
+        .dir = "repos/n64/blastcorps-recomp",          /* assets/ are read from the cwd */
+        .binary = "build-cmake/BlastCorpsRecompiled",
+        .appDir = "saves/n64/blastcorps-recomp",       /* bc.n64.us.z64 (Select games) */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

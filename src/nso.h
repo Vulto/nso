@@ -38,6 +38,8 @@ typedef struct {
     const char *embedRomKey; /* NULL = spawn binary; else dir/binary is an in-process
                                 module (embed.h), its game data path (ROM file
                                 or port dir) from this config key */
+    const char *appDir;   /* NULL = none; else NSO-relative dir passed as APP_FOLDER_PATH
+                             (N64Recomp ports keep config, saves and the stored ROM there) */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

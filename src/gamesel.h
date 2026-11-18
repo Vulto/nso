@@ -24,6 +24,8 @@ typedef struct {
     const char *binary;   /* NSO-relative file that means "installed" */
     const char *cfgKey;   /* config/nso.cfg key the launcher reads; NULL = none */
     const char *cfgValue; /* its value; "$ROM" = the ROM's NSO-relative path */
+    const char *needs;    /* NSO-relative files the game also needs to launch
+                             (assets, the provisioned ROM), ';'-separated; NULL = none */
 } GamePipeline;
 
 extern const GamePipeline gs_pipelines[];
@@ -89,6 +91,8 @@ void Gs_Cancel(GsRow *rows, int n);
 bool Gs_Running(const GsRow *rows, int n);
 /* Value written to cfgKey: "$ROM" -> romRel, else the literal value. */
 const char *Gs_CfgValue(const GamePipeline *p, const char *romRel);
+/* Every file in p->needs exists (exists(rel, u) on each NSO-relative path). */
+bool Gs_NeedsMet(const GamePipeline *p, bool (*exists)(const char *rel, void *u), void *u);
 
 #endif /* NSO_GAMESEL_H */
 
@@ -99,24 +103,53 @@ const char *Gs_CfgValue(const GamePipeline *p, const char *romRel);
 #include <ctype.h>
 #include <string.h>
 
-/* One game per system for now: the in-process modules already in use.
+/* One in-process module per system (the ones already in use), plus spawned ports.
  * Adapters stay in embed/<game>; the port trees are never edited. */
 const GamePipeline gs_pipelines[] = {
     { "nes", "Super Mario Bros", "smb",
       "https://codeberg.org/dannysp/SMB-Vanilla.git", "repos/nes/smbvanilla", "43777eb",
       "make -C embed/smb",
-      "embed/smb/build/libsmbmod.so", "nes.smb_rom", "$ROM" },
+      "embed/smb/build/libsmbmod.so", "nes.smb_rom", "$ROM", NULL },
     { "snes", "Super Mario World", "smw",
       "https://github.com/snesrev/smw.git", "repos/snes/smw", NULL,
       "{ [ -f repos/snes/smw/smw.sfc ] || cp \"$ROM\" repos/snes/smw/smw.sfc; }"
       " && { [ -f repos/snes/smw/smw_assets.dat ] || make -C repos/snes/smw smw_assets.dat; }"
       " && make -C embed/smw",
-      "embed/smw/build/libsmwmod.so", "snes.smw_dir", "repos/snes/smw" },
+      "embed/smw/build/libsmwmod.so", "snes.smw_dir", "repos/snes/smw", NULL },
     { "n64", "Super Mario 64", "sm64",
       "https://github.com/sm64pc/sm64ex.git", "repos/n64/sm64ex", "d7ca2c0",
       "{ [ -e repos/n64/sm64ex/baserom.us.z64 ] || ln -sf \"$ROM\" repos/n64/sm64ex/baserom.us.z64; }"
       " && make -C embed/sm64",
-      "embed/sm64/build/libsm64mod.so", "n64.sm64_dir", "saves/n64/sm64ex" },
+      "embed/sm64/build/libsm64mod.so", "n64.sm64_dir", "saves/n64/sm64ex", NULL },
+    /* N64Recomp port, spawned from its tree (assets/ and recompcontrollerdb.txt
+     * are read from the working directory). The US 1.1 ROM goes, in .z64 order,
+     * where the launcher's APP_FOLDER_PATH (GameEntry.appDir) points: the port
+     * looks for <game_id>.z64 there and starts without its ROM picker. */
+    { "n64", "Blast Corps", "blastcorps",
+      "https://github.com/SlaveOfIDO/blastcorps-recomp.git", "repos/n64/blastcorps-recomp", "b551045",
+      "D=repos/n64/blastcorps-recomp S=saves/n64/blastcorps-recomp && mkdir -p $S"
+      " && { [ -f $S/bc.n64.us.z64 ] || python3 tools/n64rom.py \"$ROM\" $S/bc.n64.us.z64"
+      " 42e4d8cde3c106637a25bbfa62d74cc2e5c1eed1d64de5bbb0b1c4896b185927; }"
+      " && { [ -f $D/baserom.us.v11.decompressed.z64 ] || python3 $D/tools/decompress_rom.py"
+      " $S/bc.n64.us.z64 $D/baserom.us.v11.decompressed.z64; }"
+      /* the recompiled C must exist before the port's CMake can configure */
+      " && { { ls $D/RecompiledFuncs/*.c && [ -f $D/rsp/aspMain.cpp ]; } >/dev/null 2>&1"
+      " || { { { [ -x $D/build-tools/N64Recomp ] && [ -x $D/build-tools/RSPRecomp ]; }"
+      " || { cmake -S $D/lib/N64ModernRuntime/N64Recomp -B $D/build-tools -G Ninja"
+      " -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
+      " && cmake --build $D/build-tools --target N64Recomp RSPRecomp; }; }"
+      " && (cd $D && build-tools/N64Recomp us.v11.toml && build-tools/RSPRecomp aspMain.us.v11.toml); }; }"
+      /* RmlUi's robin_hood.h misses <cstdint> on current libstdc++ */
+      " && { [ -f $D/build-cmake/build.ninja ] || cmake -S $D -B $D/build-cmake -G Ninja"
+      " -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
+      " '-DCMAKE_CXX_FLAGS=-include cstdint'; }"
+      " && { [ -f $D/patches/patches.elf ] || command -v ld.lld >/dev/null"
+      " || { echo 'ld.lld (lld) is needed to link the port patches'; false; }; }"
+      " && cmake --build $D/build-cmake --target BlastCorpsRecompiled",
+      "repos/n64/blastcorps-recomp/build-cmake/BlastCorpsRecompiled", NULL, NULL,
+      "repos/n64/blastcorps-recomp/assets/LatoLatin-Regular.ttf;"
+      "repos/n64/blastcorps-recomp/recompcontrollerdb.txt;"
+      "saves/n64/blastcorps-recomp/bc.n64.us.z64" },
 };
 const int gs_pipeline_count = (int)(sizeof(gs_pipelines) / sizeof(gs_pipelines[0]));
 
@@ -374,6 +407,25 @@ const char *Gs_CfgValue(const GamePipeline *p, const char *romRel)
 {
     if (!p || !p->cfgValue) return NULL;
     return strcmp(p->cfgValue, "$ROM") == 0 ? romRel : p->cfgValue;
+}
+
+bool Gs_NeedsMet(const GamePipeline *p, bool (*exists)(const char *rel, void *u), void *u)
+{
+    char rel[512];
+    if (!p || !p->needs) return true;
+    if (!exists) return false;
+    for (const char *s = p->needs; *s;) {
+        const char *e = strchr(s, ';');
+        size_t len = e ? (size_t)(e - s) : strlen(s);
+        if (len > 0) {
+            if (len >= sizeof(rel)) return false;
+            memcpy(rel, s, len);
+            rel[len] = '\0';
+            if (!exists(rel, u)) return false;
+        }
+        s += len + (e ? 1 : 0);
+    }
+    return true;
 }
 
 #endif /* GAMESEL_IMPLEMENTATION_ONCE */

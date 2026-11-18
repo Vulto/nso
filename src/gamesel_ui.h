@@ -242,6 +242,14 @@ static void GameSel_Input(bool up, bool down, bool ok, bool back, bool left) {
     }
 }
 
+/* Gs_NeedsMet callback: an NSO-relative file exists. */
+static bool GsRelExists(const char *rel, void *u) {
+    char path[2400];
+    (void)u;
+    snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), rel);
+    return FileExists(path);
+}
+
 static StrId GameSel_StateStr(int r) {
     switch (gsRows[r].st) {
     case GS_QUEUED: return S_GS_QUEUED;
@@ -260,7 +268,7 @@ static StrId GameSel_StateStr(int r) {
         const GamePipeline *p = &gs_pipelines[gsRows[r].pipe];
         char path[2400];
         snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), p->binary);
-        return FileExists(path) ? S_GS_INSTALLED : S_GS_INSTALLER;
+        return FileExists(path) && Gs_NeedsMet(p, GsRelExists, NULL) ? S_GS_INSTALLED : S_GS_INSTALLER;
     }
 }
 

@@ -5,6 +5,10 @@
 #define GAMESEL_IMPLEMENTATION
 #include "gamesel.h"
 
+static bool NeedsAll(const char *rel, void *u) { (void)rel; (void)u; return true; }
+static bool NeedsNoRom(const char *rel, void *u) { (void)u; return strstr(rel, ".z64") == NULL; }
+static bool NeedsCount(const char *rel, void *u) { (void)rel; (*(int *)u)++; return true; }
+
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 
@@ -60,7 +64,7 @@ int main(void)
     CHECK(strcmp(Gs_RomFolder("nes"), "NES") == 0);
     CHECK(strcmp(Gs_RomFolder("n64"), "N64") == 0);
     CHECK(Gs_RomFolder("gamecube") == NULL);
-    {   /* one pipeline per system, each findable, launcher paths set */
+    {   /* every system has a pipeline, each findable, launcher paths set */
         const char *sys[] = { "nes", "snes", "n64" };
         for (int s = 0; s < 3; s++) {
             int found = 0;
@@ -72,7 +76,7 @@ int main(void)
                     CHECK(Gs_FindPipeline(sys[s], p->title) == i);
                 }
             }
-            CHECK(found == 1);
+            CHECK(found >= 1);
         }
         CHECK(Gs_FindPipeline("nes", "Contra") == -1);
         /* a looser match (another game of the series) never gets the installer */
@@ -83,6 +87,15 @@ int main(void)
         CHECK(smb >= 0 && strcmp(Gs_CfgValue(&gs_pipelines[smb], "repos/roms/NES/x.nes"), "repos/roms/NES/x.nes") == 0);
         int smw = Gs_FindPipeline("snes", "Super Mario World");
         CHECK(smw >= 0 && strcmp(Gs_CfgValue(&gs_pipelines[smw], "x"), "repos/snes/smw") == 0);
+        /* Blast Corps: the dumped ROM name installs it; playable needs its assets + stored ROM */
+        int bc = Gs_RowPipeline("n64", "Blast Corps (U) (V1.1) [!]", "Blast Corps");
+        CHECK(bc >= 0 && gs_pipelines[bc].needs != NULL);
+        CHECK(Gs_NeedsMet(&gs_pipelines[bc], NeedsAll, NULL));
+        CHECK(!Gs_NeedsMet(&gs_pipelines[bc], NeedsNoRom, NULL));
+        CHECK(Gs_NeedsMet(&gs_pipelines[smb], NULL, NULL));   /* no needs: binary alone */
+        GamePipeline two = { .needs = "a;;b" };
+        int seen = 0;
+        CHECK(Gs_NeedsMet(&two, NeedsCount, &seen) && seen == 2);
     }
 
     {   /* queue: 3 pipeline games + 1 cover-only; 2 download slots, 1 build slot */
