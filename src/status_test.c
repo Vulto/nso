@@ -1,4 +1,6 @@
-/* status_test.c - the port-type classification behind the S overlay. */
+/* status_test.c - the port-type classification behind the S overlay.
+ * The overlay tallies only the active system; each catalog is checked the
+ * same way, plus a few known titles. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -39,28 +41,39 @@ static void type_of(const GameEntry *g, int n, const char *title, StatusType wan
     expect(title, Status_Classify(e), want);
 }
 
-static void tally_all(int counts[ST_COUNT], int *total)
+static void check_sys(const char *name, const GameEntry *g, int n,
+                      int want[ST_COUNT], int out[ST_COUNT])
 {
-    const struct { const GameEntry *g; int n; } sys[] = {
-        { nes_games, nes_game_count }, { snes_games, snes_game_count },
-        { n64_games, n64_game_count }, { gamecube_games, gamecube_game_count },
-    };
-    *total = 0;
-    for (int s = 0; s < 4; s++) {
-        for (int i = 0; i < sys[s].n; i++)
-            if (!Status_Known(&sys[s].g[i])) {
-                fprintf(stderr, "unclassified dir: %s\n", sys[s].g[i].dir);
-                fails++;
-            }
-        Status_Tally(sys[s].g, sys[s].n, counts);
-        *total += sys[s].n;
-    }
+    int counts[ST_COUNT] = { 0 };
+    char label[64];
+    for (int i = 0; i < n; i++)
+        if (!Status_Known(&g[i])) {
+            fprintf(stderr, "%s: unclassified dir: %s\n", name, g[i].dir);
+            fails++;
+        }
+    Status_Tally(g, n, counts);
+    expect(name, counts[0] + counts[1] + counts[2] + counts[3], n);
+    snprintf(label, sizeof(label), "%s recomp", name);   expect(label, counts[ST_RECOMP], want[ST_RECOMP]);
+    snprintf(label, sizeof(label), "%s native", name);   expect(label, counts[ST_NATIVE], want[ST_NATIVE]);
+    snprintf(label, sizeof(label), "%s emulated", name); expect(label, counts[ST_EMULATED], want[ST_EMULATED]);
+    snprintf(label, sizeof(label), "%s none", name);     expect(label, counts[ST_NONE], want[ST_NONE]);
+    printf("%s: %d games — recomp %d (%d%%), native %d (%d%%), emulated %d (%d%%), none %d (%d%%)\n",
+           name, n,
+           counts[ST_RECOMP], Status_Percent(counts[ST_RECOMP], n),
+           counts[ST_NATIVE], Status_Percent(counts[ST_NATIVE], n),
+           counts[ST_EMULATED], Status_Percent(counts[ST_EMULATED], n),
+           counts[ST_NONE], Status_Percent(counts[ST_NONE], n));
+    for (int t = 0; t < ST_COUNT; t++) out[t] += counts[t];
 }
 
 int main(void)
 {
     int counts[ST_COUNT] = { 0 }, total;
-    tally_all(counts, &total);
+    check_sys("NES", nes_games, nes_game_count, (int[ST_COUNT]){ 5, 3, 50, 0 }, counts);
+    check_sys("SNES", snes_games, snes_game_count, (int[ST_COUNT]){ 8, 3, 50, 0 }, counts);
+    check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 42, 9, 0, 242 }, counts);
+    check_sys("GameCube", gamecube_games, gamecube_game_count, (int[ST_COUNT]){ 0, 4, 0, 0 }, counts);
+    total = nes_game_count + snes_game_count + n64_game_count + gamecube_game_count;
     expect("sum of categories", counts[0] + counts[1] + counts[2] + counts[3], total);
     if (counts[ST_RECOMP] <= 0 || counts[ST_NATIVE] <= 0 || counts[ST_EMULATED] <= 0 || counts[ST_NONE] <= 0) {
         fprintf(stderr, "a category is empty\n");

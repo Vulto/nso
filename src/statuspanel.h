@@ -1,8 +1,10 @@
 /* statuspanel.h - "Port status" overlay (grid S key). Included by main.c after
  * the X Details card and drawn on the same card frame (Details_DrawFrame):
- * same fade, dimming, colors and text style. Left column: headline, segmented
- * bar and legend (counts per type, status.h). Right column: every catalog game
- * with its type and whether it is playable, scrollable. B or S closes it. */
+ * same fade, dimming, colors and text style. Shows only the active system
+ * (NES in the NES grid, SNES in SNES, and so on). Left column: system name
+ * and heading, headline, segmented bar and legend (counts per type, status.h).
+ * Right column: that system's catalog games with type and whether they are
+ * playable, scrollable. B or S closes it. */
 #ifndef NSO_STATUSPANEL_H
 #define NSO_STATUSPANEL_H
 
@@ -13,7 +15,6 @@
 
 typedef struct {
     const GameEntry *game;
-    const char *system;
     StatusType type;
     bool playable;
 } StatusRow;
@@ -21,6 +22,7 @@ typedef struct {
 static StatusRow statusRows[STATUS_MAX_ROWS];
 static int statusRowCount = 0, statusTop = 0;
 static int statusCounts[ST_COUNT], statusTotal = 0, statusPlayable = 0;
+static const char *statusSystemName = "";
 
 static const Color statusColors[ST_COUNT] = {
     { 66, 133, 244, 255 },    /* recompilation: blue */
@@ -48,18 +50,17 @@ static void Status_Open(void) {
     statusTotal = statusPlayable = 0;
     statusTop = 0;
     memset(statusCounts, 0, sizeof(statusCounts));
-    for (int s = 0; s < SYSTEM_COUNT; s++) {
-        for (int i = 0; i < *systems[s].gameCount && statusRowCount < STATUS_MAX_ROWS; i++) {
-            const GameEntry *g = &systems[s].games[i];
-            StatusRow *r = &statusRows[statusRowCount++];
-            r->game = g;
-            r->system = systems[s].platform->name;
-            r->type = Status_Classify(g);
-            r->playable = GameIsLaunchable(g);
-            statusCounts[r->type]++;
-            statusTotal++;
-            if (r->playable) statusPlayable++;
-        }
+    const System *sys = ActiveSystem();
+    statusSystemName = sys->platform->name ? sys->platform->name : "";
+    for (int i = 0; i < *sys->gameCount && statusRowCount < STATUS_MAX_ROWS; i++) {
+        const GameEntry *g = &sys->games[i];
+        StatusRow *r = &statusRows[statusRowCount++];
+        r->game = g;
+        r->type = Status_Classify(g);
+        r->playable = GameIsLaunchable(g);
+        statusCounts[r->type]++;
+        statusTotal++;
+        if (r->playable) statusPlayable++;
     }
     statusOpen = true;
     InfoBar_Request(INFO_BAR_NONE);
@@ -131,7 +132,12 @@ static void Status_Draw(Font font) {
 
     /* Left column: heading, then one rounded card with headline, bar, legend. */
     float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
-    Details_Text(font, Status_Word(0), (Vector2){ lx, card.y + sh * 0.03f }, sh * 0.030f, lcw, Fade(meta, a));
+    char heading[96];
+    if (statusSystemName[0])
+        snprintf(heading, sizeof(heading), "%s  —  %s", statusSystemName, Status_Word(0));
+    else
+        snprintf(heading, sizeof(heading), "%s", Status_Word(0));
+    Details_Text(font, heading, (Vector2){ lx, card.y + sh * 0.03f }, sh * 0.030f, lcw, Fade(meta, a));
     float py = card.y + sh * 0.085f, pad = lcw * 0.055f;
     float legendRow = sh * 0.062f;
     Rectangle pc = { lx, py, lcw, sh * 0.19f + legendRow * ST_COUNT };
@@ -181,13 +187,12 @@ static void Status_Draw(Font font) {
     float rx = card.x + lw + sw * 0.025f, rr = card.x + card.width - sw * 0.025f;
     float rowH = sh * 0.046f, top = card.y + sh * 0.03f, fs = sh * 0.026f;
     int vis = Status_Visible();
-    float typeX = rx + (rr - rx) * 0.60f, sysX = rx + (rr - rx) * 0.44f;
+    float typeX = rx + (rr - rx) * 0.60f;
     for (int k = 0; k < vis && statusTop + k < statusRowCount; k++) {
         const StatusRow *r = &statusRows[statusTop + k];
         float ry = top + rowH * (float)k, ty = ry + (rowH - fs) * 0.5f;
         DrawCircleV((Vector2){ rx + fs * 0.4f, ry + rowH * 0.5f }, fs * 0.3f, Fade(statusColors[r->type], a));
-        Details_Text(font, r->game->title, (Vector2){ rx + fs * 1.1f, ty }, fs, sysX - rx - fs * 1.5f, Fade(ink, a));
-        Details_Text(font, r->system, (Vector2){ sysX, ty }, fs * 0.9f, typeX - sysX - 10.0f, Fade(light, a));
+        Details_Text(font, r->game->title, (Vector2){ rx + fs * 1.1f, ty }, fs, typeX - rx - fs * 1.5f, Fade(ink, a));
         Details_Text(font, Status_TypeName(r->type), (Vector2){ typeX, ty }, fs * 0.9f, rr - typeX - sw * 0.1f, Fade(meta, a));
         Status_TextR(font, Status_Word(r->playable ? 2 : 3), rr, ty, fs * 0.9f, sw * 0.095f,
                      Fade(r->playable ? statusColors[ST_NATIVE] : light, a));
