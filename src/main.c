@@ -49,6 +49,8 @@
 #include "systems/gamecube.h"
 #define SFX_IMPLEMENTATION
 #include "sfx.h"
+#define ENTERANIM_IMPLEMENTATION
+#include "enteranim.h"
 #define EMBED_IMPLEMENTATION
 #include "embed.h"
 
@@ -943,6 +945,12 @@ static int introFrames = 0;
  * loading is done AND the fade finished, after a short minimum hold. */
 static const float SPLASH_MIN_HOLD_SEC = 0.2f;
 static float splashTimer = 0.0f;   /* time since the fade completed */
+/* Enter-a-system transition (enteranim.h): seconds since A on the system tile, the
+ * wordmark glyph (Nerd Font U+E22A, the Nintendo logo) and the "PC Ports" text. */
+static float enterT = 0.0f;
+static Font enterLogoFont, enterTextFont;
+static bool enterLogoOk = false, enterTextOk = false;
+#define ENTER_LOGO_CP 0xE22A
 
 
 static bool screenSliding = false;
@@ -965,6 +973,18 @@ static Font slotFont;   /* menu font, defined (and set in main) below */
 static Font hintNerdFont;
 static bool hintNerdLoaded;
 
+
+/* Geometry of system tile i in DrawSystemMenu (offsetX 0). */
+static Rectangle SystemTileRect(int i, float *radius) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    Rectangle box = { sw * 0.25f, sh * 0.25f, sw * 0.5f, sh * 0.5f };
+    float gap = box.width * 0.025f, pad = box.width * 0.02f;
+    float card = fminf((box.width - 2.0f * pad - gap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT, box.height - 2.0f * pad);
+    float rowW = card * SYSTEM_COUNT + gap * (SYSTEM_COUNT - 1);
+    if (radius) *radius = card * MENU_CARD_ROUNDNESS * 0.5f;
+    return (Rectangle){ box.x + (box.width - rowW) * 0.5f + (float)i * (card + gap),
+                        box.y + (box.height - card) * 0.5f, card, card };
+}
 
 static void DrawSystemMenu(float offsetX) {
     float sw = (float)GetScreenWidth();
@@ -3880,15 +3900,14 @@ static void StartEnterMosaic(void) {
     }
     mosaicIntroPhase = MOSAIC_INTRO_NONE;
 
-    /* Splash first: restart the app-open fade over the system's own art. */
+    /* Splash first: the enter transition over the menu, then the system's own art. */
     currentState = SPLASH;
     splashTimer = 0.0f;
-    introFrames = 0;
-    introOpacity = 1.0f;
+    enterT = 0.0f;   /* the A press: enteranim.h runs from here */
 }
 
 /* Full-screen system art (letterboxed to fit, like the original menu). */
-static void DrawSystemArt(float offsetX) {
+static void DrawSystemArtTint(float offsetX, Color tint) {
     Texture2D tex = ActiveSystem()->platform->texture;
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
@@ -3907,7 +3926,74 @@ static void DrawSystemArt(float offsetX) {
     float h = (float)tex.height * scale;
     DrawTexturePro(tex, (Rectangle){ 0, 0, (float)tex.width, (float)tex.height },
                    (Rectangle){ offsetX + (sw - w) * 0.5f, (sh - h) * 0.5f, w, h },
-                   (Vector2){ 0 }, 0.0f, WHITE);
+                   (Vector2){ 0 }, 0.0f, tint);
+}
+
+static void DrawSystemArt(float offsetX) { DrawSystemArtTint(offsetX, WHITE); }
+
+/* White logo of the enter transition: a Nerd Font glyph's bitmap (the Nintendo wordmark) drawn
+ * with its centre at (cx, cy), width w, rotated by deg. */
+static void DrawEnterLogoGlyph(float cx, float cy, float w, float deg, float alpha) {
+    if (!enterLogoOk) return;
+    int gi = GetGlyphIndex(enterLogoFont, ENTER_LOGO_CP);
+    Rectangle src = enterLogoFont.recs[gi];
+    float h = w * src.height / src.width;
+    DrawTexturePro(enterLogoFont.texture, src, (Rectangle){ cx, cy, w, h }, (Vector2){ w * 0.5f, h * 0.5f },
+                   deg, Fade(WHITE, alpha));
+}
+
+/* "PC Ports", right-aligned (right edge x, vertical centre cy), rotated about its centre. */
+static void DrawEnterPortsText(float x, float cy, float size, float deg, float alpha) {
+    if (!enterTextOk) return;
+    const char *text = "PC Ports";
+    Vector2 m = MeasureTextEx(enterTextFont, text, size, size * 0.02f);
+    Color c = Fade(WHITE, alpha);
+    for (int pass = 0; pass < 2; pass++)   /* a second pass a hair to the right: bolder strokes */
+        DrawTextPro(enterTextFont, text, (Vector2){ x - m.x * 0.5f + (float)pass * size * 0.02f, cy },
+                    (Vector2){ m.x * 0.5f, m.y * 0.5f }, deg, size, size * 0.02f, c);
+}
+
+/* Pressing A on a system tile (enteranim.h): the tile's art lifts off as a fading ghost while a
+ * (17,17,17) layer rises over the menu; the layer holds with the white logos (Nintendo wordmark
+ * top-left, "PC Ports" bottom-right); then the system's own screen crossfades in. */
+static void DrawEnterTransition(void) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float cover = EnterAnim_Cover(enterT), cross = EnterAnim_Cross(enterT);
+    Color layer = { ENTER_COVER_R, ENTER_COVER_G, ENTER_COVER_B, 255 };
+    if (cover < 1.0f) {
+        DrawSystemMenu(0.0f);
+        float r = 0.0f;
+        Rectangle tile = SystemTileRect(currentSystem, &r);
+        const PlatformEntry *p = ActiveSystem()->platform;
+        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.5f * EnterAnim_GhostProgress(enterT);
+        if (ga > 0.0f) {
+            Rectangle g = { tile.x - tile.width * (k - 1.0f) * 0.5f, tile.y - tile.height * (k - 1.0f) * 0.5f,
+                            tile.width * k, tile.height * k };
+            Color bg = p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF);
+            for (int i = 3; i >= 1; i--) {   /* soft halo in the tile's colour */
+                float grow = tile.width * 0.03f * (float)i;
+                DrawRectangleRounded((Rectangle){ g.x - grow, g.y - grow, g.width + 2.0f * grow, g.height + 2.0f * grow },
+                                     MENU_CARD_ROUNDNESS, 16, Fade(bg, ga * 0.12f));
+            }
+            DrawRectangleRounded(g, MENU_CARD_ROUNDNESS, 16, Fade(bg, ga));
+            if (p->texture.id != 0) {
+                float side = (float)p->texture.height;
+                DrawTexturePro(p->texture, (Rectangle){ ((float)p->texture.width - side) * 0.5f, 0.0f, side, side }, g,
+                               (Vector2){ 0 }, 0.0f, Fade(WHITE, ga));
+            }
+        }
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, cover));
+    } else {
+        ClearBackground(BLACK);
+        DrawSystemArt(0.0f);                                   /* the destination, as it always is */
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, 1.0f - cross));
+    }
+    float la = EnterAnim_LogoAlpha(enterT), deg = EnterAnim_LogoAngle(enterT);
+    if (la > 0.0f) {   /* positions and sizes as in the reference, relative to the screen */
+        float lw = sw * 0.120f;
+        DrawEnterLogoGlyph(sw * 0.0229f + lw * 0.5f, sh * 0.0495f + lw * 0.25f * 0.5f, lw, deg, la);
+        DrawEnterPortsText(sw * 0.967f, sh * 0.920f, sh * 0.072f, deg, la);
+    }
 }
 
 /* After the fade + hold, slide the art away to reveal the game grid. */
@@ -3916,7 +4002,10 @@ static void UpdateSplash(float dt) {
 
     bool loaded = CoverLoader_Poll();
 
-    if (introOpacity > 0.0f) return;   /* fade still running */
+    float step = dt > 0.1f ? 0.1f : dt;   /* a hitch must not skip the sequence */
+    const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step in seconds per frame (frame capture) */
+    if (fixed && atof(fixed) > 0.0) step = (float)atof(fixed);
+    if (enterT < EnterAnim_Total()) { enterT += step; return; }   /* transition still running */
     splashTimer += dt;
     if (loaded && splashTimer >= SPLASH_MIN_HOLD_SEC) {
         screenSliding = true;
@@ -4142,6 +4231,23 @@ int main(int argc, char **argv) {
                 hintNerdFont = (Font){ 0 };
             }
         }
+    }
+
+    {   /* enter transition: just the wordmark glyph and the letters of "PC Ports", large for a clean downscale */
+        char nerdPath[2048];
+        snprintf(nerdPath, sizeof(nerdPath), "%s", GetDataPath("assets/fonts/SymbolsNerdFont-Regular.ttf"));
+        enterLogoOk = false;
+        if (FileExists(nerdPath)) {
+            int cps[1] = { ENTER_LOGO_CP };
+            enterLogoFont = LoadFontEx(nerdPath, 256, cps, 1);
+            enterLogoOk = enterLogoFont.texture.id != 0 && enterLogoFont.glyphCount >= 1
+                          && enterLogoFont.recs[0].width > 1.0f;
+            if (enterLogoOk) SetTextureFilter(enterLogoFont.texture, TEXTURE_FILTER_BILINEAR);
+        }
+        int tcps[] = { 'P', 'C', ' ', 'o', 'r', 't', 's' };
+        enterTextFont = LoadFontEx(FontPath, 160, tcps, (int)(sizeof(tcps) / sizeof(tcps[0])));
+        enterTextOk = enterTextFont.texture.id != 0;
+        if (enterTextOk) SetTextureFilter(enterTextFont.texture, TEXTURE_FILTER_BILINEAR);
     }
 
     for (int i = 0; i < MAX_GAMES; i++) {
@@ -4635,10 +4741,7 @@ int main(int argc, char **argv) {
                               Fade(BLACK, introOpacity));
             }
         } else if (currentState == SPLASH) {
-            ClearBackground(BLACK);
-            DrawSystemArt(0.0f);
-            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
-                          Fade(BLACK, introOpacity));
+            DrawEnterTransition();
         } else if (currentState == MANAGE) {
             Manage_Draw(font);
             if (introOpacity > 0.0f) {
@@ -4691,6 +4794,8 @@ int main(int argc, char **argv) {
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
     if (GameSel_Busy()) GameSel_Cancel();
     UnloadAllBoxarts();
+    if (enterLogoOk) UnloadFont(enterLogoFont);
+    if (enterTextOk) UnloadFont(enterTextFont);
     UnloadFont(font);
     if (hintNerdLoaded) {
         UnloadFont(hintNerdFont);
