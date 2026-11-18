@@ -547,7 +547,7 @@ typedef enum State {
     SPLASH,     /* full-screen system art fading in before the game grid */
     SYSTEMS,
     MOSAIC,
-    MANAGE,     /* gear: box-art scraping + repository download */
+    MANAGE,     /* O: repository download + language */
     EMBED,      /* in-process game drawn in this window (embed.h) */
 } State;
 
@@ -613,7 +613,6 @@ static ScrapePhase scrapePhase = SCRAPE_IDLE;
 static bool scrapeBusy = false;
 static bool scrapeCancel = false;
 static bool scrapeReplace = false;
-static int scrapeRow = 0;
 static int scrapeGame = 0;
 static int scrapeMisses = 0;
 static int scrapeActive = -1;
@@ -808,51 +807,9 @@ static float slideOffset = 0.0f;
 static int slideDirection = 0; /* -1 enter mosaic, +1 back to systems */
 
 
-static Texture2D gearTexture = {0};
-
-/* Systems menu focus: 0 = system cards, 1 = gear (Down / Up). */
-static int menuFocus = 0;
-
 static Color MenuGlow(void) {
     float pulse = 0.5f + 0.5f * sinf((float)GetTime() * 3.0f);
     return ColorLerp((Color){ 80, 200, 255, 255 }, (Color){ 160, 110, 255, 255 }, pulse);
-}
-
-/* Settings gear, bottom centre like the Switch home's bottom icon row. */
-/* No gear.png (art is not shipped in the repo): a solid gear made of three
- * crossed bars (six teeth), a body disc and a hole in the background colour. */
-static void DrawFallbackGear(Vector2 c, float size, float angle, Color col, Color hole) {
-    float w = size * 0.2f, h = size * 0.96f;
-    for (int k = 0; k < 3; k++) {
-        DrawRectanglePro((Rectangle){ c.x, c.y, w, h }, (Vector2){ w * 0.5f, h * 0.5f },
-                         angle + 60.0f * (float)k, col);
-    }
-    DrawCircleV(c, size * 0.37f, col);
-    DrawCircleV(c, size * 0.16f, hole);
-}
-
-#define GEAR_FALLBACK_COLOR ((Color){ 172, 49, 49, 255 })   /* gear.png stroke */
-
-static void Repo_GearDot(Vector2 gearCentre, float radius);   /* install badge */
-
-static void DrawMenuGear(float offsetX) {
-    float sw = (float)GetScreenWidth();
-    float sh = (float)GetScreenHeight();
-    float d = sh * 0.075f;                       /* icon disc diameter */
-    float cx = offsetX + sw * 0.5f;
-    float cy = sh - sh * 0.12f;
-    float g = d * 0.72f;
-    DrawCircleV((Vector2){ cx, cy }, d * 0.5f, WHITE);
-    if (gearTexture.id != 0) {
-        DrawTexturePro(gearTexture, (Rectangle){ 0, 0, (float)gearTexture.width, (float)gearTexture.height },
-                       (Rectangle){ cx, cy, g, g }, (Vector2){ g * 0.5f, g * 0.5f }, 0.0f, WHITE);
-    } else {
-        DrawFallbackGear((Vector2){ cx, cy }, g, 0.0f, GEAR_FALLBACK_COLOR, WHITE);
-    }
-    if (menuFocus == 1) {
-        DrawRing((Vector2){ cx, cy }, d * 0.5f + d * 0.05f, d * 0.5f + d * 0.11f, 0.0f, 360.0f, 48, MenuGlow());
-    }
-    Repo_GearDot((Vector2){ cx, cy }, d * 0.5f);
 }
 
 /* Draw the systems menu shifted by offsetX (used by the mosaic slide).
@@ -913,7 +870,7 @@ static void DrawSystemMenu(float offsetX) {
                            (Vector2){ 0 }, 0.0f, WHITE);
         }
 
-        if (i == currentSystem && menuFocus == 0) {
+        if (i == currentSystem) {
             /* Black gap, then a glowing ring that pulses cyan <-> violet. */
             float gapT = card * 0.015f;
             float ringT = card * 0.02f;
@@ -923,7 +880,6 @@ static void DrawSystemMenu(float offsetX) {
             DrawRectangleRoundedLinesEx(outer, 2.0f * (r + gapT) / outer.width, 16, ringT, glow);
         }
     }
-    DrawMenuGear(offsetX);
 }
 
 /* Live pad profile + the existing info-bar close/open (INFO_BAR_FADE_SEC /
@@ -1777,11 +1733,6 @@ static bool Repo_Offer(int i) {
     return Repo_CanInstall(repoDisk[i], repoExitPlus1[i] - 1);
 }
 
-static bool Repo_AnyOffer(void) {
-    for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) if (Repo_Offer(i)) return true;
-    return false;
-}
-
 /* Disk-only state for repos without a job result yet. */
 static void Repo_RefreshLocal(void) {
     for (int i = 0; i < nso_repo_count && i < REPO_MAX; i++) {
@@ -1861,7 +1812,7 @@ static void Repo_Poll(void) {
 /* ---- Install watch. Disk-only (no network), every REPO_WATCH_SEC, when the
  * window regains focus and right after a repo_sync job exits. A transition
  * into "can build now" (downloaded, ROM present if needed, not built) shows
- * a notice; A on it, the gear row or Details > Install runs repo_sync.sh in
+ * a notice; A on it, the repo row or Details > Install runs repo_sync.sh in
  * build mode. ROMs are never fetched: ROM needed only says where to put it. */
 #define REPO_WATCH_SEC 3.0
 static struct { int repo; RepoNote note; double until; } repoNotice = { -1, REPO_NOTE_NONE, 0.0 };
@@ -2043,7 +1994,7 @@ static int Game_Repo(const GameEntry *g) {
     return -1;
 }
 
-/* Small "Install" pill / dot used on game tiles and the gear. */
+/* Small "Install" pill used on game tiles. */
 static void Repo_BadgeDraw(Font font, Rectangle tile) {
     float fs = fmaxf(14.0f, fminf(24.0f, tile.height * 0.09f));
     const char *t = T(S_DET_INSTALL);
@@ -2051,13 +2002,6 @@ static void Repo_BadgeDraw(Font font, Rectangle tile) {
     Rectangle b = { tile.x + tile.width - m.x - 22.0f, tile.y + 8.0f, m.x + 14.0f, m.y + 6.0f };
     DrawRectangleRounded(b, 0.5f, 8, (Color){ 0, 150, 220, 235 });
     DrawTextEx(font, t, (Vector2){ b.x + 7.0f, b.y + 3.0f }, fs, 1.0f, WHITE);
-}
-
-static void Repo_GearDot(Vector2 gearCentre, float radius) {
-    if (!Repo_AnyOffer()) return;
-    Vector2 c = { gearCentre.x + radius * 0.72f, gearCentre.y - radius * 0.72f };
-    DrawCircleV(c, fmaxf(6.0f, radius * 0.24f) + 2.0f, WHITE);
-    DrawCircleV(c, fmaxf(6.0f, radius * 0.24f), (Color){ 0, 150, 220, 255 });
 }
 
 /* Repos of the active system, in list order. */
@@ -2072,12 +2016,12 @@ static int Manage_Repos(int *out, int max) {
 static int manageRow = 0;
 static int manageReturnSystem = 0;
 
-/* Rows: 0-1 scraping, one per repo of the system, "all from this system"
- * (if it has any), the global "all repositories" row, then Language. */
+/* Rows: one per repo of the system, "all from this system" (if it has
+ * any), the global "all repositories" row, then Language. */
 static int Manage_RowCount(void) {
     int idx[REPO_MAX];
     int n = Manage_Repos(idx, REPO_MAX);
-    return 2 + n + (n > 0 ? 1 : 0) + 2;
+    return n + (n > 0 ? 1 : 0) + 2;
 }
 
 static void Lang_ConfigPath(char *dst, size_t n) {
@@ -2095,7 +2039,6 @@ static void Manage_Open(void) {
 
 static void Manage_Close(void) {
     currentSystem = manageReturnSystem;
-    menuFocus = 1;
     currentState = SYSTEMS;
     introFrames = 0;
     introOpacity = 1.0f;
@@ -2104,13 +2047,10 @@ static void Manage_Close(void) {
 static void Manage_Activate(void) {
     int idx[REPO_MAX];
     int n = Manage_Repos(idx, REPO_MAX);
-    if (manageRow < 2) {
-        scrapeRow = manageRow;
-        ScrapeMenu_Start(manageRow == 1);
-    } else if (manageRow < 2 + n) {
-        int i = idx[manageRow - 2];
+    if (manageRow < n) {
+        int i = idx[manageRow];
         Repo_Enqueue(i, Repo_Offer(i));   /* "Ready to install": build only */
-    } else if (n > 0 && manageRow == 2 + n) {
+    } else if (n > 0 && manageRow == n) {
         for (int k = 0; k < n; k++) Repo_Enqueue(idx[k], false);
     } else if (manageRow == Manage_RowCount() - 2) {
         for (int k = 0; k < nso_repo_count; k++) Repo_Enqueue(k, false);   /* all systems */
@@ -2151,7 +2091,7 @@ static void Manage_DrawRow(Font font, Rectangle sec, float *y, int row, const ch
     *y += rowH + 8.0f;
 }
 
-/* Full-screen gear screen: system tabs, then the two rounded sections. */
+/* Full-screen repository/language screen: system tabs, then the rounded sections. */
 static void Manage_Draw(Font font) {
     const Color panel = { 52, 52, 52, 255 };
     float sw = (float)GetScreenWidth();
@@ -2181,26 +2121,12 @@ static void Manage_Draw(Font font) {
     }
     y += tabH + 32.0f;
 
-    /* Image scraping. */
-    char scrapeText[192];
-    Msg_Format(&scrapeMsg, scrapeText, sizeof(scrapeText));
-    float h1 = 28.0f + size + 18.0f + 2.0f * 62.0f + (scrapeText[0] ? small + 10.0f : 0.0f) + 20.0f;
-    Rectangle s1 = { x0, y, w, h1 };
-    DrawRectangleRounded(s1, 40.0f / h1, 16, panel);
-    float ry = y + 28.0f;
-    DrawTextEx(font, T(S_MANAGE_COVERS), (Vector2){ x0 + 28.0f, ry }, size, 2.0f, GRAY);
-    ry += size + 18.0f;
-    Manage_DrawRow(font, s1, &ry, 0, T(S_MANAGE_MISSING), NULL);
-    Manage_DrawRow(font, s1, &ry, 1, T(S_MANAGE_REPLACE), NULL);
-    if (scrapeText[0]) DrawTextEx(font, scrapeText, (Vector2){ x0 + 28.0f, ry }, small, 2.0f, WHITE);
-    y += h1 + 24.0f;
-
     /* Repository download. */
     int rows = (n > 0 ? n + 1 : 0) + 1;
     float h2 = 28.0f + size + 18.0f + (float)rows * 62.0f + (n == 0 ? small + 16.0f : 0.0f) + 20.0f;
     Rectangle s2 = { x0, y, w, h2 };
     DrawRectangleRounded(s2, 40.0f / h2, 16, panel);
-    ry = y + 28.0f;
+    float ry = y + 28.0f;
     DrawTextEx(font, T(S_MANAGE_REPOS), (Vector2){ x0 + 28.0f, ry }, size, 2.0f, GRAY);
     ry += size + 18.0f;
     if (n == 0) {
@@ -2211,18 +2137,18 @@ static void Manage_Draw(Font font) {
         char st[192];
         Msg_Format(&repoMsg[idx[k]], st, sizeof(st));
         if (idx[k] == repoRunning) strncat(st, "...", sizeof(st) - strlen(st) - 1);
-        Manage_DrawRow(font, s2, &ry, 2 + k, nso_repos[idx[k]].name, st);
+        Manage_DrawRow(font, s2, &ry, k, nso_repos[idx[k]].name, st);
     }
     if (n > 0) {
         char lbl[96];
         snprintf(lbl, sizeof(lbl), T(S_MANAGE_ALL_SYSTEM), ActiveSystem()->platform->name);
-        Manage_DrawRow(font, s2, &ry, 2 + n, lbl, NULL);
+        Manage_DrawRow(font, s2, &ry, n, lbl, NULL);
     }
     {
         char st[64] = "";
         int pending = repoQueueLen + (repoRunning >= 0 ? 1 : 0);
         if (pending > 0) snprintf(st, sizeof(st), T(S_MANAGE_QUEUED_N), pending);
-        Manage_DrawRow(font, s2, &ry, 2 + n + (n > 0 ? 1 : 0), T(S_MANAGE_ALL), st);
+        Manage_DrawRow(font, s2, &ry, n + (n > 0 ? 1 : 0), T(S_MANAGE_ALL), st);
     }
     y += h2 + 24.0f;
 
@@ -2246,7 +2172,7 @@ static void Manage_Draw(Font font) {
     if (manageScroll > maxScroll) manageScroll = maxScroll;
     if (manageScroll < 0.0f) manageScroll = 0.0f;
 
-    DrawInfoBarEx(font, scrapeBusy ? T(S_INFO_CANCEL) : T(S_MANAGE_INFO), 1.0f, 0.0f);
+    DrawInfoBarEx(font, T(S_MANAGE_INFO), 1.0f, 0.0f);
 }
 
 /* ---- In-system sidebar (grid rail + B/O menu), as in the reference video:
@@ -2256,7 +2182,8 @@ static void Manage_Draw(Font font) {
  * the selected one loops a small animation. ---- */
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
-enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_COUNT };
+enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
+       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_COUNT };   /* last two: box-art scrape of this system */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also "<id>.screen" = 4:3|pixel|crt).
@@ -2679,7 +2606,7 @@ static void SidebarPanel_Draw(Font font, Color red) {
     float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;   /* video sizes */
     struct { StrId head; float hy; } heads[] = {
         { S_SET_VERSIONS, 0.212f }, { S_SET_RUMBLE, 0.500f }, { S_SET_CONTROLS, 0.696f } };
-    struct { StrId label; float y; bool radio; bool on; } rows[SB_SET_COUNT] = {
+    struct { StrId label; float y; bool radio; bool on; } rows[SB_SET_CONTROLS + 1] = {
         { S_SET_VER_NA, 0.280f, true, st->versions == 0 },
         { S_SET_VER_NA_EU, 0.373f, true, st->versions == 1 },
         { S_SET_ENABLED, 0.569f, false, st->rumble },
@@ -2688,7 +2615,7 @@ static void SidebarPanel_Draw(Font font, Color red) {
     for (int k = 0; k < 3; k++) {
         DrawFitText(font, T(heads[k].head), (Vector2){ hx, sh * heads[k].hy }, hsize, sw - hx, WHITE);
     }
-    for (int k = 0; k < SB_SET_COUNT; k++) {
+    for (int k = 0; k <= SB_SET_CONTROLS; k++) {
         float y = sh * rows[k].y;
         bool cur = (k == sidebarSetRow);
         Rectangle box = { bx, y - bh * 0.5f, bw, bh };
@@ -2718,6 +2645,46 @@ static void SidebarPanel_Draw(Font font, Color red) {
             }
         }
     }
+}
+
+/* Box-art scrape of the current system (covers + release dates), a second
+ * page of the Settings panel below the others: the panel scrolls to it. */
+static float sbPanelShift = 0.0f;
+
+static void SidebarPanelScrape_Draw(Font font, Color red) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float hx = sw * 0.449f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
+    float th = fmaxf(2.0f, sh * 0.0028f);
+    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;
+    static const StrId labels[2] = { S_MANAGE_MISSING, S_MANAGE_REPLACE };
+    static const float ys[2] = { 1.050f, 1.140f };
+    char status[192];
+
+    DrawFitText(font, T(S_MANAGE_COVERS), (Vector2){ hx, sh * 0.972f }, hsize, sw - hx, WHITE);
+    for (int k = 0; k < 2; k++) {
+        float y = sh * ys[k];
+        bool cur = (SB_SET_COVERS_MISSING + k == sidebarSetRow);
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        DrawFitText(font, T(labels[k]), (Vector2){ bx + sw * 0.0225f, y }, osize,
+                    bw - sw * 0.03f, cur ? red : WHITE);
+    }
+    Msg_Format(&scrapeMsg, status, sizeof(status));
+    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.225f }, hsize, sw - hx, WHITE);
+}
+
+/* Settings panel plus the scrape page; scrolls down to it while a scrape row is selected. */
+static void SidebarPanels_Draw(Font font, Color red) {
+    float sh = (float)GetScreenHeight();
+    float target = sidebarSetRow >= SB_SET_COVERS_MISSING ? sh * 0.9f : 0.0f;
+    sbPanelShift += (target - sbPanelShift) * fminf(1.0f, GetFrameTime() * 16.0f);
+    if (fabsf(sbPanelShift - target) < 0.5f) sbPanelShift = target;
+    rlPushMatrix();
+    rlTranslatef(0.0f, -sbPanelShift, 0.0f);
+    SidebarPanel_Draw(font, red);
+    SidebarPanelScrape_Draw(font, red);
+    rlPopMatrix();
 }
 
 static void DrawSidebar(Color systemBg, Font font) {
@@ -2787,7 +2754,7 @@ static void DrawSidebar(Color systemBg, Font font) {
     if (slid) rlPopMatrix();
 
     if (settled && sidebarPanelFocus && sidebarItem == SB_ITEM_SETTINGS) {
-        SidebarPanel_Draw(font, systemBg);
+        SidebarPanels_Draw(font, systemBg);
     }
 }
 
@@ -3078,6 +3045,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     bool up = IsKeyPressed(KEY_UP) || gpUp, down = IsKeyPressed(KEY_DOWN) || gpDown;
     bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
     bool back = IsKeyPressed(KEY_B) || gpBack;
+    if (scrapeBusy) {   /* a scrape owns the menu: B cancels it */
+        if (back) ScrapeMenu_Cancel();
+        return;
+    }
     if (sidebarPanelFocus) {
         if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; return; }
         if (up && sidebarSetRow > 0) { sidebarSetRow--; Sfx_Play(SFX_PLUCK); }
@@ -3085,6 +3056,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         if (ok) {
             Sfx_Play(SFX_CLICK);
             SysSettings *st = &sysSettings[currentSystem];
+            if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
+                ScrapeMenu_Start(sidebarSetRow == SB_SET_COVERS_REPLACE);
+                return;
+            }
             if (SysIsRetro(currentSystem) && sidebarSetRow < SB_SET_CONTROLS) st->screen = sidebarSetRow;
             else if (SysIsRetro(currentSystem)) st->showControls = !st->showControls;
             else if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
@@ -3101,6 +3076,8 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     if (sidebarItem == SB_ITEM_SETTINGS && (ok || IsKeyPressed(KEY_RIGHT) || gpRight)) {
         sidebarPanelFocus = true;
         sidebarSetRow = 0;
+        sbPanelShift = 0.0f;
+        Msg_Clear(&scrapeMsg);
         Sfx_Play(SFX_CLICK);
     } else if (ok) {
         SidebarAnim_Play(sidebarItem, +1);   /* no function: replay the one-shot */
@@ -3661,7 +3638,6 @@ static void BeginMosaicEnterIntro(void) {
 
 static void StartEnterMosaic(void) {
     if (screenSliding || scrapeBusy) return;
-    menuFocus = 0;
 
     int count = ActiveGameCount();
     if (count <= 0) return;
@@ -3896,7 +3872,6 @@ int main(void) {
     SortPanel_LoadAll();
     Sfx_Init();
 
-    gearTexture = LoadTexture(GetDataPath("assets/images/ui/gear.png"));
     PadNotice_Load();
 
     int Count = 0;
@@ -4173,18 +4148,9 @@ int main(void) {
         if (!screenSliding && !noticeTookInput) {
             switch (currentState) {
                 case SYSTEMS:
-                    /* O: shortcut to the gear screen. Down / Up: cards <-> gear. */
+                    /* O: repository download + language screen. */
                     if (canNavigate && (IsKeyPressed(KEY_O) || padCLeft)) {
                         Manage_Open();
-                        break;
-                    }
-                    if (canNavigate && menuFocus == 1) {
-                        if (IsKeyPressed(KEY_UP) || gpUp) menuFocus = 0;
-                        else if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) Manage_Open();
-                        break;
-                    }
-                    if (canNavigate && (IsKeyPressed(KEY_DOWN) || gpDown)) {
-                        menuFocus = 1;
                         break;
                     }
                     if (canNavigate && SYSTEM_COUNT > 1) {
@@ -4330,10 +4296,6 @@ int main(void) {
 
                 case MANAGE: {
                     int rowsN = Manage_RowCount();
-                    if (scrapeBusy) {
-                        if (IsKeyPressed(KEY_B) || gpBack) ScrapeMenu_Cancel();
-                        break;
-                    }
                     if (IsKeyPressed(KEY_LEFT) || gpLeft) { SelectSystem(-1); manageRow = 0; }
                     if (IsKeyPressed(KEY_RIGHT) || gpRight) { SelectSystem(1); manageRow = 0; }
                     if (IsKeyPressed(KEY_UP) || gpUp) manageRow = (manageRow + rowsN - 1) % rowsN;
@@ -4420,7 +4382,6 @@ int main(void) {
         hintNerdFont = (Font){ 0 };
         hintNerdLoaded = false;
     }
-    if (gearTexture.id) UnloadTexture(gearTexture);
     PadNotice_Unload();
     RetroShots_Unload();
     UnloadBlurResources();
