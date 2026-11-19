@@ -895,7 +895,7 @@ static void InfoBar_Update(float dt) {
 }
 
 static const char *PadUi_BarText(void);   /* padui.h: the controller screen's own hint bar */
-static float PadUi_RingProgress(void);
+static float PadUi_RingProgress(int which);
 static bool PadUi_SwallowBack(void);
 static const char *InfoBar_Text(InfoBarId id) {
     switch (id) {
@@ -1304,13 +1304,25 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     float spacing = 2.0f;
     char hintBuf[256];
     const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
-    bool n64Hints = (Pad_ActiveProfile() == NSO_PAD_PROFILE_N64) && hintNerdLoaded;
+    bool padBar = (text == PadUi_BarText());   /* the controller screen's bar: rings round its A / B glyphs */
+    bool n64Hints = !padBar && (Pad_ActiveProfile() == NSO_PAD_PROFILE_N64) && hintNerdLoaded;
+    float glyphGap = 0.0f;
     Vector2 textSize;
     if (n64Hints) {
         textSize.x = Hint_N64Width(font, text, fontSize, spacing);
         textSize.y = MeasureTextEx(font, text, fontSize, spacing).y;
     } else {
         textSize = MeasureTextEx(font, draw, fontSize, spacing);
+    }
+    if (padBar) {
+        /* room after each A / B glyph for its ring: the ring's edge is 3 px short of the ':' */
+        float adv = Hint_GlyphAdvance(font, 0x1F151, fontSize);
+        glyphGap = fmaxf(0.0f, adv * 0.12f + fmaxf(2.0f, fontSize * 0.07f) * 0.5f + 3.0f - spacing);
+        for (const char *q = draw; *q; ) {
+            int sz = 0, cp = GetCodepointNext(q, &sz);
+            q += sz;
+            if ((cp == 0x1F150 || cp == 0x1F151) && *q == ':') textSize.x += glyphGap;
+        }
     }
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
@@ -1343,7 +1355,25 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
         .y = rec.y + (barH - textSize.y) * 0.5f
     };
 
-    if (n64Hints) {
+    if (padBar) {
+        float x = textPosition.x;
+        for (const char *q = draw; *q; ) {
+            int sz = 0, cp = GetCodepointNext(q, &sz);
+            float adv = Hint_GlyphAdvance(font, cp, fontSize);
+            q += sz;
+            DrawTextCodepoint(font, cp, (Vector2){ x, textPosition.y }, fontSize, Fade(WHITE, opacity));
+            if (cp == 0x1F150 || cp == 0x1F151) {   /* A: remap, B: back; the ring fills while it is held */
+                float prog = PadUi_RingProgress(cp == 0x1F150 ? 1 : 0);
+                if (prog > 0.001f) {
+                    Vector2 c = { x + adv * 0.5f, textPosition.y + textSize.y * 0.5f };
+                    float r = adv * 0.62f, th = fmaxf(2.0f, fontSize * 0.07f);
+                    DrawRing(c, r - th * 0.5f, r + th * 0.5f, -90.0f, -90.0f + 360.0f * prog, 48, Fade(WHITE, opacity));
+                }
+                if (*q == ':') x += glyphGap;
+            }
+            x += adv + spacing;
+        }
+    } else if (n64Hints) {
         Hint_N64Draw(font, text, textPosition, fontSize, spacing, textSize.y, Fade(WHITE, opacity));
     } else {
         DrawTextEx(font,
@@ -1352,25 +1382,6 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
                    fontSize,
                    spacing,
                    Fade(WHITE, opacity));
-    }
-
-    /* Controller screen: a white ring fills round the B glyph while B is held to leave. */
-    if (text == PadUi_BarText() && PadUi_RingProgress() > 0.001f) {
-        static const char bGlyph[] = "\xF0\x9F\x85\x91";   /* 🅑 */
-        const char *at = strstr(draw, bGlyph);
-        if (at) {
-            char prefix[256];
-            size_t n = (size_t)(at - draw);
-            if (n >= sizeof(prefix)) n = sizeof(prefix) - 1;
-            memcpy(prefix, draw, n);
-            prefix[n] = '\0';
-            float pw = n ? (n64Hints ? Hint_N64Width(font, prefix, fontSize, spacing)
-                                     : MeasureTextEx(font, prefix, fontSize, spacing).x) + spacing : 0.0f;
-            float adv = Hint_GlyphAdvance(font, 0x1F151, fontSize);
-            Vector2 c = { textPosition.x + pw + adv * 0.5f, textPosition.y + textSize.y * 0.5f };
-            float r = adv * 0.62f, th = fmaxf(2.0f, fontSize * 0.07f);
-            DrawRing(c, r - th * 0.5f, r + th * 0.5f, -90.0f, -90.0f + 360.0f * PadUi_RingProgress(), 48, Fade(WHITE, opacity));
-        }
     }
 }
 
