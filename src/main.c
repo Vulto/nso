@@ -972,9 +972,8 @@ static Color MenuGlow(void) {
     return ColorLerp((Color){ 80, 200, 255, 255 }, (Color){ 160, 110, 255, 255 }, pulse);
 }
 
-/* Draw the systems menu shifted by offsetX (used by the mosaic slide).
- * Every system card, plus the selection ring, sits inside a rectangle a
- * quarter of the screen (half width x half height) centred on screen. */
+/* Draw the systems menu shifted by offsetX (used by the mosaic slide). The cards and the
+ * selection ring are laid out by SystemRow below. */
 static Font slotFont;   /* menu font, defined (and set in main) below */
 /* Nerd Font (Symbols Only): N64 C-Up / C-Down marks only. */
 #define HINT_NERD_CUP   0xF0062  /* md-arrow_up_drop_circle */
@@ -983,32 +982,39 @@ static Font hintNerdFont;
 static bool hintNerdLoaded;
 
 
+/* Main-menu system cards: twice the original size. The original row was laid out in a box of half
+ * the screen (card = (0.5 sw * 0.96 - 3 gaps) / 4, gap 0.0125 sw); the card is now double that, the
+ * gap and the selection-ring room keep their old absolute size, and the row stays centred on screen
+ * (capped so it always fits the width and the height). */
+typedef struct { float x0, y, card, gap; } SystemRowLayout;
+
+static SystemRowLayout SystemRow(float sw, float sh) {
+    float gap = sw * 0.5f * 0.025f, pad = sw * 0.5f * 0.02f;
+    float old = (sw * 0.5f - 2.0f * pad - gap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT;
+    float card = old * 2.0f;
+    float maxW = (sw - 2.0f * pad - gap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT;   /* fits the width with ring room */
+    float maxH = sh - 2.0f * pad;
+    if (card > maxW) card = maxW;
+    if (card > maxH) card = maxH;
+    float rowW = card * SYSTEM_COUNT + gap * (SYSTEM_COUNT - 1);
+    return (SystemRowLayout){ (sw - rowW) * 0.5f, (sh - card) * 0.5f, card, gap };
+}
+
 /* Geometry of system tile i in DrawSystemMenu (offsetX 0). */
 static Rectangle SystemTileRect(int i, float *radius) {
-    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
-    Rectangle box = { sw * 0.25f, sh * 0.25f, sw * 0.5f, sh * 0.5f };
-    float gap = box.width * 0.025f, pad = box.width * 0.02f;
-    float card = fminf((box.width - 2.0f * pad - gap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT, box.height - 2.0f * pad);
-    float rowW = card * SYSTEM_COUNT + gap * (SYSTEM_COUNT - 1);
-    if (radius) *radius = card * MENU_CARD_ROUNDNESS * 0.5f;
-    return (Rectangle){ box.x + (box.width - rowW) * 0.5f + (float)i * (card + gap),
-                        box.y + (box.height - card) * 0.5f, card, card };
+    SystemRowLayout L = SystemRow((float)GetScreenWidth(), (float)GetScreenHeight());
+    if (radius) *radius = L.card * MENU_CARD_ROUNDNESS * 0.5f;
+    return (Rectangle){ L.x0 + (float)i * (L.card + L.gap), L.y, L.card, L.card };
 }
 
 static void DrawSystemMenu(float offsetX) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
-    Rectangle box = { offsetX + sw * 0.25f, sh * 0.25f, sw * 0.5f, sh * 0.5f };
-
     DrawRectangleRec((Rectangle){ offsetX, 0.0f, sw, sh }, MENU_BG);
 
-    float gap = box.width * 0.025f;
-    float pad = box.width * 0.02f; /* room for the selection ring */
-    float card = fminf((box.width - 2.0f * pad - gap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT,
-                       box.height - 2.0f * pad);
-    float rowW = card * SYSTEM_COUNT + gap * (SYSTEM_COUNT - 1);
-    float x0 = box.x + (box.width - rowW) * 0.5f;
-    float y = box.y + (box.height - card) * 0.5f;
+    SystemRowLayout L = SystemRow(sw, sh);
+    float gap = L.gap, card = L.card;
+    float x0 = offsetX + L.x0, y = L.y;
     float r = card * MENU_CARD_ROUNDNESS * 0.5f; /* corner radius in px */
 
     for (int i = 0; i < SYSTEM_COUNT; i++) {
