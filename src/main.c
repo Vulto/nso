@@ -1430,7 +1430,8 @@ static void DrawRT(Texture2D tex, Rectangle dest, Color tint) {
     DrawTexturePro(tex, src, dest, (Vector2){0, 0}, 0.0f, tint);
 }
 
-static void DrawBlurredMosaicBackdrop(Color clearColor) {
+/* strength scales the tap spacing of every pass (1 = the standard frosted look). */
+static void DrawBlurredMosaicBackdrop(Color clearColor, float strength) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
     EnsureBlurResources(sw, sh);
@@ -1453,7 +1454,7 @@ static void DrawBlurredMosaicBackdrop(Color clearColor) {
         ClearBackground(clearColor);
         BeginShaderMode(blurShader);
         {
-            float dir[2] = { 1.0f / hw, 0.0f };
+            float dir[2] = { strength / hw, 0.0f };
             SetShaderValue(blurShader, blurDirLoc, dir, SHADER_UNIFORM_VEC2);
             DrawRT(blurRT_A.texture, (Rectangle){0, 0, hw, hh}, WHITE);
         }
@@ -1465,7 +1466,7 @@ static void DrawBlurredMosaicBackdrop(Color clearColor) {
         ClearBackground(clearColor);
         BeginShaderMode(blurShader);
         {
-            float dir[2] = { 0.0f, 1.0f / hh };
+            float dir[2] = { 0.0f, strength / hh };
             SetShaderValue(blurShader, blurDirLoc, dir, SHADER_UNIFORM_VEC2);
             DrawRT(blurRT_B.texture, (Rectangle){0, 0, hw, hh}, WHITE);
         }
@@ -1477,7 +1478,7 @@ static void DrawBlurredMosaicBackdrop(Color clearColor) {
         ClearBackground(clearColor);
         BeginShaderMode(blurShader);
         {
-            float dir[2] = { 1.5f / hw, 0.0f };
+            float dir[2] = { 1.5f * strength / hw, 0.0f };
             SetShaderValue(blurShader, blurDirLoc, dir, SHADER_UNIFORM_VEC2);
             DrawRT(blurRT_A.texture, (Rectangle){0, 0, hw, hh}, WHITE);
         }
@@ -1488,7 +1489,7 @@ static void DrawBlurredMosaicBackdrop(Color clearColor) {
         ClearBackground(clearColor);
         BeginShaderMode(blurShader);
         {
-            float dir[2] = { 0.0f, 1.5f / hh };
+            float dir[2] = { 0.0f, 1.5f * strength / hh };
             SetShaderValue(blurShader, blurDirLoc, dir, SHADER_UNIFORM_VEC2);
             DrawRT(blurRT_B.texture, (Rectangle){0, 0, hw, hh}, WHITE);
         }
@@ -4206,7 +4207,14 @@ static void DrawMosaic(Color background, Font font) {
             BeginTextureMode(mosaicRT);
             DrawMosaicSlots(background, font);
             EndTextureMode();
-            DrawBlurredMosaicBackdrop(background);
+            /* Settings: twice the blur radius behind its panel (same passes and taps). */
+            {
+                static float blurStrength = 1.0f;
+                float want = (SidebarWantsBlur() && sidebarItem == SB_ITEM_SETTINGS) ? 2.0f : 1.0f;
+                blurStrength += (want - blurStrength) * fminf(1.0f, GetFrameTime() * 14.0f);
+                if (fabsf(want - blurStrength) < 0.01f) blurStrength = want;
+                DrawBlurredMosaicBackdrop(background, blurStrength);
+            }
             /* Details: the sharp grid dissolves into the blur in step with the card. */
             if (!SidebarWantsBlur() && overlayT < 1.0f)
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
