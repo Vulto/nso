@@ -546,6 +546,65 @@ static void PadRoundPoly(const Vector2 *p, const float *rad, int n, float th, Co
     PadLoop(out, k, th, c);
 }
 
+/* A closed convex polygon with every corner rounded by radius r (screen units, any corner angle);
+ * filled white first when fill is set. */
+static void PadRoundPolyG(const Vector2 *p, int n, float r, float th, bool fill, Color c) {
+    Vector2 out[8 * 12];
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        Vector2 pv = p[(i + n - 1) % n], nx = p[(i + 1) % n], q = p[i];
+        float l1 = hypotf(pv.x - q.x, pv.y - q.y), l2 = hypotf(nx.x - q.x, nx.y - q.y);
+        Vector2 d1 = { (pv.x - q.x) / l1, (pv.y - q.y) / l1 }, d2 = { (nx.x - q.x) / l2, (nx.y - q.y) / l2 };
+        float half = acosf(fminf(1.0f, fmaxf(-1.0f, d1.x * d2.x + d1.y * d2.y))) * 0.5f;   /* half the corner's angle */
+        float tl = r / tanf(half), cd = r / sinf(half);
+        Vector2 bis = { d1.x + d2.x, d1.y + d2.y };
+        float bl = hypotf(bis.x, bis.y);
+        Vector2 ctr = { q.x + bis.x / bl * cd, q.y + bis.y / bl * cd };
+        Vector2 a = { q.x + d1.x * tl, q.y + d1.y * tl }, b = { q.x + d2.x * tl, q.y + d2.y * tl };
+        float a0 = atan2f(a.y - ctr.y, a.x - ctr.x), a1 = atan2f(b.y - ctr.y, b.x - ctr.x), d = a1 - a0;
+        while (d > PI) d -= 2.0f * PI;
+        while (d < -PI) d += 2.0f * PI;
+        for (int j = 0; j <= 10; j++) {
+            float tt = a0 + d * (float)j / 10.0f;
+            out[k++] = (Vector2){ ctr.x + cosf(tt) * r, ctr.y + sinf(tt) * r };
+        }
+    }
+    if (fill) for (int i = 1; i + 1 < k; i++) PadTri(out[0], out[i], out[i + 1], c);
+    PadLoop(out, k, th, c);
+}
+
+/* A quadratic round-off of a corner: from a through the corner q to b, appended to a path. */
+static int PadBend(Vector2 *path, int m, Vector2 a, Vector2 q, Vector2 b) {
+    for (int i = 0; i <= 8; i++) {
+        float u = (float)i / 8.0f;
+        path[m++] = (Vector2){ (1 - u) * (1 - u) * a.x + 2 * u * (1 - u) * q.x + u * u * b.x,
+                               (1 - u) * (1 - u) * a.y + 2 * u * (1 - u) * q.y + u * u * b.y };
+    }
+    return m;
+}
+
+/* The SNES body's upper edge at x (reference units): the lobes' arcs, flat between them. */
+static float PadSnesTopY(float x) {
+    const float R = 185.0f, cy = 342.0f;
+    float cx = x < 210.0f ? 210.0f : (x > 716.0f ? 716.0f : x);
+    float dx = x - cx;
+    return cy - sqrtf(fmaxf(0.0f, R * R - dx * dx));
+}
+
+/* A shoulder tab: the open outline ref[0..n) (reference units, ends on the body's edge), its outline
+ * line, and when lit the strip between it and the body's edge filled white. */
+static void PadSnesTab(PadView v, const Vector2 *ref, int n, bool lit, float th, Color c) {
+    Vector2 sc[64];
+    for (int i = 0; i < n; i++) sc[i] = PadV(v, ref[i].x, ref[i].y);
+    if (lit)
+        for (int i = 0; i + 1 < n; i++) {
+            Vector2 ia = PadV(v, ref[i].x, PadSnesTopY(ref[i].x)), ib = PadV(v, ref[i + 1].x, PadSnesTopY(ref[i + 1].x));
+            PadTri(sc[i], sc[i + 1], ib, c);
+            PadTri(sc[i], ib, ia, c);
+        }
+    PadPoly(sc, n, th, c);
+}
+
 /* The width of the SNES drawing's box and its height, in the reference picture's units. */
 #define PADSNES_W 876.0f
 #define PADSNES_H 382.0f
@@ -592,52 +651,40 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
     }
     PadLoop(pts, n, th, c);
 
-    /* shoulder tabs on the upper edge: a short flat stretch with the curve of the lobe, ends dropping to the body */
+    /* shoulder tabs on the upper edge: a short flat stretch with the curve of the lobe, rounded at both
+     * ends, which drop to the body */
     for (int side = 0; side < 2; side++) {
-        const float Ro = R + 11.0f, th0 = 245.0f * DEG2RAD;
-        Vector2 path[40], in[40];
-        int m = 0, k = 0;
-        float x0 = lcx + cosf(th0) * Ro;
-        path[m++] = (Vector2){ x0, cy - sqrtf(R * R - (x0 - lcx) * (x0 - lcx)) };   /* on the body */
-        path[m++] = (Vector2){ x0, cy + sinf(th0) * Ro };
+        const float Ro = R + 11.0f, th0 = 245.0f * DEG2RAD, rl = 8.0f, rr = 6.0f;
+        Vector2 path[64];
+        int m = 0;
+        float x0 = lcx + cosf(th0) * Ro, yc = cy + sinf(th0) * Ro, thA = th0 + rl / Ro;
+        path[m++] = (Vector2){ x0, PadSnesTopY(x0) };
+        m = PadBend(path, m, (Vector2){ x0, yc + rl }, (Vector2){ x0, yc }, (Vector2){ lcx + cosf(thA) * Ro, cy + sinf(thA) * Ro });
         for (int i = 1; i <= 20; i++) {
-            float t = th0 + (1.5f * PI - th0) * (float)i / 20.0f;
-            path[m++] = (Vector2){ lcx + cosf(t) * Ro, cy + sinf(t) * Ro };
+            float tt = thA + (1.5f * PI - thA) * (float)i / 20.0f;
+            path[m++] = (Vector2){ lcx + cosf(tt) * Ro, cy + sinf(tt) * Ro };
         }
-        path[m++] = (Vector2){ 315.0f, cy - Ro };
-        path[m++] = (Vector2){ 315.0f, cy - R };   /* back on the body's top edge */
-        for (int i = 0; i < m; i++) {
-            Vector2 q = path[i];
-            if (side) q.x = PadMirrorX(q.x);
-            in[k++] = PadV(v, q.x, q.y);
-        }
-        if (lit[side ? SNES_BTN_R : SNES_BTN_L]) {   /* fill between the body line and the tab's outer line */
-            for (int i = 1; i < 21; i++) {
-                float t1 = th0 + (1.5f * PI - th0) * (float)(i - 1) / 20.0f, t2 = th0 + (1.5f * PI - th0) * (float)i / 20.0f;
-                float ti1 = (243.3f * DEG2RAD) + (1.5f * PI - 243.3f * DEG2RAD) * (float)(i - 1) / 20.0f;
-                float ti2 = (243.3f * DEG2RAD) + (1.5f * PI - 243.3f * DEG2RAD) * (float)i / 20.0f;
-                Vector2 o1 = { lcx + cosf(t1) * Ro, cy + sinf(t1) * Ro }, o2 = { lcx + cosf(t2) * Ro, cy + sinf(t2) * Ro };
-                Vector2 i1 = { lcx + cosf(ti1) * R, cy + sinf(ti1) * R }, i2 = { lcx + cosf(ti2) * R, cy + sinf(ti2) * R };
-                if (side) { o1.x = PadMirrorX(o1.x); o2.x = PadMirrorX(o2.x); i1.x = PadMirrorX(i1.x); i2.x = PadMirrorX(i2.x); }
-                PadTri(PadV(v, o1.x, o1.y), PadV(v, o2.x, o2.y), PadV(v, i2.x, i2.y), c);
-                PadTri(PadV(v, o1.x, o1.y), PadV(v, i2.x, i2.y), PadV(v, i1.x, i1.y), c);
-            }
-            {
-                float xa = 210.0f, xb = 315.0f;
-                if (side) { xa = PadMirrorX(xa); xb = PadMirrorX(xb); }
-                PadTri(PadV(v, xa, cy - Ro), PadV(v, xb, cy - Ro), PadV(v, xb, cy - R), c);
-                PadTri(PadV(v, xa, cy - Ro), PadV(v, xb, cy - R), PadV(v, xa, cy - R), c);
-            }
-        }
-        PadPoly(in, k, th, c);
+        m = PadBend(path, m, (Vector2){ 315.0f - rr, cy - Ro }, (Vector2){ 315.0f, cy - Ro }, (Vector2){ 315.0f, cy - Ro + rr });
+        path[m++] = (Vector2){ 315.0f, PadSnesTopY(315.0f) };
+        if (side) for (int i = 0; i < m; i++) path[i].x = PadMirrorX(path[i].x);
+        PadSnesTab(v, path, m, lit[side ? SNES_BTN_R : SNES_BTN_L], th, c);
     }
 
-    /* D-pad: its ring, then the plus-shaped pad with small rounded corners; lit arms filled */
+    /* ZL / ZR: smaller tabs on the flat top edge between the L and R tabs, inboard of them, rounded the same */
+    for (int side = 0; side < 2; side++) {
+        const float xa = 351.0f, xb = 413.0f, top = cy - R - 11.0f, edge = cy - R, rz = 6.0f;
+        Vector2 path[32];
+        int m = 0;
+        path[m++] = (Vector2){ xa, edge };
+        m = PadBend(path, m, (Vector2){ xa, top + rz }, (Vector2){ xa, top }, (Vector2){ xa + rz, top });
+        m = PadBend(path, m, (Vector2){ xb - rz, top }, (Vector2){ xb, top }, (Vector2){ xb, top + rz });
+        path[m++] = (Vector2){ xb, edge };
+        if (side) for (int i = 0; i < m; i++) path[i].x = PadMirrorX(path[i].x);
+        PadSnesTab(v, path, m, lit[side ? SNES_BTN_ZR : SNES_BTN_ZL], th, c);
+    }
+
+    /* D-pad: its ring, then the plus-shaped pad with small rounded corners; a rounded triangle in each arm, pointing outward (filled when lit) */
     PadCircle(PadV(v, 210, 342), 105.0f * s, thL, c);
-    if (lit[SNES_BTN_UP]) DrawRectangleRec(PadR(v, 187, 270, 241, 316), c);
-    if (lit[SNES_BTN_DOWN]) DrawRectangleRec(PadR(v, 187, 369, 241, 415), c);
-    if (lit[SNES_BTN_LEFT]) DrawRectangleRec(PadR(v, 141, 316, 187, 369), c);
-    if (lit[SNES_BTN_RIGHT]) DrawRectangleRec(PadR(v, 241, 316, 288, 369), c);
     {
         const float hw = 27.0f, hl = 73.0f, cx = 214.5f, cyy = 342.5f;
         static const float px[12] = { -1, 1, 1, 2, 2, 1, 1, -1, -1, -2, -2, -1 }, py[12] = { -2, -2, -1, -1, 1, 1, 2, 2, 1, 1, -1, -1 };
@@ -650,6 +697,16 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
             rad[i] = ((fabsf(ax) == 2 || fabsf(ay) == 2) ? 5.0f : 2.5f) * s;
         }
         PadRoundPoly(cr, rad, 12, thM, c);
+    }
+    for (int d = 0; d < 4; d++) {   /* the direction marks: Up, Down, Left, Right */
+        static const int dx[4] = { 0, 0, -1, 1 }, dy[4] = { -1, 1, 0, 0 };
+        const float apex = 61.5f, base = 41.5f, half = 12.0f, cx = 214.5f, cyy = 342.5f;
+        float ux = (float)dx[d], uy = (float)dy[d];
+        Vector2 tri[3] = {
+            PadV(v, cx + ux * apex, cyy + uy * apex),
+            PadV(v, cx + ux * base - uy * half, cyy + uy * base + ux * half),
+            PadV(v, cx + ux * base + uy * half, cyy + uy * base - ux * half) };
+        PadRoundPolyG(tri, 3, 3.0f * s, thM, lit[d], c);
     }
 
     /* Select and Start: slanted pills */
@@ -671,18 +728,6 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
         PadCircle(ac, r, thM, c);
         PadCircle(bc, r, thM, c);
         PadCircle(yc, r, thM, c);
-    }
-
-    /* ZL / ZR: small tabs on the flat top edge between the L and R tabs, inboard of them, in the L / R tabs' style */
-    for (int side = 0; side < 2; side++) {
-        float xa = 338.0f, xb = 426.0f, top = cy - R - 11.0f, edge = cy - R;
-        if (side) { float t0 = PadMirrorX(xb); xb = PadMirrorX(xa); xa = t0; }
-        Vector2 tab[4] = { PadV(v, xa, edge), PadV(v, xa, top), PadV(v, xb, top), PadV(v, xb, edge) };
-        if (lit[side ? SNES_BTN_ZR : SNES_BTN_ZL]) {
-            PadTri(tab[1], tab[2], tab[3], c);
-            PadTri(tab[1], tab[3], tab[0], c);
-        }
-        PadPoly(tab, 4, th, c);
     }
 }
 
