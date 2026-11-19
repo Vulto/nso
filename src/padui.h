@@ -8,8 +8,8 @@
  * config keys): SNES adds Y, X, L, R and the Switch Online pad's ZL / ZR (drawn smaller beside L / R
  * as tabs on the top edge, mappable and lit, but no SNES game reads them).
  *
- * Entering the screen shows the controller, lighting live on every press (A and B light it too
- * while held, as the holds that remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
+ * Entering the screen shows the controller, lighting live on every press (only the button bound to the
+ * pressed control lights, also when that control is the one that holds to remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
  * Reset to default   Hold B: Back". Every hold here (A, B, ZR, skip a prompt) lasts exactly
  * PADUI_HOLD_SEC, 0.9 seconds. Holding A starts the mapping (a ring fills on the bar's A glyph);
  * holding ZR (the pad's, or Left Shift, N64's ZL/ZR = Z key in embed.h) deletes nes.map.* and the live controller shows the defaults at once (ignored if that control is mapped to a
@@ -773,10 +773,8 @@ static void PadUi_Prepare(void) {
     for (int i = 0; i < PAD_MAX_BTN; i++) padLit[i] = false;
     if (padOpen && padListen) padLit[padStep] = ((int)(GetTime() * PADUI_BLINK_HZ * 2.0) & 1) == 0;   /* blinks */
     else for (int i = 0; i < padSys->count; i++) padLit[i] = padOpen && PadUi_Lit(i);
-    if (padOpen && !padListen) {   /* the A / B that hold to remap / go back still light the pad while held */
-        if (PadUi_ADown()) padLit[padSys->btnA] = true;
-        if (PadUi_BDown()) padLit[padSys->btnB] = true;
-    }
+    /* Only a button's own bindings light it. The controls that hold to remap / go back (the pad's A / B,
+     * Enter, the A / B keys) are NSO's, not the game's: with a remapped pad they are other buttons' controls. */
     for (int i = 0; i < PAD_MAX_BTN; i++) if (padLit[i]) key |= 1u << i;
     key |= (snes ? 1u : 0u) << 20;
     W = (int)ceilf(bw) + 2 * (int)PADUI_MARGIN;

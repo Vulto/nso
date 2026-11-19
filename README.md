@@ -126,7 +126,7 @@ switches system (NES, SNES, Nintendo 64, GameCube).
 - **Language:** English / Português.
 - **NES / SNES controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
-  fills on the hint bar's A glyph; A and B also light the pad while held): it asks for one button at a time (Up, Down, Left,
+  fills on the hint bar's A glyph; the holds' controls light only the button they are bound to): it asks for one button at a time (Up, Down, Left,
   Right, Select, Start, B, A; the asked button blinks on the pad): press the key or pad
   button for it (inputs are edge-triggered: release everything between buttons). Esc
   (or 10 s idle) cancels and keeps the old map. Holding ZR (Left Shift on the keyboard) for 0.9 s deletes
