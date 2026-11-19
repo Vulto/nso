@@ -3007,6 +3007,7 @@ static void SidebarPanels_Draw(Font font, Color red) {
     float target = padOpen ? sh * PADUI_PAGE_Y : sidebarSetRow >= SB_SET_COVERS_MISSING ? sh * 0.9f : 0.0f;
     sbPanelShift += (target - sbPanelShift) * fminf(1.0f, GetFrameTime() * 16.0f);
     if (fabsf(sbPanelShift - target) < 0.5f) sbPanelShift = target;
+    if (SysHasPad(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Prepare();   /* its texture, outside the translation */
     rlPushMatrix();
     rlTranslatef(0.0f, -sbPanelShift, 0.0f);
     SidebarPanel_Draw(font, red);
