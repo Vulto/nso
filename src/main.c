@@ -2503,10 +2503,14 @@ static bool SysIsNes(int sys) {
 static bool SysIsSnes(int sys) {
     return strcmp(systems[sys].platform->id, "snes") == 0;
 }
-/* The systems with a controller screen (padui.h): NES and SNES. */
-static bool SysHasPad(int sys) { return SysIsNes(sys) || SysIsSnes(sys); }
+static bool SysIsN64(int sys) {
+    return strcmp(systems[sys].platform->id, "n64") == 0;
+}
+/* The systems with a controller screen (padui.h): NES, SNES and N64. */
+static bool SysHasPad(int sys) { return SysIsNes(sys) || SysIsSnes(sys) || SysIsN64(sys); }
+static StrId PadEntryLabel(int sys) { return SysIsN64(sys) ? S_PC_ENTRY_N64 : SysIsSnes(sys) ? S_PC_ENTRY_SNES : S_PC_ENTRY; }
 
-/* The last Settings row of the current system: the controller entry exists for NES and SNES. */
+/* The last Settings row of the current system: the controller entry exists for NES, SNES and N64. */
 static int SetRowLast(void) { return SysHasPad(currentSystem) ? SB_SET_PAD : SB_SET_HIDE; }
 
 static int sidebarItem = SB_ITEM_SINGLE;
@@ -2993,7 +2997,7 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
         DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, sh * 1.505f }, hsize, sw - hx, WHITE);
         if (cur) DrawRectangleRec(box, WHITE);
         else DrawRectangleLinesEx(box, th, WHITE);
-        DrawFitText(font, T(SysIsSnes(currentSystem) ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ bx + sw * 0.0225f, y }, osize,
+        DrawFitText(font, T(PadEntryLabel(currentSystem)), (Vector2){ bx + sw * 0.0225f, y }, osize,
                     bw - sw * 0.03f, cur ? red : WHITE);
     }
 }
@@ -3399,7 +3403,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
                 return;
             }
             if (sidebarSetRow == SB_SET_PAD) {
-                PadUi_Open(SysIsSnes(currentSystem));
+                PadUi_Open(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
                 return;
             }
             if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
@@ -4032,8 +4036,9 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
-    Embed_SetPadMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : SysIsSnes(currentSystem) && snesPad.custom ? &snesPad : NULL,
-                    SysIsSnes(currentSystem));
+    Embed_SetPadMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : SysIsSnes(currentSystem) && snesPad.custom ? &snesPad
+                    : SysIsN64(currentSystem) && n64Pad.custom ? &n64Pad : NULL,
+                    SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
     /* Rumble: NSO plays the module's motor (n64pad.h); AeroGauge drives its own pad. */
     N64Pad_SetEnabled(sysSettings[currentSystem].rumble);
     NsoSetEnv("AERO_RUMBLE", sysSettings[currentSystem].rumble ? "1" : "0");

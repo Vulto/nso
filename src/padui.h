@@ -1,4 +1,4 @@
-/* padui.h - Settings > Controller (NES and SNES): the controller drawn in white line art
+/* padui.h - Settings > Controller (NES, SNES and N64): the controller drawn in white line art
  * (raylib primitives, after the reference picture) with a lit white button for every
  * pressed control, and Mednafen-style sequential mapping. Included by main.c after the
  * scrape page; uses its statics. The screen is a third page below Image scraping:
@@ -43,7 +43,7 @@
 #define PADUI_BLINK_HZ 3.0
 #define PADUI_HOLD_SEC 0.9         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
 
-static NesPadMap nesPad, snesPad;    /* the map of each system (padmap.h) */
+static NesPadMap nesPad, snesPad, n64Pad;    /* the map of each system (padmap.h) */
 static const PadSys *padSys = &PADSYS_NES;   /* the system whose screen is open */
 static PadSysMap *padMapP = &nesPad;
 #define PADCUR (*padMapP)
@@ -80,6 +80,7 @@ static void Pad_LoadMaps(void) {
     text[n] = '\0';
     PadMap_Load(&PADSYS_NES, &nesPad, text);
     PadMap_Load(&PADSYS_SNES, &snesPad, text);
+    PadMap_Load(&PADSYS_N64, &n64Pad, text);
 }
 
 static void Pad_SaveMap(void) {
@@ -128,9 +129,13 @@ static void PadUi_Close(void) {
 }
 
 /* Entering the screen shows the live controller; "Map Controls" starts the mapping. */
-static void PadUi_Open(bool snes) {
-    padSys = snes ? &PADSYS_SNES : &PADSYS_NES;
-    padMapP = snes ? &snesPad : &nesPad;
+static void PadUi_Select(int kind) {   /* the system of a screen: 0 NES, 1 SNES, 2 N64 */
+    padSys = kind == 2 ? &PADSYS_N64 : kind == 1 ? &PADSYS_SNES : &PADSYS_NES;
+    padMapP = kind == 2 ? &n64Pad : kind == 1 ? &snesPad : &nesPad;
+}
+
+static void PadUi_Open(int kind) {
+    PadUi_Select(kind);
     padOpen = true;
     SetExitKey(KEY_NULL);
     padExitWait = true;
@@ -145,9 +150,30 @@ static void PadUi_Open(bool snes) {
     JsPad_Open();
 }
 
+/* N64: the analog stick and the C buttons (a Switch-mode pad's buttons or another pad's right stick) are
+ * read by the games whatever the map says; they light their directions too. */
+static bool PadUi_N64Analog(int btn) {
+    float lx, ly, rx, ry;
+    if (padSys != &PADSYS_N64 || !IsGamepadAvailable(0)) return false;
+    lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+    ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+    N64Pad_RightAxes(0, &rx, &ry);
+    switch (btn) {
+        case N64_BTN_SUP: return ly < -0.5f;
+        case N64_BTN_SDOWN: return ly > 0.5f;
+        case N64_BTN_SLEFT: return lx < -0.5f;
+        case N64_BTN_SRIGHT: return lx > 0.5f;
+        case N64_BTN_CUP: return ry < -0.5f;
+        case N64_BTN_CDOWN: return ry > 0.5f;
+        case N64_BTN_CLEFT: return rx < -0.5f;
+        case N64_BTN_CRIGHT: return rx > 0.5f;
+        default: return false;
+    }
+}
+
 static bool PadUi_Lit(int btn) {
     const PadBind *b = &PADCUR.b[btn];
-    return (b->key && IsKeyDown(b->key))
+    return PadUi_N64Analog(btn) || (b->key && IsKeyDown(b->key))
         || (b->pad >= 0 && IsGamepadAvailable(0) && IsGamepadButtonDown(0, b->pad))
         || (b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx));
 }
@@ -731,12 +757,186 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
     }
 }
 
+/* ---- N64 ---- */
+
+/* The N64 controller after its reference picture (774 x 723, here the box 22..752 x 15..792, Z's pill
+ * included): the three-prong body with the bump at the top, the L / R rims on the shoulders, the D-pad
+ * with a triangle in each arm, Start, B and A, the C diamond (four circles with a triangle each), the
+ * stick in its octagon gate, and, apart from the body, Z in its own pill with a leader line to where the
+ * trigger sits (behind the middle prong). Lit buttons are filled white; the stick's rings shift towards
+ * a tilt. (x, y) is the box's top-left, w its width, th the line weight (the NES controller's). */
+#define PADN64_W 730.0f
+#define PADN64_H 777.0f
+
+/* A centripetal Catmull-Rom curve through the closed loop p[0..n): no overshoot where points are uneven. */
+static int PadSplineLoop(const Vector2 *p, int n, int seg, Vector2 *out) {
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        Vector2 p0 = p[(i + n - 1) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
+        float t0 = 0.0f, t1 = t0 + sqrtf(hypotf(p1.x - p0.x, p1.y - p0.y)), t2 = t1 + sqrtf(hypotf(p2.x - p1.x, p2.y - p1.y));
+        float t3 = t2 + sqrtf(hypotf(p3.x - p2.x, p3.y - p2.y));
+        for (int j = 0; j < seg; j++) {
+            float t = t1 + (t2 - t1) * (float)j / (float)seg;
+            Vector2 a1 = { (t1 - t) / (t1 - t0) * p0.x + (t - t0) / (t1 - t0) * p1.x, (t1 - t) / (t1 - t0) * p0.y + (t - t0) / (t1 - t0) * p1.y };
+            Vector2 a2 = { (t2 - t) / (t2 - t1) * p1.x + (t - t1) / (t2 - t1) * p2.x, (t2 - t) / (t2 - t1) * p1.y + (t - t1) / (t2 - t1) * p2.y };
+            Vector2 a3 = { (t3 - t) / (t3 - t2) * p2.x + (t - t2) / (t3 - t2) * p3.x, (t3 - t) / (t3 - t2) * p2.y + (t - t2) / (t3 - t2) * p3.y };
+            Vector2 b1 = { (t2 - t) / (t2 - t0) * a1.x + (t - t0) / (t2 - t0) * a2.x, (t2 - t) / (t2 - t0) * a1.y + (t - t0) / (t2 - t0) * a2.y };
+            Vector2 b2 = { (t3 - t) / (t3 - t1) * a2.x + (t - t1) / (t3 - t1) * a3.x, (t3 - t) / (t3 - t1) * a2.y + (t - t1) / (t3 - t1) * a3.y };
+            out[k++] = (Vector2){ (t2 - t) / (t2 - t1) * b1.x + (t - t1) / (t2 - t1) * b2.x, (t2 - t) / (t2 - t1) * b1.y + (t - t1) / (t2 - t1) * b2.y };
+        }
+    }
+    return k;
+}
+
+/* A rounded triangle pointing along (ux, uy) from (cx, cy): apex at distance ap, base at ba, half-width hf
+ * (reference units), outline th, filled when on. */
+static void PadN64Tri(PadView v, float cx, float cy, float ux, float uy, float ap, float ba, float hf, float rad, float th, bool on, Color c) {
+    Vector2 tri[3] = {
+        PadV(v, cx + ux * ap, cy + uy * ap),
+        PadV(v, cx + ux * ba - uy * hf, cy + uy * ba + ux * hf),
+        PadV(v, cx + ux * ba + uy * hf, cy + uy * ba - ux * hf) };
+    PadRoundPolyG(tri, 3, rad * v.s, th, on, c);
+}
+
+/* A shoulder rim: a tab raised h above the straight edge through o (reference units) running along d, from
+ * distance ua to ub, with rounded top corners (radius r); filled down to the edge when lit. */
+static void PadN64Rim(PadView v, Vector2 o, Vector2 d, Vector2 nrm, float ua, float ub, float h, float r, bool lit, float th, Color c) {
+    Vector2 path[40];
+    Vector2 e0 = { o.x + d.x * ua, o.y + d.y * ua }, e1 = { o.x + d.x * ub, o.y + d.y * ub };
+    int m = 0;
+#define RP(u, hh) ((Vector2){ o.x + d.x * (u) + nrm.x * (hh), o.y + d.y * (u) + nrm.y * (hh) })
+    path[m++] = e0;
+    m = PadBend(path, m, RP(ua, h - r), RP(ua, h), RP(ua + r, h));
+    m = PadBend(path, m, RP(ub - r, h), RP(ub, h), RP(ub, h - r));
+    path[m++] = e1;
+#undef RP
+    {
+        Vector2 sc[40];
+        for (int i = 0; i < m; i++) sc[i] = PadV(v, path[i].x, path[i].y);
+        if (lit)
+            for (int i = 0; i + 1 < m; i++) {
+                float h0 = (path[i].x - o.x) * nrm.x + (path[i].y - o.y) * nrm.y, h1 = (path[i + 1].x - o.x) * nrm.x + (path[i + 1].y - o.y) * nrm.y;
+                Vector2 b0 = PadV(v, path[i].x - nrm.x * h0, path[i].y - nrm.y * h0), b1 = PadV(v, path[i + 1].x - nrm.x * h1, path[i + 1].y - nrm.y * h1);
+                PadTri(sc[i], sc[i + 1], b1, c);
+                PadTri(sc[i], b1, b0, c);
+            }
+        PadPoly(sc, m, th, c);
+    }
+}
+
+static void DrawN64Controller(float x, float y, float w, float th, const bool lit[PAD_MAX_BTN], Color c) {
+    float s = w / PADN64_W;
+    PadView v = { x + 48.0f * s, y + 150.0f * s, s };   /* PadV(rx, ry) = (x + (rx - 22) s, y + (ry - 15) s) */
+    float thM = th * 0.8f, thL = fmaxf(1.0f, th * 0.55f);
+    static const Vector2 half[] = {
+        { 387, 17 }, { 300, 17 }, { 266, 24 }, { 246, 44 }, { 236, 62 }, { 154, 88 }, { 100, 105 }, { 72, 114 },
+        { 50, 150 }, { 31, 220 }, { 22, 300 }, { 25, 400 }, { 36, 490 }, { 50, 545 }, { 70, 563 }, { 97, 556 },
+        { 113, 520 }, { 136, 445 }, { 157, 385 }, { 178, 360 }, { 207, 354 }, { 240, 362 }, { 262, 390 },
+        { 285, 485 }, { 310, 600 }, { 327, 675 }, { 347, 701 }, { 387, 708 } };
+    enum { HN = (int)(sizeof(half) / sizeof(half[0])) };
+    Vector2 loop[2 * HN], curve[2 * HN * 12];
+    int n = 0, k;
+    for (int i = 0; i < HN; i++) loop[n++] = PadV(v, half[i].x, half[i].y);
+    for (int i = HN - 2; i >= 1; i--) loop[n++] = PadV(v, 774.0f - half[i].x, half[i].y);
+    k = PadSplineLoop(loop, n, 12, curve);
+    PadLoop(curve, k, th, c);
+
+    /* L and R rims on the shoulders: raised along the top edges */
+    {
+        Vector2 d = { -0.953f, 0.302f }, nrm = { -0.302f, -0.953f };
+        PadN64Rim(v, (Vector2){ 236.0f, 62.0f }, d, nrm, 8.0f, 158.0f, 11.0f, 5.0f, lit[N64_BTN_L], th, c);
+        PadN64Rim(v, (Vector2){ 538.0f, 62.0f }, (Vector2){ 0.953f, 0.302f }, (Vector2){ 0.302f, -0.953f }, 8.0f, 158.0f, 11.0f, 5.0f, lit[N64_BTN_R], th, c);
+    }
+
+    /* D-pad: the plus, a triangle in each arm pointing outward */
+    {
+        const float cx = 156.0f, cy = 232.0f, hw = 22.0f, hl = 60.0f;
+        static const float px[12] = { -1, 1, 1, 2, 2, 1, 1, -1, -1, -2, -2, -1 }, py[12] = { -2, -2, -1, -1, 1, 1, 2, 2, 1, 1, -1, -1 };
+        float rad[12];
+        Vector2 cr[12];
+        static const int ddx[4] = { 0, 0, -1, 1 }, ddy[4] = { -1, 1, 0, 0 };
+        for (int i = 0; i < 12; i++) {
+            float ax = px[i], ay = py[i];
+            cr[i] = PadV(v, cx + (fabsf(ax) == 2 ? (ax > 0 ? hl : -hl) : (ax > 0 ? hw : -hw)),
+                            cy + (fabsf(ay) == 2 ? (ay > 0 ? hl : -hl) : (ay > 0 ? hw : -hw)));
+            rad[i] = ((fabsf(ax) == 2 || fabsf(ay) == 2) ? 7.0f : 3.0f) * s;
+        }
+        PadRoundPoly(cr, rad, 12, thM, c);
+        for (int d = 0; d < 4; d++)
+            PadN64Tri(v, cx, cy, (float)ddx[d], (float)ddy[d], 46.0f, 30.0f, 9.5f, 2.5f, thL, lit[N64_BTN_UP + d], c);
+    }
+
+    /* Start, B and A */
+    {
+        Vector2 sc = PadV(v, 387.0f, 255.0f), bc = PadV(v, 516.0f, 252.0f), ac = PadV(v, 568.0f, 303.0f);
+        float r = 32.0f * s;
+        if (lit[N64_BTN_START]) DrawCircleV(sc, r, c);
+        if (lit[N64_BTN_B]) DrawCircleV(bc, r, c);
+        if (lit[N64_BTN_A]) DrawCircleV(ac, r, c);
+        PadCircle(sc, r, thM, c);
+        PadCircle(bc, r, thM, c);
+        PadCircle(ac, r, thM, c);
+    }
+
+    /* C buttons: a ring round four circles, each with a triangle */
+    {
+        const float cx = 626.0f, cy = 206.0f, off = 46.0f, r = 24.0f;
+        static const int cdx[4] = { 0, 0, -1, 1 }, cdy[4] = { -1, 1, 0, 0 };
+        PadCircle(PadV(v, cx, cy), 74.0f * s, thL, c);
+        for (int d = 0; d < 4; d++) {
+            float ux = (float)cdx[d], uy = (float)cdy[d];
+            Vector2 cc = PadV(v, cx + ux * off, cy + uy * off);
+            if (lit[N64_BTN_CUP + d]) DrawCircleV(cc, r * s, c);
+            PadCircle(cc, r * s, thM, c);
+            if (!lit[N64_BTN_CUP + d]) PadN64Tri(v, cx + ux * off, cy + uy * off, ux, uy, 10.0f, -8.5f, 9.5f, 2.5f, thL, false, c);
+        }
+    }
+
+    /* the stick: a ring, the octagonal gate, concentric circles that shift with the tilt */
+    {
+        const float cx = 387.0f, cy = 397.0f;
+        Vector2 oct[8];
+        float tx = (float)(lit[N64_BTN_SRIGHT] - lit[N64_BTN_SLEFT]), ty = (float)(lit[N64_BTN_SDOWN] - lit[N64_BTN_SUP]);
+        float tl = hypotf(tx, ty), amt = 11.0f;
+        Vector2 sh = { 0.0f, 0.0f };
+        PadCircle(PadV(v, cx, cy), 73.0f * s, thM, c);
+        for (int i = 0; i < 8; i++) {
+            float a = (22.5f + 45.0f * (float)i) * DEG2RAD;
+            oct[i] = PadV(v, cx + cosf(a) * 50.0f, cy + sinf(a) * 50.0f);
+        }
+        PadRoundPolyG(oct, 8, 4.0f * s, thM, false, c);
+        if (tl > 0.0f) { sh.x = tx / tl * amt * s; sh.y = ty / tl * amt * s; }
+        {
+            static const float rr[3] = { 34.0f, 22.0f, 10.0f }, sf[3] = { 0.3f, 0.65f, 1.0f };
+            Vector2 mc = PadV(v, cx, cy);
+            for (int i = 0; i < 3; i++) PadCircle((Vector2){ mc.x + sh.x * sf[i], mc.y + sh.y * sf[i] }, rr[i] * s, i == 2 ? thM : thL, c);
+            if (tl > 0.0f) DrawCircleV((Vector2){ mc.x + sh.x, mc.y + sh.y }, rr[2] * s, c);
+        }
+    }
+
+    /* Z: its own pill below the body, a leader line up to the trigger behind the middle prong */
+    {
+        Rectangle zr = PadR(v, 355.0f, 753.0f, 419.0f, 791.0f);
+        Vector2 dot = PadV(v, 387.0f, 612.0f);
+        Vector2 zz[4] = { PadV(v, 375.0f, 764.0f), PadV(v, 399.0f, 764.0f), PadV(v, 375.0f, 780.0f), PadV(v, 399.0f, 780.0f) };
+        if (lit[N64_BTN_Z]) DrawRectangleRounded(zr, 1.0f, 40, c);
+        DrawRectangleRoundedLinesEx(zr, 1.0f, 40, thM, c);
+        DrawLineEx(PadV(v, 387.0f, 753.0f), (Vector2){ dot.x, dot.y + 5.0f * s }, thL, c);
+        PadCircle(dot, 5.0f * s, thL, c);
+        if (lit[N64_BTN_Z]) DrawCircleV(dot, 5.0f * s, c);
+        if (!lit[N64_BTN_Z]) PadPoly(zz, 4, thM, c);
+    }
+}
+
 /* The prompt's name of the step-th button of the open system. */
 static StrId PadUi_Label(int step) {
     static const StrId nes[NES_BTN_COUNT] = { S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START, S_PC_B, S_PC_A };
     static const StrId snes[SNES_BTN_COUNT] = { S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START,
                                                 S_PC_Y, S_PC_B, S_PC_X, S_PC_A, S_PC_L, S_PC_R, S_PC_ZL, S_PC_ZR };
-    return padSys == &PADSYS_SNES ? snes[step] : nes[step];
+    static const StrId n64[N64_BTN_COUNT] = { S_PC_DP_UP, S_PC_DP_DOWN, S_PC_DP_LEFT, S_PC_DP_RIGHT, S_PC_ST_UP, S_PC_ST_DOWN,
+                                              S_PC_ST_LEFT, S_PC_ST_RIGHT, S_PC_START, S_PC_A, S_PC_B, S_PC_Z, S_PC_L, S_PC_R,
+                                              S_PC_C_UP, S_PC_C_DOWN, S_PC_C_LEFT, S_PC_C_RIGHT };
+    return padSys == &PADSYS_N64 ? n64[step] : padSys == &PADSYS_SNES ? snes[step] : nes[step];
 }
 
 /* The drawing is rendered PADUI_SS times larger into a transparent texture, mipmapped and drawn down
@@ -752,9 +952,10 @@ static bool padLit[PAD_MAX_BTN];
 /* Where the drawing goes: its width, the box's height, the left edge and the centre line. */
 static void PadUi_Geom(float *bw, float *boxH, float *bx, float *cy) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
-    *bw = sw * 0.387f;
-    *boxH = padSys == &PADSYS_SNES ? PADSNES_H * *bw / PADSNES_W : 149.0f * *bw / 340.0f;
-    *bx = sw * 0.485f;
+    float full = sw * 0.387f;   /* the NES / SNES width; the N64's box is narrower (it is tall), same centre */
+    *bw = padSys == &PADSYS_N64 ? sw * 0.27f : full;
+    *boxH = padSys == &PADSYS_N64 ? PADN64_H * *bw / PADN64_W : padSys == &PADSYS_SNES ? PADSNES_H * *bw / PADSNES_W : 149.0f * *bw / 340.0f;
+    *bx = sw * 0.485f + (full - *bw) * 0.5f;
     *cy = sh * PADUI_PAGE_Y + sh * 0.5f;   /* the controller sits in the middle of the page */
 }
 
@@ -765,8 +966,7 @@ static void PadUi_Prepare(void) {
     unsigned key = 0;
     int W, H;
     if (!padOpen) {   /* the page is leaving: it keeps showing the current system's pad, nothing lit */
-        padSys = SysIsSnes(currentSystem) ? &PADSYS_SNES : &PADSYS_NES;
-        padMapP = SysIsSnes(currentSystem) ? &snesPad : &nesPad;
+        PadUi_Select(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
     }
     snes = padSys == &PADSYS_SNES;
     PadUi_Geom(&bw, &boxH, &bx, &cy);
@@ -776,7 +976,7 @@ static void PadUi_Prepare(void) {
     /* Only a button's own bindings light it. The controls that hold to remap / go back (the pad's A / B,
      * Enter, the A / B keys) are NSO's, not the game's: with a remapped pad they are other buttons' controls. */
     for (int i = 0; i < PAD_MAX_BTN; i++) if (padLit[i]) key |= 1u << i;
-    key |= (snes ? 1u : 0u) << 20;
+    key |= (unsigned)(padSys == &PADSYS_N64 ? 2 : snes ? 1 : 0) << 20;
     W = (int)ceilf(bw) + 2 * (int)PADUI_MARGIN;
     H = (int)ceilf(boxH) + 2 * (int)PADUI_MARGIN;
     if (!padRT.id || W != padRTW || H != padRTH) {
@@ -790,7 +990,10 @@ static void PadUi_Prepare(void) {
     padRTKey = key;
     BeginTextureMode(padRT);
     ClearBackground((Color){ 255, 255, 255, 0 });   /* same RGB: no dark fringe when filtered */
-    if (snes) DrawSnesController(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS, padLit, WHITE);
+    if (padSys == &PADSYS_N64)   /* the same line weight as the NES controller's */
+        DrawN64Controller(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS,
+                          fmaxf(1.5f, 1.3f * (float)GetScreenWidth() * 0.387f * PADUI_SS / 340.0f), padLit, WHITE);
+    else if (snes) DrawSnesController(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS, padLit, WHITE);
     else {   /* the NES body's top-left is the reference (71, 166), the origin (70, 165) */
         float sc = bw * PADUI_SS / 340.0f;
         DrawNesController(PADUI_MARGIN * PADUI_SS - sc, PADUI_MARGIN * PADUI_SS - sc, bw * PADUI_SS, padLit, WHITE);
@@ -804,10 +1007,9 @@ static void PadUi_Draw(Font font, Color bg) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float hx = sw * 0.449f, bw, boxH, bx, cy;
     float oy = sh * PADUI_PAGE_Y;
-    bool snes = padSys == &PADSYS_SNES;
     (void)bg;
     PadUi_Geom(&bw, &boxH, &bx, &cy);
-    DrawFitText(font, T(snes ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
+    DrawFitText(font, T(padSys == &PADSYS_N64 ? S_PC_ENTRY_N64 : padSys == &PADSYS_SNES ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
     if (padRT.id) {
         float ts = (float)padRT.texture.width, th = (float)padRT.texture.height;
         DrawTexturePro(padRT.texture, (Rectangle){ 0, 0, ts, -th },   /* RT is upside down */

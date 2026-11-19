@@ -20,6 +20,9 @@
  * helpers take it, and PadMap_Nes* are the NES shorthands. Besides Mednafen (snes.input.*)
  * the SNES map reaches the zelda3 / sm ports (zelda3.ini, sm.ini: Controls lists under
  * [KeyMap] and [GamepadMap]) and the snesrecomp ports (keybinds.ini [player1], keyboard only).
+ * N64 (n64.map.<button>.*): up|down|left|right (D-pad), stickup|stickdown|stickleft|stickright,
+ * start|a|b|z|l|r, cup|cdown|cleft|cright. It reaches the games NSO runs itself (embed.h); no N64
+ * port reads it (their SDL controller setups are their own) and there is no Mednafen N64 module.
  * Pure helpers (no window): unit-tested in padmap_test.c. */
 #ifndef NSO_PADMAP_H
 #define NSO_PADMAP_H
@@ -37,7 +40,13 @@ enum { NES_BTN_UP, NES_BTN_DOWN, NES_BTN_LEFT, NES_BTN_RIGHT, NES_BTN_SELECT, NE
 enum { SNES_BTN_UP, SNES_BTN_DOWN, SNES_BTN_LEFT, SNES_BTN_RIGHT, SNES_BTN_SELECT, SNES_BTN_START,
        SNES_BTN_Y, SNES_BTN_B, SNES_BTN_X, SNES_BTN_A, SNES_BTN_L, SNES_BTN_R,
        SNES_BTN_ZL, SNES_BTN_ZR, SNES_BTN_COUNT };   /* ZL / ZR: the Switch Online pad's, no SNES game reads them */
-#define PAD_MAX_BTN 14
+/* N64: the D-pad, the analog stick as four directions (digital; the real stick stays analog
+ * in the games), Start, A, B, Z, L, R and the four C buttons. */
+enum { N64_BTN_UP, N64_BTN_DOWN, N64_BTN_LEFT, N64_BTN_RIGHT,
+       N64_BTN_SUP, N64_BTN_SDOWN, N64_BTN_SLEFT, N64_BTN_SRIGHT,
+       N64_BTN_START, N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_L, N64_BTN_R,
+       N64_BTN_CUP, N64_BTN_CDOWN, N64_BTN_CLEFT, N64_BTN_CRIGHT, N64_BTN_COUNT };
+#define PAD_MAX_BTN 18
 enum { PAD_JS_NONE = 0, PAD_JS_BUTTON = 1, PAD_JS_AXIS_NEG = 2, PAD_JS_AXIS_POS = 3 };
 
 typedef struct {
@@ -67,6 +76,8 @@ typedef struct {
 
 static const char *const PADMAP_NES_NAMES[NES_BTN_COUNT] = { "up", "down", "left", "right", "select", "start", "b", "a" };
 static const char *const PADMAP_SNES_NAMES[SNES_BTN_COUNT] = { "up", "down", "left", "right", "select", "start", "y", "b", "x", "a", "l", "r", "zl", "zr" };
+static const char *const PADMAP_N64_NAMES[N64_BTN_COUNT] = { "up", "down", "left", "right", "stickup", "stickdown", "stickleft", "stickright",
+                                                             "start", "a", "b", "z", "l", "r", "cup", "cdown", "cleft", "cright" };
 
 /* Keys that can be bound: raylib key, SDL scancode (= USB HID usage, what Mednafen
  * stores), SDL name (what the NESRecomp ports store). Escape, Backspace (rewind),
@@ -166,8 +177,23 @@ static const PadBind PADMAP_SNES_DEF[SNES_BTN_COUNT] = {
     { KEY_C, GAMEPAD_BUTTON_LEFT_TRIGGER_1, 0, 0 }, { KEY_V, GAMEPAD_BUTTON_RIGHT_TRIGGER_1, 0, 0 },
     { 0, GAMEPAD_BUTTON_LEFT_TRIGGER_2, 0, 0 }, { 0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2, 0, 0 },
 };
+/* N64 defaults = what the embedded games read without a map (embed.h): the arrows are the stick,
+ * the pad's D-pad the D-pad, I / K / J / L the C buttons (the analog sticks and the C buttons of a
+ * Switch-mode N64 pad are read on top of these, they are no bindings). */
+static const PadBind PADMAP_N64_DEF[N64_BTN_COUNT] = {
+    { 0, GAMEPAD_BUTTON_LEFT_FACE_UP, 0, 0 }, { 0, GAMEPAD_BUTTON_LEFT_FACE_DOWN, 0, 0 },
+    { 0, GAMEPAD_BUTTON_LEFT_FACE_LEFT, 0, 0 }, { 0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT, 0, 0 },
+    { KEY_UP, -1, 0, 0 }, { KEY_DOWN, -1, 0, 0 }, { KEY_LEFT, -1, 0, 0 }, { KEY_RIGHT, -1, 0, 0 },
+    { KEY_ENTER, GAMEPAD_BUTTON_MIDDLE_RIGHT, 0, 0 },
+    { KEY_X, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, 0, 0 }, { KEY_Z, GAMEPAD_BUTTON_RIGHT_FACE_DOWN, 0, 0 },
+    { KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2, 0, 0 },
+    { KEY_C, GAMEPAD_BUTTON_LEFT_TRIGGER_1, 0, 0 }, { KEY_V, GAMEPAD_BUTTON_RIGHT_TRIGGER_1, 0, 0 },
+    { KEY_I, -1, 0, 0 }, { KEY_K, -1, 0, 0 }, { KEY_J, -1, 0, 0 }, { KEY_L, -1, 0, 0 },
+};
 static const PadSys PADSYS_NES = { "nes", NES_BTN_COUNT, NES_BTN_COUNT, PADMAP_NES_NAMES, PADMAP_NES_DEF, NES_BTN_A, NES_BTN_B, -1 };
 static const PadSys PADSYS_SNES = { "snes", SNES_BTN_COUNT, SNES_BTN_R + 1, PADMAP_SNES_NAMES, PADMAP_SNES_DEF, SNES_BTN_A, SNES_BTN_B, SNES_BTN_ZR };
+
+static const PadSys PADSYS_N64 = { "n64", N64_BTN_COUNT, N64_BTN_COUNT, PADMAP_N64_NAMES, PADMAP_N64_DEF, N64_BTN_A, N64_BTN_B, -1 };
 
 static inline void PadMap_Defaults(const PadSys *sys, PadSysMap *m)
 {

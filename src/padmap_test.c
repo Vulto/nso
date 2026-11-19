@@ -213,6 +213,42 @@ int main(void)
         }
     }
 
+    /* N64: D-pad, stick directions, Start, A, B, Z, L, R, C buttons; nothing for Mednafen */
+    {
+        PadSysMap nm, nr;
+        char path[] = "/tmp/padmap_n64_test.cfg", *text = NULL;
+        FILE *f;
+        long len;
+        CHECK(PADSYS_N64.count == N64_BTN_COUNT && N64_BTN_COUNT <= PAD_MAX_BTN && PADSYS_N64.btnA == N64_BTN_A && PADSYS_N64.btnB == N64_BTN_B);
+        PadMap_Defaults(&PADSYS_N64, &nm);
+        CHECK(nm.b[N64_BTN_SUP].key == KEY_UP && nm.b[N64_BTN_CUP].key == KEY_I && nm.b[N64_BTN_Z].key == KEY_LEFT_SHIFT);
+        CHECK(nm.b[N64_BTN_UP].key == 0 && nm.b[N64_BTN_UP].pad == GAMEPAD_BUTTON_LEFT_FACE_UP && nm.b[N64_BTN_SUP].pad == -1);
+        CHECK(nm.b[N64_BTN_A].pad == GAMEPAD_BUTTON_RIGHT_FACE_RIGHT && nm.b[N64_BTN_B].pad == GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+        CHECK(strcmp(PADMAP_N64_NAMES[N64_BTN_CRIGHT], "cright") == 0 && strcmp(PADMAP_N64_NAMES[N64_BTN_SLEFT], "stickleft") == 0);
+        nm.b[N64_BTN_Z].key = KEY_Q;
+        nm.b[N64_BTN_CLEFT].key = KEY_G;
+        nm.b[N64_BTN_SDOWN].jsKind = PAD_JS_AXIS_POS; nm.b[N64_BTN_SDOWN].jsIdx = 1;
+        remove(path);
+        CHECK(PadMap_Save(&PADSYS_N64, &nm, path));
+        f = fopen(path, "r");
+        CHECK(f != NULL);
+        if (f) {
+            fseek(f, 0, SEEK_END); len = ftell(f); fseek(f, 0, SEEK_SET);
+            text = calloc(1, (size_t)len + 1);
+            CHECK(fread(text, 1, (size_t)len, f) == (size_t)len);
+            fclose(f);
+            CHECK(strstr(text, "n64.map.z.key=Q\n") && strstr(text, "n64.map.cleft.key=G\n") && strstr(text, "n64.map.stickdown.js=a1+\n"));
+            PadMap_Load(&PADSYS_N64, &nr, text);
+            CHECK(nr.custom && nr.b[N64_BTN_Z].key == KEY_Q && nr.b[N64_BTN_CLEFT].key == KEY_G && nr.b[N64_BTN_CUP].key == KEY_I);
+            CHECK(nr.b[N64_BTN_SDOWN].jsKind == PAD_JS_AXIS_POS && nr.b[N64_BTN_SDOWN].jsIdx == 1);
+            free(text);
+        }
+        CHECK(PadMap_Clear(&PADSYS_N64, path));
+        f = fopen(path, "r");
+        if (f) { char buf2[64] = { 0 }; CHECK(fread(buf2, 1, sizeof(buf2) - 1, f) == 0); fclose(f); }
+        remove(path);
+    }
+
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("padmap_test: ok");
     return 0;

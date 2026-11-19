@@ -124,7 +124,7 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
   long time to build.
 - **Language:** English / Português.
-- **NES / SNES controller (below the scrape/Hide rows of each):** shows the pad and
+- **NES / SNES / N64 controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
   fills on the hint bar's A glyph; the holds' controls light only the button they are bound to): it asks for one button at a time (Up, Down, Left,
   Right, Select, Start, B, A; the asked button blinks on the pad): press the key or pad
@@ -142,6 +142,15 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   ports (`keybinds.ini` `[player1]`: those ports only take keyboard keys, so a mapped pad button
   does not reach them). ZL / ZR are drawn and mappable like the Switch Online pad's, but no SNES
   game reads them, so they are not handed to any game; NSO's own rewind chord is unchanged.
+  The N64 screen is the same too (D-pad Up/Down/Left/Right, Stick Up/Down/Left/Right, Start, A, B,
+  Z, L, R, C-Up/Down/Left/Right; saved as `n64.map.*`). Z is drawn apart from the body, with a leader
+  line to the trigger behind the middle prong. The stick directions are digital (full tilt; the
+  analog stick keeps working when none of them is held) and the stick's rings shift with the tilt.
+  It applies to the N64 games NSO runs inside its window (the embedded ones: Super Mario 64, Star Fox
+  64, ...). The external N64 ports (SoH, Perfect Dark, Ship ports, the recomps ...) read their own
+  controller setup through SDL and are not touched, and there is no Mednafen N64 module: set their
+  controls in their own menus. A Switch-mode N64 pad (057e:2009 / 2019) keeps its C buttons as the
+  right stick everywhere; they light the C directions on this screen too.
 
 ### ROMs
 
