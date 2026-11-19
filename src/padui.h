@@ -6,7 +6,7 @@
  *
  * The same screen serves both systems (the PadSys of padmap.h picks the buttons, the drawing, the
  * config keys): SNES adds Y, X, L, R and the Switch Online pad's ZL / ZR (drawn smaller beside L / R
- * on the shoulder view, mappable and lit, but no SNES game reads them).
+ * as tabs on the top edge, mappable and lit, but no SNES game reads them).
  *
  * Entering the screen shows the controller, lighting live on every press (A and B light it too
  * while held, as the holds that remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
@@ -548,16 +548,15 @@ static void PadRoundPoly(const Vector2 *p, const float *rad, int n, float th, Co
 
 /* The width of the SNES drawing's box and its height, in the reference picture's units. */
 #define PADSNES_W 876.0f
-#define PADSNES_H 581.0f
+#define PADSNES_H 382.0f
 
 static float PadMirrorX(float x) { return 926.0f - x; }   /* the pad is symmetric about x = 463 */
 
 /* The SNES controller (Switch Online pad: ZL / ZR too) in white line art after the reference picture
- * (920 x 800, the box 25..901 x 146..727): the top view with the raised shoulder tabs on its upper edge,
- * the D-pad in its ring, Select / Start as slanted pills and the four face buttons in two capsule wells;
- * below it the shoulder view: the strip with the long L / R pills, between them ZL / ZR (smaller) round
- * the small centre circle, and the row of small tabs under it. (x, y) is the top-left of the box,
- * w its width; lit[b] fills that button white. Line weights: the outer lines weigh the same as the NES
+ * (the top view, the box 25..901 x 146..528): the raised shoulder tabs on its upper edge (L and R at the
+ * lobes, the smaller ZL and ZR inboard of them), the D-pad in its ring, Select / Start as slanted pills
+ * and the four face buttons in two capsule wells. (x, y) is the top-left of the box, w its width;
+ * lit[b] fills that button white. Line weights: the outer lines weigh the same as the NES
  * controller's (1.3 per 340 px of width), the inner ones are lighter, as in the reference. */
 static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX_BTN], Color c) {
     float s = w / PADSNES_W;
@@ -674,31 +673,16 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
         PadCircle(yc, r, thM, c);
     }
 
-    /* shoulder view: the strip, L / R long pills, ZL / ZR between them round the small circle */
-    PadRRect(v, 25, 625, 900, 717, 14, th, c);
-    {
-        Rectangle l = PadR(v, 126, 647, 316, 695), r = PadR(v, 612, 647, 800, 695);
-        Rectangle zl = PadR(v, 338, 656, 426, 686), zr = PadR(v, 500, 656, 588, 686);
-        if (lit[SNES_BTN_L]) DrawRectangleRounded(l, 1.0f, 40, c);
-        if (lit[SNES_BTN_R]) DrawRectangleRounded(r, 1.0f, 40, c);
-        if (lit[SNES_BTN_ZL]) DrawRectangleRounded(zl, 1.0f, 40, c);
-        if (lit[SNES_BTN_ZR]) DrawRectangleRounded(zr, 1.0f, 40, c);
-        DrawRectangleRoundedLinesEx(l, 1.0f, 40, thM, c);
-        DrawRectangleRoundedLinesEx(r, 1.0f, 40, thM, c);
-        DrawRectangleRoundedLinesEx(zl, 1.0f, 40, thM, c);
-        DrawRectangleRoundedLinesEx(zr, 1.0f, 40, thM, c);
-    }
-    PadCircle(PadV(v, 463, 671), 15.5f * s, thM, c);
-    {   /* the seam of the strip, in the gaps between the buttons */
-        static const float seg[6][2] = { { 25, 126 }, { 316, 338 }, { 426, 447.5f }, { 478.5f, 500 }, { 588, 612 }, { 800, 900 } };
-        for (int i = 0; i < 6; i++) DrawLineEx(PadV(v, seg[i][0], 671), PadV(v, seg[i][1], 671), thL, c);
-    }
-    {   /* the row of small tabs under the strip (open at the top, where the strip is) */
-        static const float tab[8][2] = { { 141, 188 }, { 188, 241 }, { 241, 288 }, { 352, 414 }, { 448, 510 }, { 604, 680 }, { 680, 756 }, { 756, 827 } };
-        for (int i = 0; i < 8; i++) {
-            Vector2 q[4] = { PadV(v, tab[i][0], 717), PadV(v, tab[i][0], 727), PadV(v, tab[i][1], 727), PadV(v, tab[i][1], 717) };
-            PadPoly(q, 4, thM, c);
+    /* ZL / ZR: small tabs on the flat top edge between the L and R tabs, inboard of them, in the L / R tabs' style */
+    for (int side = 0; side < 2; side++) {
+        float xa = 338.0f, xb = 426.0f, top = cy - R - 11.0f, edge = cy - R;
+        if (side) { float t0 = PadMirrorX(xb); xb = PadMirrorX(xa); xa = t0; }
+        Vector2 tab[4] = { PadV(v, xa, edge), PadV(v, xa, top), PadV(v, xb, top), PadV(v, xb, edge) };
+        if (lit[side ? SNES_BTN_ZR : SNES_BTN_ZL]) {
+            PadTri(tab[1], tab[2], tab[3], c);
+            PadTri(tab[1], tab[3], tab[0], c);
         }
+        PadPoly(tab, 4, th, c);
     }
 }
 
