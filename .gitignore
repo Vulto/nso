@@ -64,3 +64,6 @@ assets/fonts/*
 
 # In-process modules (embed/<game>/Makefile output)
 embed/*/build/
+
+# Release artifacts
+/dist/

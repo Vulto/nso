@@ -7,6 +7,44 @@ This repository does not include ROMs or copyrighted art. You must supply your
 own legally obtained ROMs. Cover images are fetched or added locally; a missing
 cover is shown as a "?" placeholder.
 
+## What's new (Novidades)
+
+Version 0.2.0. The full list is in [CHANGELOG.md](CHANGELOG.md). The screenshots
+below are NSO's own interface on a clean install, without ROMs or covers (missing
+covers show a "?").
+
+**Main menu:** the system cards are twice as big.
+
+![Main menu with bigger system cards](docs/screenshots/main-menu.png)
+
+**Game grid:** sidebar with rail icons and a hint bar that follows the connected
+controller (N64 labels on the 8BitDo N64 pad).
+
+![Game grid with the sidebar rail](docs/screenshots/system-grid.png)
+
+**Sort panel (T, or C-Right on the N64 pad):** custom order, title, release date,
+last played, play time.
+
+![Sort panel](docs/screenshots/sort-panel.png)
+
+**Port status (S):** counts per port type and a per-game list for the current system.
+
+![Port status overlay](docs/screenshots/port-status.png)
+
+**Nintendo 64 settings:** the Rumble setting now works on the 8BitDo N64 pad
+(S mode, USB). "Show controls in game" turns the caption bar on.
+
+![Nintendo 64 settings with the Rumble option](docs/screenshots/settings-rumble.png)
+
+**Image scraping and Hide unplayable:** per-system settings.
+
+![Image scraping and Hide unplayable](docs/screenshots/settings-scraping.png)
+
+**Rewind (NES, SNES):** hold ZL + ZR on the pad or Backspace on the keyboard. The
+game shrinks, a panel rises with one thumbnail per second of history, and a caption
+bar (with "Show controls in game") shows at game start and while rewinding. Shots
+of it show game frames, so they are not included here.
+
 ## Build
 
 You need:
