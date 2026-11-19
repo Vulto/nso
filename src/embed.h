@@ -135,7 +135,7 @@ static inline Rectangle Embed_ZoomRect(Rectangle card, Rectangle game, float p)
 bool Embed_Start(const char *modulePath, const char *dataPath, const char *stateDir, const char *stateLoad);
 /* The player's NES controller mapping (padmap.h) for the NES game about to start; NULL = the
  * default controls. */
-void Embed_SetNesMap(const NesPadMap *map);
+void Embed_SetPadMap(const PadSysMap *map, bool snes);
 /* One NSO frame: input, game frames, audio. false = the player chose Quit. */
 bool Embed_Update(float dt);
 /* blur/blurDirLoc: main.c's separable 5-tap shader (id 0 = downscale only). */
@@ -175,8 +175,9 @@ void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, floa
     else DrawRectangleRec(r, Fade(BLACK, alpha));
 }
 
-static const NesPadMap *embedNesMap = NULL;
-void Embed_SetNesMap(const NesPadMap *map) { embedNesMap = map; }
+static const PadSysMap *embedPadMap = NULL;   /* a custom controller mapping (padmap.h), NULL = the defaults */
+static bool embedPadSnes = false;              /* ... and it is the SNES one */
+void Embed_SetPadMap(const PadSysMap *map, bool snes) { embedPadMap = map; embedPadSnes = snes; }
 
 #if defined(_WIN32)
 /* Not built for Windows yet: embedded cards stay unlaunchable there. */
@@ -397,8 +398,8 @@ static bool Embed_BindDown(const PadBind *b)
     return (b->key && IsKeyDown(b->key)) || (b->pad >= 0 && IsGamepadAvailable(0) && IsGamepadButtonDown(0, b->pad));
 }
 
-/* Keyboard: arrows, X = A, Z = B, Enter = Start, Right Shift = Select (an NES game
- * with a custom controller mapping, padmap.h, reads those eight from it);
+/* Keyboard: arrows, X = A, Z = B, Enter = Start, Right Shift = Select (an NES or SNES game
+ * with a custom controller mapping, padmap.h, reads its buttons from it);
  * SNES also S = X, A = Y, C = L, V = R (the smw port's own defaults);
  * N64 also Left Shift = Z, I / J / K / L = C buttons (right stick).
  * Gamepad: D-pad / left stick, Nintendo A / B / X / Y (nso.h), L1 / R1, Start, Select;
@@ -437,18 +438,28 @@ static NsomodInput Embed_ReadPad(void)
         in.start |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_MIDDLE_RIGHT);
         in.select |= IsGamepadButtonDown(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
     }
-    if (embedNesMap) {
+    if (embedPadMap) {
+        const PadSysMap *m = embedPadMap;
         bool gp = IsGamepadAvailable(0);
         float lx = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X) : 0.0f;
         float ly = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y) : 0.0f;
-        in.up = Embed_BindDown(&embedNesMap->b[NES_BTN_UP]) || ly < -0.5f;
-        in.down = Embed_BindDown(&embedNesMap->b[NES_BTN_DOWN]) || ly > 0.5f;
-        in.left = Embed_BindDown(&embedNesMap->b[NES_BTN_LEFT]) || lx < -0.5f;
-        in.right = Embed_BindDown(&embedNesMap->b[NES_BTN_RIGHT]) || lx > 0.5f;
-        in.select = Embed_BindDown(&embedNesMap->b[NES_BTN_SELECT]);
-        in.start = Embed_BindDown(&embedNesMap->b[NES_BTN_START]);
-        in.b = Embed_BindDown(&embedNesMap->b[NES_BTN_B]);
-        in.a = Embed_BindDown(&embedNesMap->b[NES_BTN_A]);
+        in.up = Embed_BindDown(&m->b[NES_BTN_UP]) || ly < -0.5f;
+        in.down = Embed_BindDown(&m->b[NES_BTN_DOWN]) || ly > 0.5f;
+        in.left = Embed_BindDown(&m->b[NES_BTN_LEFT]) || lx < -0.5f;
+        in.right = Embed_BindDown(&m->b[NES_BTN_RIGHT]) || lx > 0.5f;
+        in.select = Embed_BindDown(&m->b[NES_BTN_SELECT]);
+        in.start = Embed_BindDown(&m->b[NES_BTN_START]);
+        if (embedPadSnes) {   /* the SNES order; ZL / ZR are not the games' */
+            in.b = Embed_BindDown(&m->b[SNES_BTN_B]);
+            in.a = Embed_BindDown(&m->b[SNES_BTN_A]);
+            in.y = Embed_BindDown(&m->b[SNES_BTN_Y]);
+            in.x = Embed_BindDown(&m->b[SNES_BTN_X]);
+            in.l = Embed_BindDown(&m->b[SNES_BTN_L]);
+            in.r = Embed_BindDown(&m->b[SNES_BTN_R]);
+        } else {
+            in.b = Embed_BindDown(&m->b[NES_BTN_B]);
+            in.a = Embed_BindDown(&m->b[NES_BTN_A]);
+        }
     }
     return in;
 }

@@ -1,8 +1,12 @@
-/* padui.h - Settings > Controller (NES): the controller drawn in white line art
+/* padui.h - Settings > Controller (NES and SNES): the controller drawn in white line art
  * (raylib primitives, after the reference picture) with a lit white button for every
  * pressed control, and Mednafen-style sequential mapping. Included by main.c after the
  * scrape page; uses its statics. The screen is a third page below Image scraping:
  * the Settings page scrolls down to it like it does to the scrape rows.
+ *
+ * The same screen serves both systems (the PadSys of padmap.h picks the buttons, the drawing, the
+ * config keys): SNES adds Y, X, L, R and the Switch Online pad's ZL / ZR (drawn smaller beside L / R
+ * on the shoulder view, mappable and lit, but no SNES game reads them).
  *
  * Entering the screen shows the controller, lighting live on every press (A and B light it too
  * while held, as the holds that remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
@@ -39,7 +43,10 @@
 #define PADUI_BLINK_HZ 3.0
 #define PADUI_HOLD_SEC 0.9         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
 
-static NesPadMap nesPad;
+static NesPadMap nesPad, snesPad;    /* the map of each system (padmap.h) */
+static const PadSys *padSys = &PADSYS_NES;   /* the system whose screen is open */
+static PadSysMap *padMapP = &nesPad;
+#define PADCUR (*padMapP)
 static float padExitHeld = 0.0f;   /* seconds B has been held on the idle screen */
 static float padRing = 0.0f;       /* the ring on the B glyph, 0..1: follows the hold, drains on release */
 static float padRemapHeld = 0.0f, padRingA = 0.0f;   /* the same for A (remap) */
@@ -48,10 +55,10 @@ static bool padResetWait = true;   /* ZR held on entering must be released first
 static bool padRemapWait = true;   /* an A held when the screen opened (or a mapping ended) must be released first */
 static bool padExitGuard = false;  /* B is still held after leaving: Settings must not take it as Back */
 static bool padExitWait = true;    /* a B held when the screen opened (or a mapping ended) must be released first */
-static NesPadMap padWork;          /* the map being entered; replaces nesPad only when complete */
+static PadSysMap padWork;          /* the map being entered; replaces the system's map only when complete */
 static bool padOpen = false;
 static bool padListen = false;     /* mapping: prompting for button padStep */
-static int padStep = 0;            /* NES_BTN_* being asked for */
+static int padStep = 0;            /* the button (index into padSys->names) being asked for */
 static double padListenT = 0.0;
 static bool padWaitRelease = false; /* mapping waits for every input to be released */
 static int padPendStd = -1, padPendKind = PAD_JS_NONE, padPendIdx = 0;
@@ -63,7 +70,7 @@ static int padCand = PADCAND_NONE, padCandKey = 0, padCandStd = -1, padCandJsKin
 static char padCandDev[40];
 static double padCandT = 0.0;
 
-static void Pad_LoadNes(void) {
+static void Pad_LoadMaps(void) {
     static char text[16384];
     char cfg[2112];
     size_t n = 0;
@@ -71,14 +78,15 @@ static void Pad_LoadNes(void) {
     FILE *f = fopen(cfg, "r");
     if (f) { n = fread(text, 1, sizeof(text) - 1, f); fclose(f); }
     text[n] = '\0';
-    PadMap_NesLoad(&nesPad, text);
+    PadMap_Load(&PADSYS_NES, &nesPad, text);
+    PadMap_Load(&PADSYS_SNES, &snesPad, text);
 }
 
-static void Pad_SaveNes(void) {
+static void Pad_SaveMap(void) {
     char cfg[2112];
     Lang_ConfigPath(cfg, sizeof(cfg));
-    nesPad.custom = true;
-    if (!PadMap_NesSave(&nesPad, cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+    PADCUR.custom = true;
+    if (!PadMap_Save(padSys, padMapP, cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
 /* Esc must not close NSO while this screen is open: leaving takes a 0.9 second hold of B. */
@@ -95,7 +103,7 @@ static void PadUi_ListenEnd(void) {
 static void PadUi_ListenBegin(void) {
     int k, idx;
     char dev[40];
-    padWork = nesPad;
+    padWork = PADCUR;
     padStep = 0;
     padListen = true;
     padListenT = GetTime();
@@ -120,7 +128,9 @@ static void PadUi_Close(void) {
 }
 
 /* Entering the screen shows the live controller; "Map Controls" starts the mapping. */
-static void PadUi_Open(void) {
+static void PadUi_Open(bool snes) {
+    padSys = snes ? &PADSYS_SNES : &PADSYS_NES;
+    padMapP = snes ? &snesPad : &nesPad;
     padOpen = true;
     SetExitKey(KEY_NULL);
     padExitWait = true;
@@ -136,7 +146,7 @@ static void PadUi_Open(void) {
 }
 
 static bool PadUi_Lit(int btn) {
-    const PadBind *b = &nesPad.b[btn];
+    const PadBind *b = &PADCUR.b[btn];
     return (b->key && IsKeyDown(b->key))
         || (b->pad >= 0 && IsGamepadAvailable(0) && IsGamepadButtonDown(0, b->pad))
         || (b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx));
@@ -152,9 +162,9 @@ static void PadUi_Assigned(double now, bool skipped) {
     padPendT = 0.0;
     padPendStd = -1;
     padPendKind = PAD_JS_NONE;
-    if (++padStep >= NES_BTN_COUNT) {
-        nesPad = padWork;
-        Pad_SaveNes();
+    if (++padStep >= padSys->count) {
+        PADCUR = padWork;
+        Pad_SaveMap();
         PadUi_ListenEnd();
     }
 }
@@ -233,7 +243,7 @@ static void PadUi_ListenPoll(void) {
 
 /* Is B held: NSO's back (the B key, the pad's B) or the control mapped to the NES B. */
 static bool PadUi_BDown(void) {
-    const PadBind *b = &nesPad.b[NES_BTN_B];
+    const PadBind *b = &PADCUR.b[padSys->btnB];
     if (IsKeyDown(KEY_B) || (b->key && IsKeyDown(b->key))) return true;
     if (IsGamepadAvailable(0) && (IsGamepadButtonDown(0, NSO_BTN_B) || (b->pad >= 0 && IsGamepadButtonDown(0, b->pad)))) return true;
     return b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx);
@@ -259,7 +269,7 @@ static void PadUi_ExitTick(void) {
 
 /* Is A held: NSO's confirm (Enter, the A key, the pad's A) or the control mapped to the NES A. */
 static bool PadUi_ADown(void) {
-    const PadBind *b = &nesPad.b[NES_BTN_A];
+    const PadBind *b = &PADCUR.b[padSys->btnA];
     if (IsKeyDown(KEY_A) || IsKeyDown(KEY_ENTER) || (b->key && IsKeyDown(b->key))) return true;
     if (IsGamepadAvailable(0) && (IsGamepadButtonDown(0, NSO_BTN_A) || (b->pad >= 0 && IsGamepadButtonDown(0, b->pad)))) return true;
     return b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx);
@@ -291,15 +301,17 @@ static bool PadUi_RemapTick(void) {
 }
 
 /* Holding ZR (pad), or Left Shift on the keyboard (the N64 ZL / ZR = Z key), for PADUI_HOLD_SEC
- * puts the defaults back. A control that is mapped to a NES button never resets. */
+ * puts the defaults back. A control that is mapped to a button of the pad (other than the SNES ZR
+ * itself) never resets. */
 static void PadUi_ResetTick(void) {
     float dt = GetFrameTime();
     bool zr = IsGamepadAvailable(0) && IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
     bool shift = IsKeyDown(KEY_LEFT_SHIFT);
     bool down;
-    for (int i = 0; i < NES_BTN_COUNT; i++) {
-        if (nesPad.b[i].pad == GAMEPAD_BUTTON_RIGHT_TRIGGER_2) zr = false;
-        if (nesPad.b[i].key == KEY_LEFT_SHIFT) shift = false;
+    for (int i = 0; i < padSys->count; i++) {   /* the system's own ZR button (SNES) is what this resets with */
+        if (i == padSys->btnZR) continue;
+        if (PADCUR.b[i].pad == GAMEPAD_BUTTON_RIGHT_TRIGGER_2) zr = false;
+        if (PADCUR.b[i].key == KEY_LEFT_SHIFT) shift = false;
     }
     down = zr || shift;
     if (padResetWait) {
@@ -312,8 +324,8 @@ static void PadUi_ResetTick(void) {
             char cfg[2112];
             Sfx_Play(SFX_CLICK);
             Lang_ConfigPath(cfg, sizeof(cfg));
-            PadMap_NesDefaults(&nesPad);
-            if (!PadMap_NesClear(cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+            PadMap_Defaults(padSys, padMapP);
+            if (!PadMap_Clear(padSys, cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
             padResetHeld = 0.0f;
             padRingZ = 0.0f;
             padResetWait = true;   /* once per hold: release before it can fire again */
@@ -471,29 +483,156 @@ static void DrawNesController(float x, float y, float w, const bool lit[NES_BTN_
     }
 }
 
+/* A slanted capsule from a to b (radius r, screen units): outline, filled white when on. */
+static void PadCapsule(Vector2 a, Vector2 b, float r, float th, bool on, Color c) {
+    Vector2 pts[34];
+    float ang = atan2f(b.y - a.y, b.x - a.x);
+    int n = 0;
+    if (on) {
+        DrawLineEx(a, b, 2.0f * r, c);
+        DrawCircleV(a, r, c);
+        DrawCircleV(b, r, c);
+    }
+    for (int i = 0; i <= 16; i++) {   /* the far end, then the near one */
+        float t = ang - PI * 0.5f + PI * (float)i / 16.0f;
+        pts[n++] = (Vector2){ b.x + cosf(t) * r, b.y + sinf(t) * r };
+    }
+    for (int i = 0; i <= 16; i++) {
+        float t = ang + PI * 0.5f + PI * (float)i / 16.0f;
+        pts[n++] = (Vector2){ a.x + cosf(t) * r, a.y + sinf(t) * r };
+    }
+    PadLoop(pts, n, th, c);
+}
+
+/* The width of the SNES drawing's box and its height, in the reference picture's units. */
+#define PADSNES_W 876.0f
+#define PADSNES_H 581.0f
+
+/* The SNES controller (Switch Online pad: ZL / ZR too) in white line art after the reference picture
+ * (920 x 800, the box 25..901 x 146..727): the top view with the D-pad, Select / Start and the four
+ * face buttons in their capsule wells, and below it the shoulder view with L / R and, smaller on the
+ * outer side of each, ZL / ZR. (x, y) is the top-left of the box, w its width; lit[b] fills white. */
+static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX_BTN], Color c) {
+    float s = w / PADSNES_W;
+    PadView v = { x + 45.0f * s, y + 19.0f * s, s };   /* PadV(rx, ry) = (x + (rx - 25) s, y + (ry - 146) s) */
+    float th = fmaxf(1.5f, 2.2f * s);
+    Vector2 body[96], cross[20];
+    int n = 0;
+    const float lcx = 210.0f, rcx = 716.0f, cy = 342.0f, R = 185.0f;
+
+    /* body: two lobes joined by the band, bottom edge curving up between them */
+    for (int i = 0; i <= 24; i++) {   /* right lobe, from the top clockwise to below */
+        float t = (-90.0f + 200.0f * (float)i / 24.0f) * DEG2RAD;
+        body[n++] = PadV(v, rcx + cosf(t) * R, cy + sinf(t) * R);
+    }
+    for (int i = 1; i <= 8; i++) {   /* down-left fillet into the flat bottom */
+        float u = (float)i / 8.0f;
+        float px = (1 - u) * (1 - u) * 653.0f + 2 * u * (1 - u) * 622.0f + u * u * 592.0f;
+        float py = (1 - u) * (1 - u) * 516.0f + 2 * u * (1 - u) * 497.0f + u * u * 482.0f;
+        body[n++] = PadV(v, px, py);
+    }
+    for (int i = 8; i >= 0; i--) {   /* its mirror, on the left */
+        float u = (float)i / 8.0f;
+        float px = (1 - u) * (1 - u) * 653.0f + 2 * u * (1 - u) * 622.0f + u * u * 592.0f;
+        float py = (1 - u) * (1 - u) * 516.0f + 2 * u * (1 - u) * 497.0f + u * u * 482.0f;
+        body[n++] = PadV(v, lcx + rcx - px, py);
+    }
+    for (int i = 0; i <= 24; i++) {   /* left lobe, from below up to the top */
+        float t = (70.0f + 200.0f * (float)i / 24.0f) * DEG2RAD;
+        body[n++] = PadV(v, lcx + cosf(t) * R, cy + sinf(t) * R);
+    }
+    PadLoop(body, n, th, c);
+    /* the shoulder buttons' tabs on the top edge */
+    PadRRect(v, 127, 146, 315, 158, 3, th * 0.8f, c);
+    PadRRect(v, 612, 146, 800, 158, 3, th * 0.8f, c);
+
+    /* D-pad: ring, plus-shaped pad, lit arms filled */
+    DrawCircleLinesV(PadV(v, 210, 342), 105.0f * s, c);
+    if (lit[SNES_BTN_UP]) DrawRectangleRec(PadR(v, 187, 270, 241, 316), c);
+    if (lit[SNES_BTN_DOWN]) DrawRectangleRec(PadR(v, 187, 369, 241, 415), c);
+    if (lit[SNES_BTN_LEFT]) DrawRectangleRec(PadR(v, 141, 316, 187, 369), c);
+    if (lit[SNES_BTN_RIGHT]) DrawRectangleRec(PadR(v, 241, 316, 288, 369), c);
+    n = PadCross(v, 214.5f, 342.5f, 27.0f, 73.0f, 4.0f, cross);
+    PadLoop(cross, n, th, c);
+
+    /* Select and Start: slanted pills */
+    PadCapsule(PadV(v, 363, 387), PadV(v, 403, 351), 11.0f * s, th, lit[SNES_BTN_SELECT], c);
+    PadCapsule(PadV(v, 460, 387), PadV(v, 500, 351), 11.0f * s, th, lit[SNES_BTN_START], c);
+
+    /* face buttons: X top, A right, B bottom, Y left, in two capsule wells */
+    DrawCircleLinesV(PadV(v, rcx, cy), 162.0f * s, c);
+    {
+        Vector2 xc = PadV(v, 716, 277), ac = PadV(v, 794, 342), bc = PadV(v, 716, 406), yc = PadV(v, 638, 342);
+        float r = 35.0f * s;
+        PadCapsule(yc, xc, 45.0f * s, th * 0.8f, false, c);
+        PadCapsule(yc, xc, 49.0f * s, th * 0.8f, false, c);
+        PadCapsule(bc, ac, 45.0f * s, th * 0.8f, false, c);
+        PadCapsule(bc, ac, 49.0f * s, th * 0.8f, false, c);
+        if (lit[SNES_BTN_X]) DrawCircleV(xc, r, c);
+        if (lit[SNES_BTN_A]) DrawCircleV(ac, r, c);
+        if (lit[SNES_BTN_B]) DrawCircleV(bc, r, c);
+        if (lit[SNES_BTN_Y]) DrawCircleV(yc, r, c);
+        DrawRing(xc, r - th * 0.5f, r + th * 0.5f, 0.0f, 360.0f, 48, c);
+        DrawRing(ac, r - th * 0.5f, r + th * 0.5f, 0.0f, 360.0f, 48, c);
+        DrawRing(bc, r - th * 0.5f, r + th * 0.5f, 0.0f, 360.0f, 48, c);
+        DrawRing(yc, r - th * 0.5f, r + th * 0.5f, 0.0f, 360.0f, 48, c);
+    }
+
+    /* shoulder view: the strip, L / R pills, smaller ZL / ZR outside them */
+    PadRRect(v, 25, 625, 900, 717, 14, th, c);
+    {
+        Rectangle l = PadR(v, 127, 647, 315, 695), r = PadR(v, 612, 647, 800, 695);
+        Rectangle zl = PadR(v, 48, 656, 112, 686), zr = PadR(v, 815, 656, 879, 686);
+        if (lit[SNES_BTN_L]) DrawRectangleRounded(l, 1.0f, 12, c);
+        if (lit[SNES_BTN_R]) DrawRectangleRounded(r, 1.0f, 12, c);
+        if (lit[SNES_BTN_ZL]) DrawRectangleRounded(zl, 1.0f, 12, c);
+        if (lit[SNES_BTN_ZR]) DrawRectangleRounded(zr, 1.0f, 12, c);
+        DrawRectangleRoundedLinesEx(l, 1.0f, 12, th, c);
+        DrawRectangleRoundedLinesEx(r, 1.0f, 12, th, c);
+        DrawRectangleRoundedLinesEx(zl, 1.0f, 12, th, c);
+        DrawRectangleRoundedLinesEx(zr, 1.0f, 12, th, c);
+    }
+    DrawCircleLinesV(PadV(v, 463, 671), 15.0f * s, c);
+    {   /* the seam of the strip, in the gaps between the buttons */
+        static const float seg[6][2] = { { 25, 48 }, { 112, 127 }, { 315, 448 }, { 478, 612 }, { 800, 815 }, { 879, 900 } };
+        for (int i = 0; i < 6; i++) DrawLineEx(PadV(v, seg[i][0], 671), PadV(v, seg[i][1], 671), th * 0.8f, c);
+    }
+}
+
+/* The prompt's name of the step-th button of the open system. */
+static StrId PadUi_Label(int step) {
+    static const StrId nes[NES_BTN_COUNT] = { S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START, S_PC_B, S_PC_A };
+    static const StrId snes[SNES_BTN_COUNT] = { S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START,
+                                                S_PC_Y, S_PC_B, S_PC_X, S_PC_A, S_PC_L, S_PC_R, S_PC_ZL, S_PC_ZR };
+    return padSys == &PADSYS_SNES ? snes[step] : nes[step];
+}
+
 static void PadUi_Draw(Font font, Color bg) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float hx = sw * 0.449f, bx = sw * 0.485f, bw = sw * 0.387f;
     float oy = sh * PADUI_PAGE_Y;
-    float sc = bw / 340.0f;                      /* the reference's scale; the body is 147 tall, centred on ref y 239.5 */
+    bool snes = padSys == &PADSYS_SNES;
+    float sc = bw / 340.0f;                      /* the NES reference's scale; the body is 147 tall, centred on ref y 239.5 */
+    float halfH = snes ? PADSNES_H * 0.5f * bw / PADSNES_W : 74.0f * sc;   /* half the drawing's height */
     float cy = oy + sh * 0.5f;                   /* the controller sits in the middle of the page */
-    bool lit[NES_BTN_COUNT];
+    bool lit[PAD_MAX_BTN];
     (void)bg;
 
-    for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = false;
+    for (int i = 0; i < PAD_MAX_BTN; i++) lit[i] = false;
     if (padOpen && padListen) lit[padStep] = ((int)(GetTime() * PADUI_BLINK_HZ * 2.0) & 1) == 0;   /* blinks */
-    else for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = padOpen && PadUi_Lit(i);
+    else for (int i = 0; i < padSys->count; i++) lit[i] = padOpen && PadUi_Lit(i);
     if (padOpen && !padListen) {   /* the A / B that hold to remap / go back still light the pad while held */
-        if (PadUi_ADown()) lit[NES_BTN_A] = true;
-        if (PadUi_BDown()) lit[NES_BTN_B] = true;
+        if (PadUi_ADown()) lit[padSys->btnA] = true;
+        if (PadUi_BDown()) lit[padSys->btnB] = true;
     }
-    DrawFitText(font, T(S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
-    DrawNesController(bx, cy - (239.5f - 165.0f) * sc, bw, lit, WHITE);
+    DrawFitText(font, T(snes ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
+    if (snes) DrawSnesController(bx, cy - halfH, bw, lit, WHITE);
+    else DrawNesController(bx, cy - (239.5f - 165.0f) * sc, bw, lit, WHITE);
     if (padOpen && padListen) {   /* the one prompt under the controller: "Press: A", and the skip cue */
         char line[96];
-        float y = cy + 74.0f * sc + sh * 0.07f;
+        float y = cy + halfH + sh * 0.07f;
         float size = (float)font.baseSize * 1.5f;
-        snprintf(line, sizeof(line), "%s: %s", T(S_PC_PRESS), T((StrId)(S_PC_UP + padStep)));
+        snprintf(line, sizeof(line), "%s: %s", T(S_PC_PRESS), T(PadUi_Label(padStep)));
         Vector2 m = MeasureTextEx(font, line, size, 1.0f);
         if (m.x > bw) { size *= bw / m.x; m = MeasureTextEx(font, line, size, 1.0f); }
         DrawFitText(font, line, (Vector2){ bx + (bw - m.x) * 0.5f, y }, size, m.x + 1.0f, WHITE);

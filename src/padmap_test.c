@@ -135,6 +135,84 @@ int main(void)
         }
     }
 
+    /* SNES: twelve buttons for the games, ZL / ZR only kept in the config */
+    {
+        NesPadMap sm, sr;
+        char dir[] = "/tmp/nso-padmap-test-XXXXXX", path[256], text[8192], out[4096], again[4096];
+        FILE *f;
+        size_t n;
+        PadMap_Defaults(&PADSYS_SNES, &sm);
+        CHECK(sm.b[SNES_BTN_A].key == KEY_X && sm.b[SNES_BTN_B].key == KEY_Z && sm.b[SNES_BTN_X].key == KEY_S);
+        CHECK(sm.b[SNES_BTN_Y].key == KEY_A && sm.b[SNES_BTN_L].key == KEY_C && sm.b[SNES_BTN_R].key == KEY_V);
+        CHECK(sm.b[SNES_BTN_A].pad == GAMEPAD_BUTTON_RIGHT_FACE_RIGHT && sm.b[SNES_BTN_Y].pad == GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+        CHECK(sm.b[SNES_BTN_ZR].pad == GAMEPAD_BUTTON_RIGHT_TRIGGER_2 && sm.b[SNES_BTN_ZL].key == 0);
+        CHECK(PADSYS_SNES.btnA == SNES_BTN_A && PADSYS_SNES.btnZR == SNES_BTN_ZR && PADSYS_NES.btnZR == -1);
+        CHECK(PadMap_MednafenWordsSys(&PADSYS_SNES, &sm, buf, sizeof(buf), w, 40) == 0);   /* default: nothing handed over */
+        sm.custom = true;
+        sm.b[SNES_BTN_Y].key = KEY_G;
+        sm.b[SNES_BTN_L].key = 0;
+        sm.b[SNES_BTN_ZL].key = KEY_Q;
+        sm.b[SNES_BTN_X].jsKind = PAD_JS_BUTTON; sm.b[SNES_BTN_X].jsIdx = 7;
+        snprintf(sm.joyId, sizeof(sm.joyId), "0003057e200981110004000d00000000");
+        {
+            int k = PadMap_MednafenWordsSys(&PADSYS_SNES, &sm, buf, sizeof(buf), w, 40);
+            CHECK(k == 24 && strcmp(w[0], "-snes.input.port1.gamepad.up") == 0);
+            CHECK(strcmp(w[12], "-snes.input.port1.gamepad.y") == 0 && strcmp(w[13], "keyboard 0x0 10") == 0);
+            CHECK(strcmp(w[16], "-snes.input.port1.gamepad.x") == 0 && strstr(w[17], "button_7") != NULL);
+            CHECK(strcmp(w[20], "-snes.input.port1.gamepad.l") == 0 && strcmp(w[21], "") == 0);
+            CHECK(PadMap_MednafenWordsSys(&PADSYS_SNES, &sm, buf, sizeof(buf), w, 23) == 0);
+        }
+        CHECK(mkdtemp(dir) != NULL);
+        snprintf(path, sizeof(path), "%s/nso.cfg", dir);
+        f = fopen(path, "w");
+        fputs("language=pt\nnes.map.a.key=Q\n", f);
+        fclose(f);
+        CHECK(PadMap_Save(&PADSYS_SNES, &sm, path));
+        f = fopen(path, "r");
+        n = fread(text, 1, sizeof(text) - 1, f);
+        fclose(f);
+        text[n] = '\0';
+        CHECK(strstr(text, "snes.map.y.key=G\n") && strstr(text, "snes.map.zl.key=Q\n") && strstr(text, "snes.map.zr.pad=righttrigger+\n"));
+        PadMap_Load(&PADSYS_SNES, &sr, text);
+        CHECK(sr.custom && !memcmp(sr.b, sm.b, sizeof(sm.b)) && !strcmp(sr.joyId, sm.joyId));
+        PadMap_NesLoad(&r, text);   /* the two systems do not share keys */
+        CHECK(r.b[NES_BTN_A].key == KEY_Q && r.b[NES_BTN_UP].key == KEY_UP);
+        CHECK(PadMap_Clear(&PADSYS_SNES, path));
+        f = fopen(path, "r");
+        n = fread(text, 1, sizeof(text) - 1, f);
+        fclose(f);
+        text[n] = '\0';
+        CHECK(!strstr(text, "snes.map") && strstr(text, "nes.map.a.key=Q\n") && strstr(text, "language=pt\n"));
+        unlink(path);
+        rmdir(dir);
+
+        /* snesrecomp keybinds.ini: [player1] only, keyboard */
+        {
+            const char *ini = "# SNES\n[player1]\na = X\nb = Z\nl = C\n[player2]\na = None\n";
+            CHECK(PadMap_SnesKeybinds(ini, &sm, out, sizeof(out)));
+            CHECK(strstr(out, "[player1]\n") && strstr(out, "y = G\n") && strstr(out, "l = none\n") && strstr(out, "x = S\n"));
+            CHECK(strstr(out, "[player2]\na = None\n") && !strstr(out, "zl"));
+            CHECK(PadMap_SnesKeybinds(out, &sm, again, sizeof(again)) && strcmp(out, again) == 0);
+            CHECK(PadMap_SnesKeybinds(NULL, &sm, out, sizeof(out)) && strstr(out, "[player1]\n") == out);
+        }
+        /* zelda3 / sm ini: the two Controls lines */
+        {
+            const char *ini = "[General]\nWindow = 1\n[KeyMap]\n#Controls = a, b\nControls = Up, Down, Left, Right, Right Shift, Return, x, z, s, a, c, v\n"
+                              "CheatLife = w\n[GamepadMap]\nControls = DpadUp, DpadDown\nTurbo = L2\n[Other]\nx = 1\n";
+            CHECK(PadMap_ZeldaMerge(ini, &sm, out, sizeof(out)));
+            CHECK(strstr(out, "[General]\nWindow = 1\n[KeyMap]\n#Controls = a, b\n"));
+            CHECK(strstr(out, ", Return, x, z, s, g, , c") == NULL);
+            CHECK(strstr(out, "Return, x, z, s, g, , v\nCheatLife = w\n") != NULL);
+            CHECK(strstr(out, "[GamepadMap]\nControls = DpadUp, DpadDown, DpadLeft, DpadRight, Back, Start, B, A, Y, X, Lb, Rb\nTurbo = L2\n[Other]\nx = 1\n"));
+            CHECK(PadMap_ZeldaMerge(out, &sm, again, sizeof(again)) && strcmp(out, again) == 0);
+            CHECK(PadMap_ZeldaMerge("", &sm, out, sizeof(out)) && strstr(out, "[KeyMap]\nControls = ") == out && strstr(out, "[GamepadMap]\nControls = "));
+            CHECK(!PadMap_ZeldaMerge(ini, &sm, out, 50));
+            PadMap_Defaults(&PADSYS_SNES, &sr);
+            CHECK(PadMap_ZeldaMerge(ini, &sr, out, sizeof(out)));
+            CHECK(strstr(out, "Controls = Up, Down, Left, Right, Right Shift, Return, x, z, s, a, c, v\n") != NULL);
+        }
+    }
+
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("padmap_test: ok");
     return 0;

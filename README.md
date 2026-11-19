@@ -124,7 +124,7 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
   long time to build.
 - **Language:** English / Português.
-- **NES controller (NES only, below the scrape/Hide rows):** shows the pad and
+- **NES / SNES controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
   fills on the hint bar's A glyph; A and B also light the pad while held): it asks for one button at a time (Up, Down, Left,
   Right, Select, Start, B, A; the asked button blinks on the pad): press the key or pad
@@ -135,7 +135,13 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   mapping. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it
   applies to Mednafen (via `nes.input.port1.gamepad.*`), the embedded NES games
   and the NESRecomp ports (written to their `config.ini` on launch). OpenMadoola
-  and OpenDana keep their own input settings.
+  and OpenDana keep their own input settings. The SNES screen is the same (Up, Down, Left,
+  Right, Select, Start, Y, B, X, A, L, R, ZL, ZR; saved as `snes.map.*`) and it applies to
+  Mednafen (`snes.input.port1.gamepad.*`), the embedded SNES games (Super Mario World, Star Fox),
+  zelda3 and sm (the `Controls` lines of `zelda3.ini` / `sm.ini`, keys and pad) and the snesrecomp
+  ports (`keybinds.ini` `[player1]`: those ports only take keyboard keys, so a mapped pad button
+  does not reach them). ZL / ZR are drawn and mappable like the Switch Online pad's, but no SNES
+  game reads them, so they are not handed to any game; NSO's own rewind chord is unchanged.
 
 ### ROMs
 

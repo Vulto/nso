@@ -44,8 +44,9 @@ typedef enum {
     S_GS_NO_INSTALLER, S_GS_FAILED, S_GS_CANCELLED, S_GS_DONE,
     /* Settings > Hide unplayable, and the grid when nothing is playable */
     S_SET_HIDE, S_NO_PLAYABLE,
-    /* Settings > Controller (padmap.h, padui.h); S_PC_UP.. follow the NES buttons' order */
+    /* Settings > Controller (padmap.h, padui.h); S_PC_UP.. are the button names; padui.h orders them per system */
     S_PC_HEAD, S_PC_ENTRY, S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START, S_PC_B, S_PC_A,
+    S_PC_ENTRY_SNES, S_PC_X, S_PC_Y, S_PC_L, S_PC_R, S_PC_ZL, S_PC_ZR,
     S_PC_PRESS, S_PC_SKIP, S_PC_BAR, S_PC_BAR_MAP,
     /* embedded game pause menu (embed.h) */
     S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
@@ -205,6 +206,13 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_PC_START] = "Start",
         [S_PC_B] = "B",
         [S_PC_A] = "A",
+        [S_PC_ENTRY_SNES] = "SNES controller",
+        [S_PC_X] = "X",
+        [S_PC_Y] = "Y",
+        [S_PC_L] = "L",
+        [S_PC_R] = "R",
+        [S_PC_ZL] = "ZL",
+        [S_PC_ZR] = "ZR",
         [S_PC_PRESS] = "Press",
         [S_PC_SKIP] = "Hold to skip",
         [S_PC_BAR] = "    Hold 🅐: Remap      Hold ZR: Reset to default      Hold 🅑: Back   ",
@@ -341,6 +349,13 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_PC_START] = "Start",
         [S_PC_B] = "B",
         [S_PC_A] = "A",
+        [S_PC_ENTRY_SNES] = "Controle do SNES",
+        [S_PC_X] = "X",
+        [S_PC_Y] = "Y",
+        [S_PC_L] = "L",
+        [S_PC_R] = "R",
+        [S_PC_ZL] = "ZL",
+        [S_PC_ZR] = "ZR",
         [S_PC_PRESS] = "Pressione",
         [S_PC_SKIP] = "Segure para pular",
         [S_PC_BAR] = "    Segure 🅐: Remapear      Segure ZR: Restaurar padrão      Segure 🅑: Voltar   ",

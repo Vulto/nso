@@ -2500,9 +2500,14 @@ static void SysSettings_Save(int sys) {
 static bool SysIsNes(int sys) {
     return strcmp(systems[sys].platform->id, "nes") == 0;
 }
+static bool SysIsSnes(int sys) {
+    return strcmp(systems[sys].platform->id, "snes") == 0;
+}
+/* The systems with a controller screen (padui.h): NES and SNES. */
+static bool SysHasPad(int sys) { return SysIsNes(sys) || SysIsSnes(sys); }
 
-/* The last Settings row of the current system: the controller entry exists for NES only. */
-static int SetRowLast(void) { return SysIsNes(currentSystem) ? SB_SET_PAD : SB_SET_HIDE; }
+/* The last Settings row of the current system: the controller entry exists for NES and SNES. */
+static int SetRowLast(void) { return SysHasPad(currentSystem) ? SB_SET_PAD : SB_SET_HIDE; }
 
 static int sidebarItem = SB_ITEM_SINGLE;
 static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
@@ -2981,14 +2986,14 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
     }
     Msg_Format(&scrapeMsg, status, sizeof(status));
     if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.415f }, hsize, sw - hx, WHITE);
-    if (SysIsNes(currentSystem)) {   /* Controller: below the scraping rows, opens padui.h's page */
+    if (SysHasPad(currentSystem)) {   /* Controller: below the scraping rows, opens padui.h's page */
         float y = sh * 1.585f;
         bool cur = (sidebarSetRow == SB_SET_PAD);
         Rectangle box = { bx, y - bh * 0.5f, bw, bh };
         DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, sh * 1.505f }, hsize, sw - hx, WHITE);
         if (cur) DrawRectangleRec(box, WHITE);
         else DrawRectangleLinesEx(box, th, WHITE);
-        DrawFitText(font, T(S_PC_ENTRY), (Vector2){ bx + sw * 0.0225f, y }, osize,
+        DrawFitText(font, T(SysIsSnes(currentSystem) ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ bx + sw * 0.0225f, y }, osize,
                     bw - sw * 0.03f, cur ? red : WHITE);
     }
 }
@@ -3006,7 +3011,7 @@ static void SidebarPanels_Draw(Font font, Color red) {
     rlTranslatef(0.0f, -sbPanelShift, 0.0f);
     SidebarPanel_Draw(font, red);
     SidebarPanelScrape_Draw(font, red);
-    if (SysIsNes(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Draw(font, red);
+    if (SysHasPad(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Draw(font, red);
     rlPopMatrix();
 }
 
@@ -3393,7 +3398,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
                 return;
             }
             if (sidebarSetRow == SB_SET_PAD) {
-                PadUi_Open();
+                PadUi_Open(SysIsSnes(currentSystem));
                 return;
             }
             if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
@@ -3791,21 +3796,33 @@ static void GameEnvRestore(void)
     gameEnvCount = 0;
 }
 
-/* The NESRecomp ports (the -recomp folders of repos/nes) read player 1's keys and pad buttons from
- * config.ini beside their executable ([Keyboard.Player1], [Gamepad.Player1], SDL names):
- * with a custom controller mapping (padmap.h) those two sections are set to it before the
- * game starts; the rest of the file is the port's own. OpenMadoola and OpenDana keep their
- * bindings in their own formats and are not touched. */
-static void NesPort_ApplyPad(const GameEntry *game, const char *gameDir) {
+/* Ports that read their controls from a file beside their executable get the custom controller
+ * mapping (padmap.h) written into it before they start; the rest of the file is the port's own.
+ *  - the NESRecomp ports (the -recomp folders of repos/nes): config.ini, player 1's
+ *    [Keyboard.Player1] and [Gamepad.Player1] sections (SDL names);
+ *  - the snesrecomp ports (the -recomp folders of repos/snes): keybinds.ini [player1], keyboard
+ *    only (these ports have no pad mapping of their own);
+ *  - zelda3 and sm: zelda3.ini / sm.ini, the Controls lines of [KeyMap] and [GamepadMap].
+ * OpenMadoola and OpenDana keep their bindings in their own formats and are not touched. */
+static void PadPort_Apply(const GameEntry *game, const char *gameDir) {
     static char oldText[65536], newText[70000];
-    char path[2400], binDir[512];
-    const char *slash;
+    char path[2400], binDir[512], base[64], iniName[96];
+    const char *slash, *name = NULL;
+    int mode = 0;   /* 1 NES config.ini, 2 snesrecomp keybinds.ini, 3 zelda3 / sm ini */
     size_t n = 0;
-    if (!nesPad.custom || game->mednafen || game->embedRomKey || !game->dir || !game->binary
-        || !strstr(game->dir, "repos/nes/") || !strstr(game->dir, "-recomp")) return;
+    if (game->mednafen || game->embedRomKey || !game->dir || !game->binary) return;
     slash = strrchr(game->binary, '/');
+    snprintf(base, sizeof(base), "%s", slash ? slash + 1 : game->binary);
+    if (nesPad.custom && strstr(game->dir, "repos/nes/") && strstr(game->dir, "-recomp")) { mode = 1; name = "config.ini"; }
+    else if (snesPad.custom && strstr(game->dir, "repos/snes/") && strstr(game->dir, "-recomp")) { mode = 2; name = "keybinds.ini"; }
+    else if (snesPad.custom && strstr(game->dir, "repos/snes/") && (!strcmp(base, "zelda3") || !strcmp(base, "sm"))) {
+        snprintf(iniName, sizeof(iniName), "%s.ini", base);
+        mode = 3;
+        name = iniName;
+    }
+    if (!mode) return;
     snprintf(binDir, sizeof(binDir), "%.*s", slash ? (int)(slash - game->binary) : 0, game->binary);
-    snprintf(path, sizeof(path), "%s/%s%s%s", gameDir, binDir, binDir[0] ? "/" : "", "config.ini");
+    snprintf(path, sizeof(path), "%s/%s%s%s", gameDir, binDir, binDir[0] ? "/" : "", name);
     {
         char dir[2400];
         snprintf(dir, sizeof(dir), "%s/%s", gameDir, binDir);
@@ -3814,7 +3831,10 @@ static void NesPort_ApplyPad(const GameEntry *game, const char *gameDir) {
     FILE *f = fopen(path, "r");
     if (f) { n = fread(oldText, 1, sizeof(oldText) - 1, f); fclose(f); }
     oldText[n] = '\0';
-    if (!PadMap_IniMerge(oldText, &nesPad, newText, sizeof(newText))) return;
+    if (mode == 3 && !f) return;   /* the port's own ini ships with it: never make a bare one */
+    if (!(mode == 1 ? PadMap_IniMerge(oldText, &nesPad, newText, sizeof(newText))
+          : mode == 2 ? PadMap_SnesKeybinds(oldText, &snesPad, newText, sizeof(newText))
+                      : PadMap_ZeldaMerge(oldText, &snesPad, newText, sizeof(newText)))) return;
     if (f && strcmp(oldText, newText) == 0) return;
     f = fopen(path, "w");
     if (!f) { fprintf(stderr, "NSO: cannot write %s\n", path); return; }
@@ -3873,7 +3893,7 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (game->romImport) {
         NsoPrepareRomImport(gameDir, game->binary, game->romImport);
     }
-    NesPort_ApplyPad(game, gameDir);
+    PadPort_Apply(game, gameDir);
     if (game->appDir) {
         char appDir[1200];
         snprintf(appDir, sizeof(appDir), "%s", GetDataPath(game->appDir));
@@ -3881,9 +3901,9 @@ NsoProc LaunchGame(const GameEntry *game) {
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
     char mednafenHome[1200] = { 0 }, mednafenStates[1240];
-    char mednafenArgs[3584], mednafenRom[1200];
-    char *mednafenArgv[48];
-    char padArgs[2048], *padWords[2 * NES_BTN_COUNT];
+    char mednafenArgs[4608], mednafenRom[1200];
+    char *mednafenArgv[72];
+    char padArgs[3072], *padWords[2 * PAD_MAX_BTN];
     int padCount = 0;
     int mednafenArgc = 0;
     if (game->mednafen && game->rom) {
@@ -3895,9 +3915,11 @@ NsoProc LaunchGame(const GameEntry *game) {
         /* "Show controls in game": the caption bar is drawn over the game (rewind.h): at its start and
          * while rewinding. The window is always full size. */
         bool showBar = sysSettings[currentSystem].showControls;
-        /* NES: the controller mapping of Settings > Controller (padmap.h), when the player made one */
+        /* NES / SNES: the controller mapping of Settings > Controller (padmap.h), when the player made one */
         if (strcmp(game->mednafen, "nes") == 0)
-            padCount = PadMap_MednafenWords(&nesPad, padArgs, sizeof(padArgs), padWords, 2 * NES_BTN_COUNT);
+            padCount = PadMap_MednafenWordsSys(&PADSYS_NES, &nesPad, padArgs, sizeof(padArgs), padWords, 2 * PAD_MAX_BTN);
+        else if (strcmp(game->mednafen, "snes") == 0)
+            padCount = PadMap_MednafenWordsSys(&PADSYS_SNES, &snesPad, padArgs, sizeof(padArgs), padWords, 2 * PAD_MAX_BTN);
         mednafenArgc = NsoMednafenArgvEx(game->mednafen, sysSettings[currentSystem].pixel,
                                          sysSettings[currentSystem].scanlines, mednafenRom,
                                          GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
@@ -4009,7 +4031,8 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
-    Embed_SetNesMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : NULL);
+    Embed_SetPadMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : SysIsSnes(currentSystem) && snesPad.custom ? &snesPad : NULL,
+                    SysIsSnes(currentSystem));
     /* Rumble: NSO plays the module's motor (n64pad.h); AeroGauge drives its own pad. */
     N64Pad_SetEnabled(sysSettings[currentSystem].rumble);
     NsoSetEnv("AERO_RUMBLE", sysSettings[currentSystem].rumble ? "1" : "0");
@@ -4391,7 +4414,7 @@ int main(int argc, char **argv) {
         Lang_Set(Lang_Load(cfg));
     }
     SysSettings_LoadAll();
-    Pad_LoadNes();
+    Pad_LoadMaps();
     Order_LoadAll();
     SortPanel_LoadAll();
     Sfx_Init();
