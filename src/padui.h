@@ -7,14 +7,14 @@
  * Entering the screen shows the controller, lighting live on every press (A and B light it too
  * while held, as the holds that remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
  * Reset to default   Hold B: Back". Every hold here (A, B, ZR, skip a prompt) lasts exactly
- * PADUI_HOLD_SEC, 1.2 seconds. Holding A starts the mapping (a ring fills on the bar's A glyph);
+ * PADUI_HOLD_SEC, 0.9 seconds. Holding A starts the mapping (a ring fills on the bar's A glyph);
  * holding ZR (the pad's, or Left Shift, N64's ZL/ZR = Z key in embed.h) deletes nes.map.* and the live controller shows the defaults at once (ignored if that control is mapped to a
  * button). The mapping asks for one button at a time ("Press: Up", Down, Left, Right, Select,
  * Start, B, A) while that button blinks on the drawn controller. A key sets the button's key,
- * a pad button its pad control; a short press assigns on release and advances, holding it 1.2
+ * a pad button its pad control; a short press assigns on release and advances, holding it 0.9
  * seconds skips the prompt and keeps that button's current mapping. Esc (or ten seconds without
  * input) cancels and keeps the old map. After the last button the map is saved (config/nso.cfg,
- * nes.map.*). Leaving the screen takes holding B for 1.2 seconds (a ring fills on its B glyph):
+ * nes.map.*). Leaving the screen takes holding B for 0.9 seconds (a ring fills on its B glyph):
  * short B, Left, Esc and the menu keys do not leave, and Esc does not close NSO while the
  * screen is open. A or B held on entering, or when a mapping ends, count after release.
  * During the mapping every button is just an input (hold to skip).
@@ -37,7 +37,7 @@
 #define PADUI_LISTEN_SEC 10.0      /* idle seconds that cancel the mapping */
 #define PADUI_PAIR_SEC 0.06        /* how long a pad press waits for its other reading */
 #define PADUI_BLINK_HZ 3.0
-#define PADUI_HOLD_SEC 1.2         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
+#define PADUI_HOLD_SEC 0.9         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
 
 static NesPadMap nesPad;
 static float padExitHeld = 0.0f;   /* seconds B has been held on the idle screen */
@@ -81,7 +81,7 @@ static void Pad_SaveNes(void) {
     if (!PadMap_NesSave(&nesPad, cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
-/* Esc must not close NSO while this screen is open: leaving takes a 1.2 second hold of B. */
+/* Esc must not close NSO while this screen is open: leaving takes a 0.9 second hold of B. */
 static void PadUi_ListenEnd(void) {
     padListen = false;
     padExitWait = true;
