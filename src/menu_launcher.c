@@ -255,14 +255,11 @@ static void nso_menu_type_keys(Display *dpy, Window w, const char *keys)
 /* Emulator windows (NSO_EMU_STATE_DIR set) have a fixed size chosen by NSO, so
  * they are centred in the host window instead of stretched; Mednafen moves and
  * resizes its own window whenever the video mode changes, so this repeats. */
-static int nso_menu_bottom_bar;
-
 static void nso_menu_place(Display *dpy, Window w, Window host)
 {
     XWindowAttributes hattr, gattr;
     if (!XGetWindowAttributes(dpy, host, &hattr) || !XGetWindowAttributes(dpy, w, &gattr)) return;
-    int bar = nso_menu_bottom_bar;   /* the caption bar under the game ("Show controls in game") */
-    int x = (hattr.width - gattr.width) / 2, y = (hattr.height - bar - gattr.height) / 2;
+    int x = (hattr.width - gattr.width) / 2, y = (hattr.height - gattr.height) / 2;
     if (gattr.x != x || gattr.y != y) XMoveWindow(dpy, w, x, y);
 }
 
@@ -397,9 +394,6 @@ int NsoMenuLauncherMain(int argc, char **argv)
     pid_t host = (pid_t)strtol(host_pid_text, NULL, 10);
     const char *emu_dir = getenv("NSO_EMU_STATE_DIR");
     bool centre = emu_dir && *emu_dir;
-    if (getenv("NSO_BOTTOM_BAR")) nso_menu_bottom_bar = atoi(getenv("NSO_BOTTOM_BAR"));
-    if (nso_menu_bottom_bar < 0) nso_menu_bottom_bar = 0;
-    unsetenv("NSO_BOTTOM_BAR");
 
     Display *dpy = XOpenDisplay(NULL);   /* before the fork: no window is missed */
     pid_t game = fork();

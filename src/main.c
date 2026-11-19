@@ -3785,14 +3785,12 @@ NsoProc LaunchGame(const GameEntry *game) {
         snprintf(mednafenStates, sizeof(mednafenStates), "%s/mcs", mednafenHome);
         EnsureDirectoryTree(mednafenStates);
         snprintf(mednafenRom, sizeof(mednafenRom), "%s", GetDataPath(game->rom));
-        /* "Show controls in game": the caption bar (5% of the height) takes the bottom of the screen,
-         * the game window is fitted and centred above it; and rewind (rewind.h) is told where to
-         * find the game's frames. */
+        /* "Show controls in game": the caption bar is drawn over the game (rewind.h): at its start and
+         * while rewinding. The window is always full size. */
         bool showBar = sysSettings[currentSystem].showControls;
-        int barPx = showBar ? REWIND_BAR_REAL_H(GetScreenHeight()) : 0;
         mednafenArgc = NsoMednafenArgv(game->mednafen, sysSettings[currentSystem].pixel,
                                        sysSettings[currentSystem].scanlines, mednafenRom,
-                                       GetScreenWidth(), GetScreenHeight() - barPx, mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
+                                       GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
                                        (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])));
         if (!mednafenArgc) {
             fprintf(stderr, "LaunchGame: Mednafen command line too long\n");
@@ -3800,9 +3798,7 @@ NsoProc LaunchGame(const GameEntry *game) {
         }
         NsoSetEnv("MEDNAFEN_HOME", mednafenHome);
         NsoSetEnv("NSO_EMU_STATE_DIR", mednafenStates);
-        char barEnv[16], rewindShm[1260];
-        snprintf(barEnv, sizeof(barEnv), "%d", barPx);
-        NsoSetEnv("NSO_BOTTOM_BAR", barPx > 0 ? barEnv : NULL);
+        char rewindShm[1260];
         snprintf(rewindShm, sizeof(rewindShm), "%s/nso-rewind.shm", mednafenHome);
 #if !defined(_WIN32)
         remove(rewindShm);   /* a new file, so nothing maps the last run's */
@@ -3856,7 +3852,6 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (mednafenHome[0]) {
         NsoSetEnv("MEDNAFEN_HOME", NULL);
         NsoSetEnv("NSO_EMU_STATE_DIR", NULL);
-        NsoSetEnv("NSO_BOTTOM_BAR", NULL);
         NsoSetEnv("NSO_REWIND_SHM", NULL);
     }
     if (withStates) {

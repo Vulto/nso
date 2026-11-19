@@ -28,7 +28,14 @@ int main(void)
     near("cap2 100", RewindAnim_LookAt(100).cap2, 0.82f, 0.001f);
     near("cap2 109", RewindAnim_LookAt(109).cap2, 0.0f, 0.001f);
     near("idle bar", RewindAnim_LookAt(0).bar, 1.0f, 0.001f);
-    near("idle cap1", RewindAnim_LookAt(500).cap1, 1.0f, 0.001f);
+    near("after exit cap1", RewindAnim_LookAt(500).cap1, 0.0f, 0.001f);
+    near("after exit bar", RewindAnim_LookAt(500).bar, 0.0f, 0.001f);
+    near("start alpha 0", RewindAnim_StartAlpha(0.0f), 0.0f, 0.001f);
+    near("start alpha in", RewindAnim_StartAlpha(0.05f), 0.5f, 0.001f);
+    near("start alpha hold", RewindAnim_StartAlpha(3.0f), 1.0f, 0.001f);
+    near("start alpha fading", RewindAnim_StartAlpha(REWIND_START_SEC + 2.0f / REWIND_REF_FPS), 0.78f, 0.001f);
+    near("start alpha gone", RewindAnim_StartAlpha(REWIND_START_SEC + 0.2f), 0.0f, 0.001f);
+    near("start alpha late", RewindAnim_StartAlpha(60.0f), 0.0f, 0.001f);
 
     /* press and hold: reference frame 92 is 6 frames after 86, 103 is 17 */
     RewindAnim a;
@@ -40,12 +47,12 @@ int main(void)
     if (RewindAnim_RealWindowShows(&a)) { fprintf(stderr, "FAIL real window shown while shrunk\n"); fails++; }
     for (int i = 0; i < 100; i++) RewindAnim_Step(&a, true, 1.0f / 60.0f);
     near("hold", a.f, 103.0f, 0.001f);
-    /* released from the hold: 103 -> 118 */
-    for (int i = 0; i < 8; i++) RewindAnim_Step(&a, false, 1.0f / REWIND_REF_FPS);
-    near("exit 8 frames", a.f, 111.0f, 0.01f);
-    if (!RewindAnim_RealWindowShows(&a)) { fprintf(stderr, "FAIL real window hidden at full size\n"); fails++; }
-    for (int i = 0; i < 20; i++) RewindAnim_Step(&a, false, 1.0f / REWIND_REF_FPS);
+    /* released from the hold: 103 -> 111, then idle again (no extra fade) */
+    for (int i = 0; i < 7; i++) RewindAnim_Step(&a, false, 1.0f / REWIND_REF_FPS);
+    near("exit 7 frames", a.f, 110.0f, 0.01f);
+    RewindAnim_Step(&a, false, 1.0f / REWIND_REF_FPS);
     if (RewindAnim_Active(&a)) { fprintf(stderr, "FAIL still active after exit\n"); fails++; }
+    if (!RewindAnim_RealWindowShows(&a)) { fprintf(stderr, "FAIL real window hidden at full size\n"); fails++; }
 
     /* early release plays the enter backwards, back to idle */
     RewindAnim_Init(&a);

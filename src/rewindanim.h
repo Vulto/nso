@@ -10,8 +10,9 @@
  *   97-102  second caption ("ZL + ZR Suspend Menu   B Back   A OK") and the bar fade in; hold
  *   103-111 rewind released: panel, thumbnail and second caption fade out, the game returns to
  *           100% (ease-in); the reference's bar stays gone.
- * NSO keeps the bar with the first caption whenever "show controls in game" is on, so after
- * the exit they fade back in (frames 109-118, an addition: the reference never shows that). */
+ * NSO shows the caption bar (only with "Show controls in game") when a game starts (first caption,
+ * fading in over 6 reference frames, fading out like frames 92-97) and then only while rewinding;
+ * the game window is always full size, the bar is drawn over its bottom edge. */
 #ifndef NSO_REWINDANIM_H
 #define NSO_REWINDANIM_H
 #include <math.h>
@@ -20,11 +21,13 @@
 #define REWIND_REF_FPS 59.7f
 #define REWIND_F0 86          /* first table frame (idle look) */
 #define REWIND_FHOLD 103      /* the hold ends here; released: play on to the end */
-#define REWIND_FLAST 118      /* last table frame (idle look again) */
+#define REWIND_FLAST 111      /* last table frame (idle look again) */
 #define REWIND_FSPLIT 97      /* released before this: the enter plays backwards */
 #define REWIND_FGAME_FULL 111 /* the game is back at 100%: the real window can show again */
 #define REWIND_PANEL_Y 0.7139f   /* panel top / height once risen (514/720) */
 #define REWIND_BAR_H 0.05f       /* black bar / height (36/720) */
+#define REWIND_START_SEC 5.0f    /* the first caption stays this long after the game starts (not measured: the reference has no start) */
+#define REWIND_START_FADE_IN 0.1f /* 6 reference frames (74-80) */
 #define REWIND_THUMB_H 124.0f    /* selected thumbnail height at 720p */
 #define REWIND_THUMB_DY 22.0f    /* thumbnail top under the panel top at 720p */
 #define REWIND_GAP 16.0f         /* gap between thumbnails at 720p */
@@ -68,21 +71,29 @@ static const RewindLook rewind_table[REWIND_N] = {
     /*107 */ {0.8903f, 0.820f, 0.18f, 0.25f, 0.90f, 0.30f, 0.00f, 0.59f},
     /*108 */ {0.9383f, 0.860f, 0.00f, 0.00f, 0.90f, 0.05f, 0.00f, 0.28f},
     /*109 */ {0.9771f, 0.889f, 0.00f, 0.00f, 0.90f, 0.00f, 0.00f, 0.00f},
-    /*110 */ {0.9977f, 0.889f, 0.00f, 0.00f, 0.90f, 0.10f, 0.10f, 0.00f},
-    /*111 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.25f, 0.25f, 0.00f},
-    /*112 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.40f, 0.40f, 0.00f},
-    /*113 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.55f, 0.55f, 0.00f},
-    /*114 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.70f, 0.70f, 0.00f},
-    /*115 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.80f, 0.80f, 0.00f},
-    /*116 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.90f, 0.90f, 0.00f},
-    /*117 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.97f, 0.97f, 0.00f},
-    /*118 */ {1.0000f, 0.889f, 0.00f, 0.00f, 1.00f, 1.00f, 1.00f, 0.00f},
+    /*110 */ {0.9977f, 0.889f, 0.00f, 0.00f, 0.90f, 0.00f, 0.00f, 0.00f},
+    /*111 */ {1.0000f, 0.889f, 0.00f, 0.00f, 0.90f, 0.00f, 0.00f, 0.00f},
 };
 
 typedef struct {
     float f;      /* position on the reference timeline */
     int phase;    /* 0 idle, 1 rewinding (enter/hold), 2 released (exit) */
 } RewindAnim;
+
+/* Opacity of the start-of-game bar and first caption, t seconds after the game appeared:
+ * fades in, holds until REWIND_START_SEC, then fades out like reference frames 92-97. */
+static inline float RewindAnim_StartAlpha(float t)
+{
+    if (t < 0.0f) return 0.0f;
+    if (t < REWIND_START_FADE_IN) return t / REWIND_START_FADE_IN;
+    if (t < REWIND_START_SEC) return 1.0f;
+    float f = 92.0f + (t - REWIND_START_SEC) * REWIND_REF_FPS;
+    if (f >= 97.0f) return 0.0f;
+    int i = (int)f;
+    static const float a[6] = { 1.0f, 0.98f, 0.78f, 0.52f, 0.30f, 0.0f };   /* cap1 at 92..97 */
+    float u = f - (float)i;
+    return a[i - 92] + (a[i - 91] - a[i - 92]) * u;
+}
 
 static inline float rewind_lerp(float a, float b, float t) { return a + (b - a) * t; }
 

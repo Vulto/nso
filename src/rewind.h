@@ -7,13 +7,12 @@
  * that can still be rewound, and a thumbnail of the game every second (60 frames) to a shared file. While the rewind
  * key is held NSO hides the emulator's window (X Shape: it keeps the keyboard focus), draws the
  * live frame itself, shrunk over the gray panel with the thumbnail strip, per rewindanim.h.
- * With "Show controls in game" the black caption bar sits under the game. Linux only. */
+ * With "Show controls in game" a black caption bar is drawn over the bottom edge of the game (the
+ * window stays full size): at game start for a few seconds, and while rewinding. Linux only. */
 #ifndef NSO_REWIND_H
 #define NSO_REWIND_H
 #include <stdbool.h>
 #include "raylib.h"
-
-#define REWIND_BAR_REAL_H(screenH) ((int)((float)(screenH) * 0.05f))
 
 void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool scanlines, bool showControls);
 void Rewind_End(void);
@@ -63,7 +62,7 @@ static struct {
     RewindAnim anim;
     Texture2D liveTex, slotTex[RW_SLOTS];
     uint32_t slotLoaded[RW_SLOTS], seenSeq;
-    float chordHeld, retry;
+    float chordHeld, retry, startT, pressAlpha;
     int picX, picY, picW, picH;
 } rw;
 
@@ -184,6 +183,7 @@ void Rewind_Frame(float dt, bool inGame, bool zlzrHeld)
         Rewind_SetHidden(false);
         return;
     }
+    if (rw.child) rw.startT += dt;   /* the game's window exists: the start caption's clock */
     if (!rw.map || !rw.dpy || !rw.child) {
         rw.retry -= dt;
         if (rw.retry <= 0.0f) { rw.retry = 0.25f; Rewind_Open(); }
@@ -199,6 +199,7 @@ void Rewind_Frame(float dt, bool inGame, bool zlzrHeld)
     }
     bool rewinding = rw.shm && rw.shm->enabled && rw.shm->rewinding;
     bool was = RewindAnim_Active(&rw.anim);
+    if (!was && rewinding) rw.pressAlpha = RewindAnim_StartAlpha(rw.startT);   /* caption 1 only if it is showing */
     RewindAnim_Step(&rw.anim, rewinding, dt);
     if (!was && RewindAnim_Active(&rw.anim)) {
         XWindowAttributes at;
@@ -288,7 +289,12 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
         float pw = (float)rw.picW, ph = (float)rw.picH, aspect = pw / ph;
         float q = (1.0f - look.scale) / (1.0f - rewind_table[92 - REWIND_F0].scale);
         if (q > 1.0f) q = 1.0f;
-        float w = pw * look.scale, h = ph * look.scale;
+        /* the shrunken game ends just above the panel (the reference: 0.95 of the screen height at its
+         * 74.9% width), so a window taller than that shrinks a little further */
+        float fit = 0.95f * H / ph;
+        if (fit > 1.0f) fit = 1.0f;
+        float sc = look.scale * (1.0f + (fit - 1.0f) * q);
+        float w = pw * sc, h = ph * sc;
         float x = (float)rw.picX + pw * 0.5f - w * 0.5f, y = (float)rw.picY * (1.0f - q);
         bool point = rw.pixel && look.scale > 0.999f;
         if (point != rw.filterPoint) {
@@ -339,6 +345,13 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
     }
     if (!rw.showControls) return;
     float barH = REWIND_BAR_H * H, cy = H - barH * 0.5f, xr = W - 39.0f * k;
+    if (!RewindAnim_Active(&rw.anim)) {   /* not rewinding: only the start-of-game caption */
+        look.bar = look.cap1 = RewindAnim_StartAlpha(rw.startT);
+        look.cap2 = 0.0f;
+    } else if (rw.anim.f < (float)REWIND_FSPLIT) {   /* leaving or entering: caption 1 only if it was showing */
+        look.bar *= rw.pressAlpha;
+        look.cap1 *= rw.pressAlpha;
+    }
     if (look.bar > 0.003f) DrawRectangle(0, (int)(H - barH), (int)W, (int)barH + 1, Fade(BLACK, look.bar));
     const RwItem hold[] = { { 1, NULL, 0 }, { 3, NULL, 9 }, { 2, NULL, 9 }, { 0, capHold, 9 } };
     Rw_Row(font, k, hold, 4, xr, cy, look.cap1);
