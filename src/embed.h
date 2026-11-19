@@ -217,6 +217,8 @@ static struct {
     unsigned long externalParent;
     void *externalDisplay;
     unsigned char *externalFrameRGB;
+    NsoPadAxisArm navArmX, navArmY;   /* left stick as menu d-pad (edge, like the d-pad buttons) */
+    int navX, navY;                   /* this frame: -1 / 0 / +1 */
     void *so;
     bool reusedRetainedSo;
     bool moduleInitialized;
@@ -810,20 +812,34 @@ static int Embed_NextMenuItem(int item, int direction)
     return item;
 }
 
+/* Left stick edges for menu navigation: crossing the deadzone is one press,
+ * exactly like a d-pad button (no auto-repeat). Armed only after the stick
+ * has been centred, so a stick held when the menu opens does not move it. */
+static void Embed_NavUpdate(void)
+{
+    float lx = 0.0f, ly = 0.0f;
+    if (IsGamepadAvailable(0)) {
+        lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+        ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+    }
+    embed.navX = Nso_PadAxisEdgeArmed(&embed.navArmX, lx);
+    embed.navY = Nso_PadAxisEdgeArmed(&embed.navArmY, ly);
+}
+
 /* Slot list (Load / Create focused right of the divider). */
 static void Embed_SlotsInput(bool gp)
 {
     bool load = (embed.menuSel == EMBED_MENU_LOAD);
     if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_LEFT) || Nso_PadBackPressed(0)
-        || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT))) {
+        || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) || embed.navX < 0) {
         embed.slotsFocus = false;
         return;
     }
-    if ((IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) && embed.slotSel > 0) {
+    if ((IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)) || embed.navY < 0) && embed.slotSel > 0) {
         embed.slotSel--;
         Sfx_Play(SFX_NAVIGATE);
     }
-    if ((IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)))
+    if ((IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) || embed.navY > 0)
         && embed.slotSel + 1 < EMBED_SLOTS) {
         embed.slotSel++;
         Sfx_Play(SFX_NAVIGATE);
@@ -837,6 +853,7 @@ static void Embed_SlotsInput(bool gp)
 bool Embed_Update(float dt)
 {
     if (!embed.active) return false;
+    Embed_NavUpdate();
     if (embed.statusTimer > 0.0f) embed.statusTimer = fmaxf(0.0f, embed.statusTimer - dt);
     if (embed.external) {
         embed.externalScanTimer += dt;
@@ -905,16 +922,16 @@ bool Embed_Update(float dt)
             Embed_SetMenu(false);
             return true;
         }
-        if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) {
+        if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)) || embed.navY < 0) {
             embed.menuSel = Embed_NextMenuItem(embed.menuSel, -1);
             Sfx_Play(SFX_NAVIGATE);
         }
-        if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) {
+        if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) || embed.navY > 0) {
             embed.menuSel = Embed_NextMenuItem(embed.menuSel, 1);
             Sfx_Play(SFX_NAVIGATE);
         }
         bool slots = embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE;
-        bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT));
+        bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) || embed.navX > 0;
         bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0);
         if (slots && Embed_MenuItemAvailable(embed.menuSel) && (ok || right)) {
             if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; Sfx_Play(SFX_CLICK); }
