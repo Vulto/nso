@@ -759,34 +759,27 @@ static void DrawSnesController(float x, float y, float w, const bool lit[PAD_MAX
 
 /* ---- N64 ---- */
 
-/* The N64 controller after its reference picture (774 x 723, here the box 22..752 x 15..792, Z's pill
- * included): the three-prong body with the bump at the top, the L / R rims on the shoulders, the D-pad
- * with a triangle in each arm, Start, B and A, the C diamond (four circles with a triangle each), the
- * stick in its octagon gate, and, apart from the body, Z in its own pill with a leader line to where the
- * trigger sits (behind the middle prong). Lit buttons are filled white; the stick's rings shift towards
- * a tilt. (x, y) is the box's top-left, w its width, th the line weight (the NES controller's). */
-#define PADN64_W 730.0f
-#define PADN64_H 777.0f
+/* The N64 controller after its reference picture (774 x 723): the body's outline, the two shoulder rims
+ * (the double line along each top edge), the D-pad with a triangle in each arm, Start, B and A, the C
+ * diamond (a rounded diamond tangent to four circles, each with a triangle), the stick in its octagonal
+ * gate, and, apart from the body, Z in its own rectangle (2 : 3) with a leader line to where the trigger
+ * sits (behind the middle prong). The outline and the rims are traced from the picture's own lines
+ * (centre lines, in the picture's pixels); the rest is placed by measurement. Lit buttons are filled white;
+ * the stick's three circles shift together with a tilt. (x, y) is the box's top-left, w its width, th
+ * the line weight (the NES controller's). The box is the picture's pixels 10..752 x 10..710. */
+#define PADN64_W 742.0f
+#define PADN64_H 700.0f
 
-/* A centripetal Catmull-Rom curve through the closed loop p[0..n): no overshoot where points are uneven. */
-static int PadSplineLoop(const Vector2 *p, int n, int seg, Vector2 *out) {
-    int k = 0;
-    for (int i = 0; i < n; i++) {
-        Vector2 p0 = p[(i + n - 1) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
-        float t0 = 0.0f, t1 = t0 + sqrtf(hypotf(p1.x - p0.x, p1.y - p0.y)), t2 = t1 + sqrtf(hypotf(p2.x - p1.x, p2.y - p1.y));
-        float t3 = t2 + sqrtf(hypotf(p3.x - p2.x, p3.y - p2.y));
-        for (int j = 0; j < seg; j++) {
-            float t = t1 + (t2 - t1) * (float)j / (float)seg;
-            Vector2 a1 = { (t1 - t) / (t1 - t0) * p0.x + (t - t0) / (t1 - t0) * p1.x, (t1 - t) / (t1 - t0) * p0.y + (t - t0) / (t1 - t0) * p1.y };
-            Vector2 a2 = { (t2 - t) / (t2 - t1) * p1.x + (t - t1) / (t2 - t1) * p2.x, (t2 - t) / (t2 - t1) * p1.y + (t - t1) / (t2 - t1) * p2.y };
-            Vector2 a3 = { (t3 - t) / (t3 - t2) * p2.x + (t - t2) / (t3 - t2) * p3.x, (t3 - t) / (t3 - t2) * p2.y + (t - t2) / (t3 - t2) * p3.y };
-            Vector2 b1 = { (t2 - t) / (t2 - t0) * a1.x + (t - t0) / (t2 - t0) * a2.x, (t2 - t) / (t2 - t0) * a1.y + (t - t0) / (t2 - t0) * a2.y };
-            Vector2 b2 = { (t3 - t) / (t3 - t1) * a2.x + (t - t1) / (t3 - t1) * a3.x, (t3 - t) / (t3 - t1) * a2.y + (t - t1) / (t3 - t1) * a3.y };
-            out[k++] = (Vector2){ (t2 - t) / (t2 - t1) * b1.x + (t - t1) / (t2 - t1) * b2.x, (t2 - t) / (t2 - t1) * b1.y + (t - t1) / (t2 - t1) * b2.y };
-        }
-    }
-    return k;
-}
+static const Vector2 n64Body[178] = {
+    {383.0,709.0}, {376.0,708.7}, {367.2,706.6}, {359.7,702.9}, {352.6,696.9}, {345.6,686.9}, {342.6,681.7}, {331.1,654.9}, {325.4,639.0}, {314.2,600.0}, {308.3,576.0}, {294.3,499.0}, {293.7,493.0}, {279.4,410.0}, {275.4,398.3}, {271.7,390.8}, {268.5,386.0}, {261.0,378.5}, {255.4,374.0}, {249.8,370.6}, {241.5,366.9}, {235.0,364.6}, {221.0,361.4}, {184.0,356.1}, {180.0,356.6}, {175.2,358.3}, {169.5,362.0}, {163.6,368.2}, {158.6,379.3}, {154.8,393.9}, {141.2,438.0}, {127.5,479.8}, {115.6,510.8}, {108.9,525.4}, {102.2,536.7}, {98.8,541.3}, {90.9,549.4}, {84.6,553.2}, {79.6,555.2}, {70.0,556.9}, {59.2,554.6}, {52.9,551.5}, {49.4,549.1}, {43.6,542.9}, {40.8,538.7}, {33.5,522.8}, {24.0,490.0}, {16.3,452.0}, {12.1,409.0}, {12.0,391.0}, {11.1,384.0}, {12.0,376.0}, {12.1,356.0}, {14.2,332.0}, {15.8,323.0}, {16.3,316.0}, {21.1,288.0}, {31.6,238.0}, {34.3,212.0}, {36.3,199.0}, {38.5,189.0}, {44.8,169.1}, {53.8,150.3}, {66.6,131.1}, {71.6,125.1}, {79.3,117.6}, {80.0,114.0}, {80.2,101.0}, {80.9,98.4}, {82.1,96.6}, {90.3,90.8}, {103.6,84.1}, {113.1,80.1}, {134.0,73.2}, {150.0,69.3}, {171.0,65.3}, {238.8,54.6}, {241.3,52.6}, {245.6,43.2}, {250.7,38.2}, {265.4,30.8}, {285.0,23.8}, {308.0,18.5}, {334.0,14.3}, {362.0,12.0}, {389.0,12.0}, {397.0,13.0}, {416.0,13.2}, {455.0,18.3}, {475.0,22.2}, {487.0,25.5}, {500.9,30.1}, {512.6,34.8}, {520.1,38.5}, {522.4,40.1}, {524.8,42.7}, {529.1,51.3}, {531.1,52.8}, {536.1,55.1}, {619.9,70.3}, {640.0,75.5}, {663.1,84.4}, {667.7,86.8}, {682.4,96.1}, {684.1,98.4}, {684.8,101.0}, {684.9,107.0}, {684.2,113.0}, {684.7,115.6}, {686.5,118.0}, {691.9,122.6}, {703.4,136.1}, {714.2,153.3}, {717.2,159.4}, {721.9,171.1}, {727.5,190.0}, {730.7,205.0}, {732.9,220.0}, {736.2,252.0}, {739.4,272.0}, {741.7,283.0}, {745.9,310.0}, {749.9,352.0}, {750.0,365.0}, {751.0,373.0}, {750.0,387.0}, {750.9,404.0}, {747.9,434.0}, {742.5,468.0}, {738.5,487.0}, {732.9,509.0}, {727.5,524.8}, {724.5,531.8}, {716.9,544.4}, {711.9,549.4}, {705.7,553.2}, {698.0,556.5}, {692.0,557.0}, {682.0,556.5}, {677.6,554.9}, {669.7,550.8}, {662.6,543.9}, {659.2,539.3}, {655.1,532.4}, {643.4,506.8}, {631.1,472.9}, {615.2,422.9}, {602.4,377.3}, {600.4,372.3}, {598.4,369.1}, {591.1,361.4}, {588.6,359.6}, {586.0,358.6}, {580.0,357.2}, {571.0,357.2}, {544.0,361.2}, {531.0,363.8}, {519.1,367.2}, {511.8,370.3}, {503.5,376.0}, {495.0,384.5}, {492.0,388.5}, {488.3,395.1}, {485.2,402.1}, {483.8,407.0}, {476.3,442.0}, {468.3,487.0}, {458.7,546.0}, {448.7,597.0}, {441.8,625.0}, {434.9,646.9}, {429.2,661.6}, {422.5,675.1}, {416.4,685.9}, {407.8,697.3}, {401.7,702.2}, {394.1,706.6}, {390.0,707.9} };
+static const Vector2 n64RimLA[16] = {
+    {79.3,108.9}, {79.8,96.9}, {89.4,89.8}, {100.3,84.4}, {111.3,79.4}, {122.7,75.3}, {134.3,71.8}, {145.9,68.6}, {157.8,66.2}, {169.7,64.0}, {181.6,62.1}, {193.6,60.2}, {205.5,58.1}, {217.4,56.2}, {229.4,54.8}, {239.7,58.1} };
+static const Vector2 n64RimLB[16] = {
+    {79.3,108.9}, {89.1,111.6}, {99.3,105.4}, {109.7,99.8}, {120.4,94.7}, {131.7,90.9}, {143.0,87.2}, {154.6,84.6}, {166.2,82.0}, {177.8,79.9}, {189.6,78.0}, {201.3,76.4}, {213.1,75.0}, {224.8,73.5}, {235.2,68.4}, {239.7,58.1} };
+static const Vector2 n64RimRA[16] = {
+    {531.3,59.1}, {541.0,55.1}, {552.4,57.0}, {563.7,58.9}, {575.0,60.9}, {586.4,62.6}, {597.8,64.5}, {609.0,67.0}, {620.3,69.1}, {631.5,71.9}, {642.5,75.2}, {653.4,78.9}, {663.8,84.0}, {674.0,89.1}, {683.4,95.8}, {684.7,106.9} };
+static const Vector2 n64RimRB[16] = {
+    {531.3,59.1}, {535.0,69.4}, {545.2,73.7}, {556.4,75.2}, {567.7,77.0}, {578.8,78.8}, {590.1,80.7}, {601.2,82.7}, {612.4,85.0}, {623.5,87.4}, {634.4,90.6}, {645.2,94.2}, {655.6,98.7}, {665.5,104.2}, {675.3,110.0}, {684.7,106.9} };
 
 /* A rounded triangle pointing along (ux, uy) from (cx, cy): apex at distance ap, base at ba, half-width hf
  * (reference units), outline th, filled when on. */
@@ -798,59 +791,37 @@ static void PadN64Tri(PadView v, float cx, float cy, float ux, float uy, float a
     PadRoundPolyG(tri, 3, rad * v.s, th, on, c);
 }
 
-/* A shoulder rim: a tab raised h above the straight edge through o (reference units) running along d, from
- * distance ua to ub, with rounded top corners (radius r); filled down to the edge when lit. */
-static void PadN64Rim(PadView v, Vector2 o, Vector2 d, Vector2 nrm, float ua, float ub, float h, float r, bool lit, float th, Color c) {
-    Vector2 path[40];
-    Vector2 e0 = { o.x + d.x * ua, o.y + d.y * ua }, e1 = { o.x + d.x * ub, o.y + d.y * ub };
-    int m = 0;
-#define RP(u, hh) ((Vector2){ o.x + d.x * (u) + nrm.x * (hh), o.y + d.y * (u) + nrm.y * (hh) })
-    path[m++] = e0;
-    m = PadBend(path, m, RP(ua, h - r), RP(ua, h), RP(ua + r, h));
-    m = PadBend(path, m, RP(ub - r, h), RP(ub, h), RP(ub, h - r));
-    path[m++] = e1;
-#undef RP
-    {
-        Vector2 sc[40];
-        for (int i = 0; i < m; i++) sc[i] = PadV(v, path[i].x, path[i].y);
-        if (lit)
-            for (int i = 0; i + 1 < m; i++) {
-                float h0 = (path[i].x - o.x) * nrm.x + (path[i].y - o.y) * nrm.y, h1 = (path[i + 1].x - o.x) * nrm.x + (path[i + 1].y - o.y) * nrm.y;
-                Vector2 b0 = PadV(v, path[i].x - nrm.x * h0, path[i].y - nrm.y * h0), b1 = PadV(v, path[i + 1].x - nrm.x * h1, path[i + 1].y - nrm.y * h1);
-                PadTri(sc[i], sc[i + 1], b1, c);
-                PadTri(sc[i], b1, b0, c);
-            }
-        PadPoly(sc, m, th, c);
+/* A shoulder rim: the sliver between the two lines along the shoulder, as an upper chain a (the body's own
+ * outline) and a lower chain b (n points each, sharing their ends); b is drawn, and filled up to a when lit. */
+static void PadN64Rim(PadView v, const Vector2 *a, const Vector2 *b, int n, bool lit, float th, Color c) {
+    Vector2 sa[16], sb[16];
+    for (int i = 0; i < n; i++) {
+        sa[i] = PadV(v, a[i].x, a[i].y);
+        sb[i] = PadV(v, b[i].x, b[i].y);
     }
+    if (lit)
+        for (int i = 0; i + 1 < n; i++) {
+            PadTri(sa[i], sa[i + 1], sb[i + 1], c);
+            PadTri(sa[i], sb[i + 1], sb[i], c);
+        }
+    PadPoly(sb, n, th, c);   /* the upper line is the body's outline, already drawn */
 }
 
 static void DrawN64Controller(float x, float y, float w, float th, const bool lit[PAD_MAX_BTN], Color c) {
     float s = w / PADN64_W;
-    PadView v = { x + 48.0f * s, y + 150.0f * s, s };   /* PadV(rx, ry) = (x + (rx - 22) s, y + (ry - 15) s) */
+    PadView v = { x + 60.0f * s, y + 155.0f * s, s };   /* PadV(rx, ry) = (x + (rx - 10) s, y + (ry - 10) s) */
     float thM = th * 0.8f, thL = fmaxf(1.0f, th * 0.55f);
-    static const Vector2 half[] = {
-        { 387, 17 }, { 300, 17 }, { 266, 24 }, { 246, 44 }, { 236, 62 }, { 154, 88 }, { 100, 105 }, { 72, 114 },
-        { 50, 150 }, { 31, 220 }, { 22, 300 }, { 25, 400 }, { 36, 490 }, { 50, 545 }, { 70, 563 }, { 97, 556 },
-        { 113, 520 }, { 136, 445 }, { 157, 385 }, { 178, 360 }, { 207, 354 }, { 240, 362 }, { 262, 390 },
-        { 285, 485 }, { 310, 600 }, { 327, 675 }, { 347, 701 }, { 387, 708 } };
-    enum { HN = (int)(sizeof(half) / sizeof(half[0])) };
-    Vector2 loop[2 * HN], curve[2 * HN * 12];
-    int n = 0, k;
-    for (int i = 0; i < HN; i++) loop[n++] = PadV(v, half[i].x, half[i].y);
-    for (int i = HN - 2; i >= 1; i--) loop[n++] = PadV(v, 774.0f - half[i].x, half[i].y);
-    k = PadSplineLoop(loop, n, 12, curve);
-    PadLoop(curve, k, th, c);
+    enum { BN = (int)(sizeof(n64Body) / sizeof(n64Body[0])) };
+    Vector2 loop[BN];
 
-    /* L and R rims on the shoulders: raised along the top edges */
-    {
-        Vector2 d = { -0.953f, 0.302f }, nrm = { -0.302f, -0.953f };
-        PadN64Rim(v, (Vector2){ 236.0f, 62.0f }, d, nrm, 8.0f, 158.0f, 11.0f, 5.0f, lit[N64_BTN_L], th, c);
-        PadN64Rim(v, (Vector2){ 538.0f, 62.0f }, (Vector2){ 0.953f, 0.302f }, (Vector2){ 0.302f, -0.953f }, 8.0f, 158.0f, 11.0f, 5.0f, lit[N64_BTN_R], th, c);
-    }
+    for (int i = 0; i < BN; i++) loop[i] = PadV(v, n64Body[i].x, n64Body[i].y);
+    PadLoop(loop, BN, th, c);
+    PadN64Rim(v, n64RimLA, n64RimLB, 16, lit[N64_BTN_L], th, c);
+    PadN64Rim(v, n64RimRA, n64RimRB, 16, lit[N64_BTN_R], th, c);
 
     /* D-pad: the plus, a triangle in each arm pointing outward */
     {
-        const float cx = 156.0f, cy = 232.0f, hw = 22.0f, hl = 60.0f;
+        const float cx = 158.5f, cy = 233.0f, hw = 21.0f, hl = 60.0f;
         static const float px[12] = { -1, 1, 1, 2, 2, 1, 1, -1, -1, -2, -2, -1 }, py[12] = { -2, -2, -1, -1, 1, 1, 2, 2, 1, 1, -1, -1 };
         float rad[12];
         Vector2 cr[12];
@@ -868,8 +839,8 @@ static void DrawN64Controller(float x, float y, float w, float th, const bool li
 
     /* Start, B and A */
     {
-        Vector2 sc = PadV(v, 387.0f, 255.0f), bc = PadV(v, 516.0f, 252.0f), ac = PadV(v, 568.0f, 303.0f);
-        float r = 32.0f * s;
+        Vector2 sc = PadV(v, 383.0f, 254.5f), bc = PadV(v, 514.0f, 253.0f), ac = PadV(v, 571.0f, 303.5f);
+        float r = 30.0f * s;
         if (lit[N64_BTN_START]) DrawCircleV(sc, r, c);
         if (lit[N64_BTN_B]) DrawCircleV(bc, r, c);
         if (lit[N64_BTN_A]) DrawCircleV(ac, r, c);
@@ -878,53 +849,61 @@ static void DrawN64Controller(float x, float y, float w, float th, const bool li
         PadCircle(ac, r, thM, c);
     }
 
-    /* C buttons: a ring round four circles, each with a triangle */
+    /* C buttons: a rounded diamond tangent to four circles, each with a triangle */
     {
-        const float cx = 626.0f, cy = 206.0f, off = 46.0f, r = 24.0f;
+        const float cx = 626.5f, cy = 208.5f, hx = 45.5f, hy = 42.5f, r = 22.0f;
         static const int cdx[4] = { 0, 0, -1, 1 }, cdy[4] = { -1, 1, 0, 0 };
-        PadCircle(PadV(v, cx, cy), 74.0f * s, thL, c);
+        /* the four sides: up -> right -> down -> left, each offset r outward from the line between the circles */
+        static const int ord[4] = { 0, 3, 1, 2 };
+        for (int i = 0; i < 4; i++) {
+            int a = ord[i], b = ord[(i + 1) % 4];
+            float ax = cx + (float)cdx[a] * hx, ay = cy + (float)cdy[a] * hy, bx = cx + (float)cdx[b] * hx, by = cy + (float)cdy[b] * hy;
+            float dx = bx - ax, dy = by - ay, l = hypotf(dx, dy), nx = dy / l, ny = -dx / l;   /* outward normal */
+            DrawLineEx(PadV(v, ax + nx * r, ay + ny * r), PadV(v, bx + nx * r, by + ny * r), thM, c);
+        }
         for (int d = 0; d < 4; d++) {
             float ux = (float)cdx[d], uy = (float)cdy[d];
-            Vector2 cc = PadV(v, cx + ux * off, cy + uy * off);
+            float ccx = cx + ux * hx, ccy = cy + uy * hy;
+            Vector2 cc = PadV(v, ccx, ccy);
             if (lit[N64_BTN_CUP + d]) DrawCircleV(cc, r * s, c);
             PadCircle(cc, r * s, thM, c);
-            if (!lit[N64_BTN_CUP + d]) PadN64Tri(v, cx + ux * off, cy + uy * off, ux, uy, 10.0f, -8.5f, 9.5f, 2.5f, thL, false, c);
+            if (!lit[N64_BTN_CUP + d]) PadN64Tri(v, ccx, ccy, ux, uy, 10.0f, -8.5f, 9.5f, 2.5f, thL, false, c);
         }
     }
 
-    /* the stick: a ring, the octagonal gate, concentric circles that shift with the tilt */
+    /* the stick: a ring, the octagonal gate (both fixed) and three circles that move together with the tilt */
     {
-        const float cx = 387.0f, cy = 397.0f;
+        const float cx = 382.0f, cy = 399.5f;
         Vector2 oct[8];
         float tx = (float)(lit[N64_BTN_SRIGHT] - lit[N64_BTN_SLEFT]), ty = (float)(lit[N64_BTN_SDOWN] - lit[N64_BTN_SUP]);
-        float tl = hypotf(tx, ty), amt = 11.0f;
-        Vector2 sh = { 0.0f, 0.0f };
-        PadCircle(PadV(v, cx, cy), 73.0f * s, thM, c);
+        float tl = hypotf(tx, ty), amt = 10.0f;
+        Vector2 mc = PadV(v, cx, cy);
+        PadCircle(mc, 73.0f * s, thM, c);
         for (int i = 0; i < 8; i++) {
-            float a = (22.5f + 45.0f * (float)i) * DEG2RAD;
-            oct[i] = PadV(v, cx + cosf(a) * 50.0f, cy + sinf(a) * 50.0f);
+            float a = 45.0f * (float)i * DEG2RAD;
+            oct[i] = PadV(v, cx + cosf(a) * 47.0f, cy + sinf(a) * 47.0f);
         }
         PadRoundPolyG(oct, 8, 4.0f * s, thM, false, c);
-        if (tl > 0.0f) { sh.x = tx / tl * amt * s; sh.y = ty / tl * amt * s; }
-        {
-            static const float rr[3] = { 34.0f, 22.0f, 10.0f }, sf[3] = { 0.3f, 0.65f, 1.0f };
-            Vector2 mc = PadV(v, cx, cy);
-            for (int i = 0; i < 3; i++) PadCircle((Vector2){ mc.x + sh.x * sf[i], mc.y + sh.y * sf[i] }, rr[i] * s, i == 2 ? thM : thL, c);
-            if (tl > 0.0f) DrawCircleV((Vector2){ mc.x + sh.x, mc.y + sh.y }, rr[2] * s, c);
-        }
+        if (tl > 0.0f) { mc.x += tx / tl * amt * s; mc.y += ty / tl * amt * s; }
+        PadCircle(mc, 34.0f * s, thL, c);
+        PadCircle(mc, 22.5f * s, thL, c);
+        if (tl > 0.0f) DrawCircleV(mc, 12.0f * s, c);
+        PadCircle(mc, 12.0f * s, thM, c);
     }
 
-    /* Z: its own pill below the body, a leader line up to the trigger behind the middle prong */
+    /* Z: its own rectangle (2 : 3) beside the middle prong, a leader line from it to the trigger behind it */
     {
-        Rectangle zr = PadR(v, 355.0f, 753.0f, 419.0f, 791.0f);
-        Vector2 dot = PadV(v, 387.0f, 612.0f);
-        Vector2 zz[4] = { PadV(v, 375.0f, 764.0f), PadV(v, 399.0f, 764.0f), PadV(v, 375.0f, 780.0f), PadV(v, 399.0f, 780.0f) };
-        if (lit[N64_BTN_Z]) DrawRectangleRounded(zr, 1.0f, 40, c);
-        DrawRectangleRoundedLinesEx(zr, 1.0f, 40, thM, c);
-        DrawLineEx(PadV(v, 387.0f, 753.0f), (Vector2){ dot.x, dot.y + 5.0f * s }, thL, c);
+        const float x0 = 525.0f, y0 = 588.0f, x1 = 595.0f, y1 = 693.0f, ym = (y0 + y1) * 0.5f, xm = (x0 + x1) * 0.5f;
+        Rectangle zr = PadR(v, x0, y0, x1, y1);
+        Vector2 dot = PadV(v, 381.0f, ym);
+        Vector2 zz[4] = { PadV(v, xm - 15.0f, ym - 21.0f), PadV(v, xm + 15.0f, ym - 21.0f), PadV(v, xm - 15.0f, ym + 21.0f), PadV(v, xm + 15.0f, ym + 21.0f) };
+        float rr = 2.0f * 8.0f * s / fminf(zr.width, zr.height);
+        if (lit[N64_BTN_Z]) DrawRectangleRounded(zr, rr, 24, c);
+        PadRRect(v, x0, y0, x1, y1, 8.0f, thM, c);
+        DrawLineEx((Vector2){ dot.x + 5.0f * s, dot.y }, PadV(v, x0, ym), thL, c);
         PadCircle(dot, 5.0f * s, thL, c);
         if (lit[N64_BTN_Z]) DrawCircleV(dot, 5.0f * s, c);
-        if (!lit[N64_BTN_Z]) PadPoly(zz, 4, thM, c);
+        else PadPoly(zz, 4, thM, c);
     }
 }
 
@@ -953,7 +932,7 @@ static bool padLit[PAD_MAX_BTN];
 static void PadUi_Geom(float *bw, float *boxH, float *bx, float *cy) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float full = sw * 0.387f;   /* the NES / SNES width; the N64's box is narrower (it is tall), same centre */
-    *bw = padSys == &PADSYS_N64 ? sw * 0.27f : full;
+    *bw = padSys == &PADSYS_N64 ? sw * 0.30f : full;
     *boxH = padSys == &PADSYS_N64 ? PADN64_H * *bw / PADN64_W : padSys == &PADSYS_SNES ? PADSNES_H * *bw / PADSNES_W : 149.0f * *bw / 340.0f;
     *bx = sw * 0.485f + (full - *bw) * 0.5f;
     *cy = sh * PADUI_PAGE_Y + sh * 0.5f;   /* the controller sits in the middle of the page */
