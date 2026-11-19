@@ -124,6 +124,13 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
   long time to build.
 - **Language:** English / Português.
+- **NES controller (NES only, below the scrape/Hide rows):** shows the pad and
+  lights each button you press in white. Pick a button (Enter/A), then press the
+  new key or pad button (Esc or 6 s cancels); "Restore defaults" resets. It is
+  saved as `nes.map.*` in `config/nso.cfg` and applies to Mednafen (via
+  `nes.input.port1.gamepad.*`), the embedded NES games and the NESRecomp ports
+  (written to their `config.ini` on launch). OpenMadoola and OpenDana keep their
+  own input settings.
 
 ### ROMs
 

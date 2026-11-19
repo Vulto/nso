@@ -163,6 +163,14 @@ int main(void)
         EXPECT(fabs(atof(w[5]) - atof(w[7])) < 0.001 && strcmp(w[15], "0") == 0);
         EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, 20, w, 24) == 0);
         EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 5) == 0);
+        {   /* extra words (the controller bindings) go right before the ROM */
+            char *extra[2] = { (char *)"-nes.input.port1.gamepad.a", (char *)"keyboard 0x0 4 || joystick 0x0 button_1" };
+            n = NsoMednafenArgvEx("nes", true, true, "a.nes", 1920, 1080, buf, sizeof(buf), w, 24, extra, 2);
+            EXPECT(n == 23 && strcmp(w[19], "600") == 0);
+            EXPECT(strcmp(w[20], "-nes.input.port1.gamepad.a") == 0 && strncmp(w[21], "keyboard 0x0 4 ||", 17) == 0);
+            EXPECT(strcmp(w[22], "a.nes") == 0);
+            EXPECT(NsoMednafenArgvEx("nes", true, true, "a.nes", 1920, 1080, buf, sizeof(buf), w, 22, extra, 2) == 0);
+        }
     }
 
     if (fails) {

@@ -2364,8 +2364,9 @@ static void Manage_Draw(Font font) {
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
-       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_HIDE,
-       SB_SET_COUNT };   /* COVERS_*, GAMES: box-art scrape of this system; HIDE: Hide unplayable */
+       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_HIDE, SB_SET_PAD,
+       SB_SET_COUNT };   /* COVERS_*, GAMES: box-art scrape of this system; HIDE: Hide unplayable;
+                          * PAD: the controller screen (NES only, padui.h) */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also independent "<id>.pixel" and
@@ -2451,6 +2452,13 @@ static void SysSettings_Save(int sys) {
     }
     if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
+
+static bool SysIsNes(int sys) {
+    return strcmp(systems[sys].platform->id, "nes") == 0;
+}
+
+/* The last Settings row of the current system: the controller entry exists for NES only. */
+static int SetRowLast(void) { return SysIsNes(currentSystem) ? SB_SET_PAD : SB_SET_HIDE; }
 
 static int sidebarItem = SB_ITEM_SINGLE;
 static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
@@ -2929,20 +2937,32 @@ static void SidebarPanelScrape_Draw(Font font, Color red) {
     }
     Msg_Format(&scrapeMsg, status, sizeof(status));
     if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.415f }, hsize, sw - hx, WHITE);
+    if (SysIsNes(currentSystem)) {   /* Controller: below the scraping rows, opens padui.h's page */
+        float y = sh * 1.585f;
+        bool cur = (sidebarSetRow == SB_SET_PAD);
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, sh * 1.505f }, hsize, sw - hx, WHITE);
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        DrawFitText(font, T(S_PC_ENTRY), (Vector2){ bx + sw * 0.0225f, y }, osize,
+                    bw - sw * 0.03f, cur ? red : WHITE);
+    }
 }
 
 #include "gamesel_ui.h"
+#include "padui.h"
 
 /* Settings panel plus the scrape page; scrolls down to it while a scrape row is selected. */
 static void SidebarPanels_Draw(Font font, Color red) {
     float sh = (float)GetScreenHeight();
-    float target = sidebarSetRow >= SB_SET_COVERS_MISSING ? sh * 0.9f : 0.0f;
+    float target = padOpen ? sh * PADUI_PAGE_Y : sidebarSetRow >= SB_SET_COVERS_MISSING ? sh * 0.9f : 0.0f;
     sbPanelShift += (target - sbPanelShift) * fminf(1.0f, GetFrameTime() * 16.0f);
     if (fabsf(sbPanelShift - target) < 0.5f) sbPanelShift = target;
     rlPushMatrix();
     rlTranslatef(0.0f, -sbPanelShift, 0.0f);
     SidebarPanel_Draw(font, red);
     SidebarPanelScrape_Draw(font, red);
+    if (SysIsNes(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Draw(font, red);
     rlPopMatrix();
 }
 
@@ -3294,6 +3314,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         GameSel_Input(up, down, ok, back, IsKeyPressed(KEY_LEFT) || gpLeft);
         return;
     }
+    if (padOpen && sidebarPanelFocus) {   /* the controller screen owns the panel */
+        PadUi_Input(up, down, ok, back, IsKeyPressed(KEY_LEFT) || gpLeft);
+        return;
+    }
     if (scrapeBusy) {   /* a scrape owns the menu: B cancels it */
         if (back) ScrapeMenu_Cancel();
         return;
@@ -3306,7 +3330,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
                 sidebarSetRow = SB_RETRO_SCANLINES;
             Sfx_Play(SFX_PLUCK);
         }
-        if (down && sidebarSetRow < SB_SET_COUNT - 1) {
+        if (down && sidebarSetRow < SetRowLast()) {
             sidebarSetRow++;
             if (SysIsRetro(currentSystem) && sidebarSetRow == SB_SET_RUMBLE)
                 sidebarSetRow = SB_SET_CONTROLS;
@@ -3321,6 +3345,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
             }
             if (sidebarSetRow == SB_SET_HIDE) {
                 Hide_Toggle();
+                return;
+            }
+            if (sidebarSetRow == SB_SET_PAD) {
+                PadUi_Open();
                 return;
             }
             if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
@@ -3345,6 +3373,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         sidebarPanelFocus = true;
         sidebarSetRow = 0;
         sbPanelShift = 0.0f;
+        if (padOpen) PadUi_Close();
         if (!GameSel_Busy()) gsOpen = false;
         Msg_Clear(&scrapeMsg);
         Sfx_Play(SFX_CLICK);
@@ -3717,6 +3746,36 @@ static void GameEnvRestore(void)
     gameEnvCount = 0;
 }
 
+/* The NESRecomp ports (the -recomp folders of repos/nes) read player 1's keys and pad buttons from
+ * config.ini beside their executable ([Keyboard.Player1], [Gamepad.Player1], SDL names):
+ * with a custom controller mapping (padmap.h) those two sections are set to it before the
+ * game starts; the rest of the file is the port's own. OpenMadoola and OpenDana keep their
+ * bindings in their own formats and are not touched. */
+static void NesPort_ApplyPad(const GameEntry *game, const char *gameDir) {
+    static char oldText[65536], newText[70000];
+    char path[2400], binDir[512];
+    const char *slash;
+    size_t n = 0;
+    if (!nesPad.custom || game->mednafen || game->embedRomKey || !game->dir || !game->binary
+        || !strstr(game->dir, "repos/nes/") || !strstr(game->dir, "-recomp")) return;
+    slash = strrchr(game->binary, '/');
+    snprintf(binDir, sizeof(binDir), "%.*s", slash ? (int)(slash - game->binary) : 0, game->binary);
+    snprintf(path, sizeof(path), "%s/%s%s%s", gameDir, binDir, binDir[0] ? "/" : "", "config.ini");
+    {
+        char dir[2400];
+        snprintf(dir, sizeof(dir), "%s/%s", gameDir, binDir);
+        if (!DirectoryExists(dir)) return;
+    }
+    FILE *f = fopen(path, "r");
+    if (f) { n = fread(oldText, 1, sizeof(oldText) - 1, f); fclose(f); }
+    oldText[n] = '\0';
+    if (!PadMap_IniMerge(oldText, &nesPad, newText, sizeof(newText))) return;
+    if (f && strcmp(oldText, newText) == 0) return;
+    f = fopen(path, "w");
+    if (!f) { fprintf(stderr, "NSO: cannot write %s\n", path); return; }
+    if (fputs(newText, f) < 0 || fclose(f) != 0) fprintf(stderr, "NSO: cannot write %s\n", path);
+}
+
 NsoProc LaunchGame(const GameEntry *game) {
     if (!GameIsLaunchable(game)) {
         fprintf(stderr, "LaunchGame: game is display-only or invalid\n");
@@ -3769,6 +3828,7 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (game->romImport) {
         NsoPrepareRomImport(gameDir, game->binary, game->romImport);
     }
+    NesPort_ApplyPad(game, gameDir);
     if (game->appDir) {
         char appDir[1200];
         snprintf(appDir, sizeof(appDir), "%s", GetDataPath(game->appDir));
@@ -3776,8 +3836,10 @@ NsoProc LaunchGame(const GameEntry *game) {
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
     char mednafenHome[1200] = { 0 }, mednafenStates[1240];
-    char mednafenArgs[1536], mednafenRom[1200];
-    char *mednafenArgv[24];
+    char mednafenArgs[3584], mednafenRom[1200];
+    char *mednafenArgv[48];
+    char padArgs[2048], *padWords[2 * NES_BTN_COUNT];
+    int padCount = 0;
     int mednafenArgc = 0;
     if (game->mednafen && game->rom) {
         /* Mednafen keeps its config and saves under saves/<module>/mednafen. */
@@ -3788,10 +3850,13 @@ NsoProc LaunchGame(const GameEntry *game) {
         /* "Show controls in game": the caption bar is drawn over the game (rewind.h): at its start and
          * while rewinding. The window is always full size. */
         bool showBar = sysSettings[currentSystem].showControls;
-        mednafenArgc = NsoMednafenArgv(game->mednafen, sysSettings[currentSystem].pixel,
-                                       sysSettings[currentSystem].scanlines, mednafenRom,
-                                       GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
-                                       (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])));
+        /* NES: the controller mapping of Settings > Controller (padmap.h), when the player made one */
+        if (strcmp(game->mednafen, "nes") == 0)
+            padCount = PadMap_MednafenWords(&nesPad, padArgs, sizeof(padArgs), padWords, 2 * NES_BTN_COUNT);
+        mednafenArgc = NsoMednafenArgvEx(game->mednafen, sysSettings[currentSystem].pixel,
+                                         sysSettings[currentSystem].scanlines, mednafenRom,
+                                         GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
+                                         (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])), padWords, padCount);
         if (!mednafenArgc) {
             fprintf(stderr, "LaunchGame: Mednafen command line too long\n");
             return NsoProcNone();
@@ -3822,7 +3887,7 @@ NsoProc LaunchGame(const GameEntry *game) {
 #endif
     /* argv: [nso --menu-launcher] binary [GameEntry.args...] */
     char argsBuf[512];
-    char *argv[32];
+    char *argv[64];
     int argc = 0;
     snprintf(argsBuf, sizeof(argsBuf), "%s", game->args ? game->args : "");
     NsoProc proc;
@@ -3899,6 +3964,7 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
+    Embed_SetNesMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : NULL);
     /* Rumble: NSO plays the module's motor (n64pad.h); AeroGauge drives its own pad. */
     N64Pad_SetEnabled(sysSettings[currentSystem].rumble);
     NsoSetEnv("AERO_RUMBLE", sysSettings[currentSystem].rumble ? "1" : "0");
@@ -4278,6 +4344,7 @@ int main(int argc, char **argv) {
         Lang_Set(Lang_Load(cfg));
     }
     SysSettings_LoadAll();
+    Pad_LoadNes();
     Order_LoadAll();
     SortPanel_LoadAll();
     Sfx_Init();

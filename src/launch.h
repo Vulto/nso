@@ -427,10 +427,11 @@ static inline int NsoSplitWords(char *buf, char **words, int max)
  * -100 through 100). Off: scanlines 0, so the setting cannot leak. The two
  * are independent (both on is integer scale plus scanlines). Shader is
  * always none. Rewinding (Backspace; rewind.h) is on with 600 frames of history. One save-state file name lets NSO address slots, then the
- * ROM. argv[0..] point into buf; returns the word count, 0 if it did not fit. */
-static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines,
-                                  const char *rom, int host_w, int host_h,
-                                  char *buf, size_t cap, char **argv, int max)
+ * ROM (NsoMednafenArgvEx puts extra words, e.g. the controller bindings of padmap.h, just before it). argv[0..] point into buf; returns the word count, 0 if it did not fit. */
+static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlines,
+                                    const char *rom, int host_w, int host_h,
+                                    char *buf, size_t cap, char **argv, int max,
+                                    char *const *extra, int extra_count)
 {
     const float lines = module && strcmp(module, "snes") == 0 ? 239.0f : 224.0f;
     float xs, ys;
@@ -463,13 +464,30 @@ static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines
                             "-srwautoenable", "1", "-srwframes", "600", rom };
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
-        size_t len = strlen(words[i]) + 1;
+        size_t len;
+        if (i == count - 1) {   /* the ROM stays last: extra options go before it */
+            for (int e = 0; e < extra_count; e++) {
+                len = strlen(extra[e]) + 1;
+                if (n >= max - 1 || used + len > cap) return 0;
+                memcpy(buf + used, extra[e], len);
+                argv[n++] = buf + used;
+                used += len;
+            }
+        }
+        len = strlen(words[i]) + 1;
         if (n >= max - 1 || used + len > cap) return 0;
         memcpy(buf + used, words[i], len);
         argv[n++] = buf + used;
         used += len;
     }
     return n;
+}
+
+static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines,
+                                  const char *rom, int host_w, int host_h,
+                                  char *buf, size_t cap, char **argv, int max)
+{
+    return NsoMednafenArgvEx(module, pixel, scanlines, rom, host_w, host_h, buf, cap, argv, max, NULL, 0);
 }
 
 #endif /* NSO_LAUNCH_H */
