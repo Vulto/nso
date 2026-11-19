@@ -112,7 +112,8 @@ GameEntry n64_games[] = {
         .title = "GoldenEye 007",
         .boxartPath = "assets/images/systems/n64/GoldenEye_007_NSO.png",
         .dir = "repos/n64/ProjectMidas-v1.0.2b-linux",
-        .binary = "./build/ProjectMidas",
+        .binary = "./ProjectMidas",   /* release build, 32-bit; boots straight into the game */
+        .env = "GE_ROM=@saves/n64/goldeneye/GoldenEye_007_USA.z64",   /* the stock (U) cart, 12 MB z64 */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {
