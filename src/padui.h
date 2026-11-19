@@ -1,13 +1,18 @@
 /* padui.h - Settings > Controller (NES): the controller drawn in white line art
- * (raylib primitives, after the reference picture), a lit white button for every
- * pressed control, and the eight NES buttons to remap. Included by main.c after the
+ * (raylib primitives, after the reference picture) with a lit white button for every
+ * pressed control, and Mednafen-style sequential mapping. Included by main.c after the
  * scrape page; uses its statics. The screen is a third page below Image scraping:
  * the Settings page scrolls down to it like it does to the scrape rows.
  *
- * A: pick the button, then press the new key or pad button (Esc cancels, so does
- * waiting six seconds). A key sets the key, a pad button the pad control. The pad
- * button is read twice: as raylib's standard button (embedded games, the ports) and
- * as the raw js control (Mednafen), see padmap.h. Saved at once in config/nso.cfg. */
+ * Entering the screen shows the controller, lighting live on every press, with one option
+ * below it, "Map Controls" (A). That starts the mapping: one prompt at a time ("Press: Up",
+ * Down, Left, Right, Select, Start, B, A) while that button blinks on the drawn controller.
+ * A key sets the button's key, a pad button its pad control; each press assigns and
+ * advances. Esc (or ten seconds without input) cancels and keeps the old map. After the
+ * last button the map is saved (config/nso.cfg, nes.map.*). Either way the screen is back
+ * to the live controller; B goes back to Settings. The pad button is read twice: as raylib's
+ * standard button (embedded games, the ports) and as the raw js control (Mednafen), see
+ * padmap.h. */
 #ifndef NSO_PADUI_H
 #define NSO_PADUI_H
 
@@ -15,14 +20,17 @@
 #include "jspad.h"
 
 #define PADUI_PAGE_Y 1.9f          /* top of the page, in screen heights below the Settings page */
-#define PADUI_LISTEN_SEC 6.0
+#define PADUI_LISTEN_SEC 10.0      /* idle seconds that cancel the mapping */
 #define PADUI_PAIR_SEC 0.06        /* how long a pad press waits for its other reading */
+#define PADUI_BLINK_HZ 3.0
 
 static NesPadMap nesPad;
+static NesPadMap padWork;          /* the map being entered; replaces nesPad only when complete */
 static bool padOpen = false;
-static bool padListen = false;
-static int padSel = 0;             /* NES_BTN_*, NES_BTN_COUNT = Restore defaults */
+static bool padListen = false;     /* mapping: prompting for button padStep */
+static int padStep = 0;            /* NES_BTN_* being asked for */
 static double padListenT = 0.0;
+static double padSettleT = 0.0;    /* pad presses before this are the previous button's second reading */
 static int padPendStd = -1, padPendKind = PAD_JS_NONE, padPendIdx = 0;
 static char padPendDev[40];
 static double padPendT = 0.0;
@@ -50,24 +58,14 @@ static void PadUi_ListenEnd(void) {
     padListen = false;
 }
 
-static void PadUi_Open(void) {
-    padOpen = true;
-    padSel = 0;
-    padListen = false;
-    JsPad_Open();
-}
-
-static void PadUi_Close(void) {
-    PadUi_ListenEnd();
-    padOpen = false;
-    JsPad_Close();
-}
-
 static void PadUi_ListenBegin(void) {
     int k, idx;
     char dev[40];
+    padWork = nesPad;
+    padStep = 0;
     padListen = true;
     padListenT = GetTime();
+    padSettleT = 0.0;
     padPendStd = -1;
     padPendKind = PAD_JS_NONE;
     padPendT = 0.0;
@@ -77,6 +75,19 @@ static void PadUi_ListenBegin(void) {
     while (JsPad_TakePress(&k, &idx, dev, sizeof(dev))) { }
 }
 
+static void PadUi_Close(void) {
+    PadUi_ListenEnd();
+    padOpen = false;
+    JsPad_Close();
+}
+
+/* Entering the screen shows the live controller; "Map Controls" starts the mapping. */
+static void PadUi_Open(void) {
+    padOpen = true;
+    padListen = false;
+    JsPad_Open();
+}
+
 static bool PadUi_Lit(int btn) {
     const PadBind *b = &nesPad.b[btn];
     return (b->key && IsKeyDown(b->key))
@@ -84,8 +95,23 @@ static bool PadUi_Lit(int btn) {
         || (b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx));
 }
 
-/* One frame of listening: a key, or a pad button (its standard and raw readings, which can
- * land a frame apart). */
+/* The current button got its input: next one, or done (saved, shown live). */
+static void PadUi_Assigned(double now) {
+    Sfx_Play(SFX_CLICK);
+    padListenT = now;
+    padSettleT = now + 0.15;
+    padPendT = 0.0;
+    padPendStd = -1;
+    padPendKind = PAD_JS_NONE;
+    if (++padStep >= NES_BTN_COUNT) {
+        nesPad = padWork;
+        Pad_SaveNes();
+        PadUi_ListenEnd();
+    }
+}
+
+/* One frame of mapping: Esc cancels, a key, or a pad button (its standard and raw
+ * readings, which can land a frame apart), assigns. */
 static void PadUi_ListenPoll(void) {
     int key, k, idx;
     char dev[40];
@@ -94,12 +120,15 @@ static void PadUi_ListenPoll(void) {
     while ((key = GetKeyPressed()) > 0) {
         if (key == KEY_ESCAPE) { PadUi_ListenEnd(); return; }
         if (PadMap_KeyBindable(key)) {
-            nesPad.b[padSel].key = key;
-            Pad_SaveNes();
-            Sfx_Play(SFX_CLICK);
-            PadUi_ListenEnd();
-            return;
+            padWork.b[padStep].key = key;
+            PadUi_Assigned(now);
+            if (!padListen) return;   /* raylib drops the rest of the frame's keys: take them all */
         }
+    }
+    if (now < padSettleT) {   /* drain the rest of the press that was just taken */
+        (void)GetGamepadButtonPressed();
+        while (JsPad_TakePress(&k, &idx, dev, sizeof(dev))) { }
+        return;
     }
     {
         int std = GetGamepadButtonPressed();
@@ -112,37 +141,21 @@ static void PadUi_ListenPoll(void) {
         }
     }
     if (padPendT != 0.0 && ((padPendStd >= 0 && padPendKind != PAD_JS_NONE) || now - padPendT > PADUI_PAIR_SEC)) {
-        PadBind *b = &nesPad.b[padSel];
+        PadBind *b = &padWork.b[padStep];
         b->pad = padPendStd;
         b->jsKind = padPendKind;
         b->jsIdx = padPendKind != PAD_JS_NONE ? padPendIdx : 0;
-        if (padPendKind != PAD_JS_NONE) snprintf(nesPad.joyId, sizeof(nesPad.joyId), "%s", padPendDev);
-        padPendT = 0.0;
-        padPendStd = -1;
-        padPendKind = PAD_JS_NONE;
-        Pad_SaveNes();
-        Sfx_Play(SFX_CLICK);
-        PadUi_ListenEnd();
+        if (padPendKind != PAD_JS_NONE) snprintf(padWork.joyId, sizeof(padWork.joyId), "%s", padPendDev);
+        PadUi_Assigned(now);
     }
 }
 
 static void PadUi_Input(bool up, bool down, bool ok, bool back, bool left) {
+    (void)up; (void)down;
     JsPad_Update();
     if (padListen) { PadUi_ListenPoll(); return; }
     if (back || left) { PadUi_Close(); Sfx_Play(SFX_CLICK); return; }
-    if (up && padSel > 0) { padSel--; Sfx_Play(SFX_PLUCK); }
-    if (down && padSel < NES_BTN_COUNT) { padSel++; Sfx_Play(SFX_PLUCK); }
-    if (ok) {
-        Sfx_Play(SFX_CLICK);
-        if (padSel == NES_BTN_COUNT) {
-            char cfg[2112];
-            Lang_ConfigPath(cfg, sizeof(cfg));
-            PadMap_NesDefaults(&nesPad);
-            if (!PadMap_NesClear(cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
-        } else {
-            PadUi_ListenBegin();
-        }
-    }
+    if (ok) { Sfx_Play(SFX_CLICK); PadUi_ListenBegin(); }
 }
 
 /* ---- the controller ---- */
@@ -261,51 +274,34 @@ static void DrawNesController(float x, float y, float w, const bool lit[NES_BTN_
     }
 }
 
-/* "Key: Z    Pad: B" of one button; a pad control only the raw reading knows is "Button 3". */
-static void PadUi_BindText(int btn, char *out, size_t n) {
-    const PadBind *b = &nesPad.b[btn];
-    const PadKeyInfo *ki = PadMap_KeyInfo(b->key);
-    const PadBtnInfo *pi = PadMap_PadInfo(b->pad);
-    char pad[40];
-    if (pi) snprintf(pad, sizeof(pad), "%s", pi->label);
-    else if (b->jsKind == PAD_JS_BUTTON) snprintf(pad, sizeof(pad), "#%d", b->jsIdx);
-    else if (b->jsKind != PAD_JS_NONE) snprintf(pad, sizeof(pad), "%c%d", b->jsKind == PAD_JS_AXIS_POS ? '+' : '-', b->jsIdx);
-    else snprintf(pad, sizeof(pad), "-");
-    snprintf(out, n, "%s: %s    %s: %s", T(S_PC_KEY), ki ? ki->name : "-", T(S_PC_PAD), pad);
-}
-
 static void PadUi_Draw(Font font, Color bg) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float hx = sw * 0.449f, bx = sw * 0.485f, bw = sw * 0.387f;
     float oy = sh * PADUI_PAGE_Y;
-    float th = fmaxf(2.0f, sh * 0.0028f);
-    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 0.85f;
-    float bh = sh * 0.044f, step = sh * 0.0505f, top = oy + sh * 0.485f;
     bool lit[NES_BTN_COUNT];
-    char line[160];
 
-    for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = padOpen && PadUi_Lit(i);
-    DrawFitText(font, T(S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, hsize, sw - hx, WHITE);
+    for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = false;
+    if (padOpen && padListen) lit[padStep] = ((int)(GetTime() * PADUI_BLINK_HZ * 2.0) & 1) == 0;   /* blinks */
+    else for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = padOpen && PadUi_Lit(i);
+    DrawFitText(font, T(S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
     DrawNesController(bx, oy + sh * 0.13f, bw, lit, WHITE);
-    for (int i = 0; i <= NES_BTN_COUNT; i++) {
-        float y = top + step * (float)i;
-        bool cur = padOpen && padSel == i;
-        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
-        Color fg = cur ? bg : WHITE;
-        if (cur) DrawRectangleRec(box, WHITE);
-        else DrawRectangleLinesEx(box, th, WHITE);
-        if (i == NES_BTN_COUNT) {
-            DrawFitText(font, T(S_PC_DEFAULTS), (Vector2){ bx + sw * 0.0225f, y }, osize, bw - sw * 0.03f, fg);
-            continue;
-        }
-        DrawFitText(font, T((StrId)(S_PC_UP + i)), (Vector2){ bx + sw * 0.0225f, y }, osize, bw * 0.28f, fg);
-        if (cur && padListen) snprintf(line, sizeof(line), "%s", T(S_PC_LISTEN));
-        else PadUi_BindText(i, line, sizeof(line));
-        {
-            float maxW = bw * 0.66f, size = osize;
+    {   /* the one line under the controller, where the list used to start: the prompt, or the option */
+        float osize = (float)font.baseSize * 0.85f, bh = sh * 0.044f, y = oy + sh * 0.485f;
+        if (padOpen && padListen) {   /* "Press: A" */
+            char line[96];
+            float size = (float)font.baseSize * 1.5f;
+            snprintf(line, sizeof(line), "%s: %s", T(S_PC_PRESS), T((StrId)(S_PC_UP + padStep)));
             Vector2 m = MeasureTextEx(font, line, size, 1.0f);
-            if (m.x > maxW) { size *= maxW / m.x; m = MeasureTextEx(font, line, size, 1.0f); }
-            DrawFitText(font, line, (Vector2){ bx + bw - m.x - sw * 0.012f, y }, size, m.x + 1.0f, fg);
+            if (m.x > bw) { size *= bw / m.x; m = MeasureTextEx(font, line, size, 1.0f); }
+            DrawFitText(font, line, (Vector2){ bx + (bw - m.x) * 0.5f, y + sh * 0.04f }, size, m.x + 1.0f, WHITE);
+        } else if (padOpen) {   /* "Map Controls", selected, in the row style of the other options */
+            Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+            DrawRectangleRec(box, WHITE);
+            float maxW = bw - sw * 0.03f, size = osize;
+            Vector2 m = MeasureTextEx(font, T(S_PC_MAP), size, 1.0f);
+            if (m.x > maxW) { size *= maxW / m.x; m = MeasureTextEx(font, T(S_PC_MAP), size, 1.0f); }
+            /* centered in the rectangle: the text is measured (any language), DrawFitText centers on y */
+            DrawFitText(font, T(S_PC_MAP), (Vector2){ box.x + (box.width - m.x) * 0.5f, y }, size, m.x + 1.0f, bg);
         }
     }
     DrawFitText(font, padListen ? T(S_PC_HINT_LISTEN) : T(S_PC_HINT), (Vector2){ hx, oy + sh * 0.945f },
