@@ -4,7 +4,7 @@
  * is on a keyboard; on a pad NSO holds ZL+ZR (a tap of the same chord opens the Suspend Menu,
  * as on Switch Online) and injects that key with XTest. A small patch in the Mednafen tree
  * (src/drivers/main.cpp, NSO_REWIND_SHM) publishes every emulated frame, the number of frames
- * that can still be rewound, and a thumbnail every few frames to a shared file. While the rewind
+ * that can still be rewound, and a thumbnail of the game every second (60 frames) to a shared file. While the rewind
  * key is held NSO hides the emulator's window (X Shape: it keeps the keyboard focus), draws the
  * live frame itself, shrunk over the gray panel with the thumbnail strip, per rewindanim.h.
  * With "Show controls in game" the black caption bar sits under the game. Linux only. */
@@ -315,7 +315,7 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
             float th = REWIND_THUMB_H * k * look.thumbScale, tw = th * aspect;
             float step = tw + REWIND_GAP * k, cx = W * 0.5f, ty = top + REWIND_THUMB_DY * k;
             const uint8_t *base = (const uint8_t *)rw.map + RW_HEAD;
-            int frame = (int)s->frame, stride = (int)s->stride ? (int)s->stride : 12;
+            int frame = (int)s->frame, stride = (int)s->stride ? (int)s->stride : 60;
             for (int i = 0; i < RW_SLOTS; i++) {
                 uint32_t sf = s->slot_frame[i];
                 if (!sf || (int)sf > frame + stride || frame - (int)sf >= (int)s->maxhist) continue;
