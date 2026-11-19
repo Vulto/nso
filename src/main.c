@@ -4207,14 +4207,9 @@ static void DrawMosaic(Color background, Font font) {
             BeginTextureMode(mosaicRT);
             DrawMosaicSlots(background, font);
             EndTextureMode();
-            /* Settings: twice the blur radius behind its panel (same passes and taps). */
-            {
-                static float blurStrength = 1.0f;
-                float want = (SidebarWantsBlur() && sidebarItem == SB_ITEM_SETTINGS) ? 2.0f : 1.0f;
-                blurStrength += (want - blurStrength) * fminf(1.0f, GetFrameTime() * 14.0f);
-                if (fabsf(want - blurStrength) < 0.01f) blurStrength = want;
-                DrawBlurredMosaicBackdrop(background, blurStrength);
-            }
+            /* Side menu (every item): twice the blur radius, same passes and taps.
+             * Details / status keep the standard blur. */
+            DrawBlurredMosaicBackdrop(background, SidebarWantsBlur() ? 2.0f : 1.0f);
             /* Details: the sharp grid dissolves into the blur in step with the card. */
             if (!SidebarWantsBlur() && overlayT < 1.0f)
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
