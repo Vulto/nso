@@ -159,6 +159,7 @@ int Embed_ExternalResult(void);
 #include "nso.h"
 #include "savestate.h"
 #include "sfx.h"
+#include "n64pad.h"
 
 /* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
@@ -223,6 +224,7 @@ static struct {
     bool reusedRetainedSo;
     bool moduleInitialized;
     const NsomodApi *api;
+    nsomod_rumble_fn rumble;               /* optional (nsomod.h) */
     NsomodConfig cfg;
     char data[2048], module[2048];
     int fbw, fbh, channels;   /* the module's, kept even if a reload fails */
@@ -291,6 +293,7 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
     if (!embed.so) return false;
     nsomod_get_api_fn get = (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY);
     embed.api = get ? get() : NULL;
+    embed.rumble = (nsomod_rumble_fn)dlsym(embed.so, NSOMOD_RUMBLE_ENTRY);
     snprintf(embed.data, sizeof(embed.data), "%s", dataPath);
     snprintf(embed.module, sizeof(embed.module), "%s", modulePath);
     embed.cfg = (NsomodConfig){ .data_path = embed.data, .sample_rate = EMBED_SAMPLE_RATE };
@@ -348,6 +351,7 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
 void Embed_Stop(void)
 {
     if (!embed.active) return;
+    N64Pad_Rumble(0.0f);
     if (embed.loadThreadStarted) {
         pthread_join(embed.loadThread, NULL);
         embed.loadThreadStarted = false;
@@ -400,8 +404,8 @@ static NsomodInput Embed_ReadPad(void)
     if (IsGamepadAvailable(0)) {
         float lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
         float ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
-        float rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
-        float ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+        float rx, ry;
+        N64Pad_RightAxes(0, &rx, &ry);   /* Switch-mode N64 pad: its C buttons */
         in.lx = lx;
         in.ly = ly;
         if (fabsf(rx) > fabsf(in.rx)) in.rx = rx;
@@ -455,6 +459,8 @@ static bool Embed_Reload(void)
     void *oldSo = embed.so;
     embed.so = NULL;
     embed.api = NULL;
+    embed.rumble = NULL;
+    N64Pad_Rumble(0.0f);
     if (oldSo == embedRetainedSo) {
         embedRetainedSo = NULL;
         embedRetainedPath[0] = '\0';
@@ -463,6 +469,7 @@ static bool Embed_Reload(void)
 
     embed.so = dlopen(embed.module, RTLD_NOW | RTLD_LOCAL);
     nsomod_get_api_fn get = embed.so ? (nsomod_get_api_fn)dlsym(embed.so, NSOMOD_ENTRY) : NULL;
+    embed.rumble = embed.so ? (nsomod_rumble_fn)dlsym(embed.so, NSOMOD_RUMBLE_ENTRY) : NULL;
     const NsomodApi *api = get ? get() : NULL;
     if (!api || api->version != NSOMOD_API_VERSION || api->fb_w != embed.fbw
         || api->fb_h != embed.fbh || api->channels != embed.channels || !api->init) {
@@ -956,6 +963,7 @@ bool Embed_Update(float dt)
         NsomodInput p1 = Embed_ReadPad();
         NsomodFrame f = { 0 };
         for (int i = 0; i < n; i++) f = embed.api->frame(&p1);
+        if (embed.rumble) N64Pad_Rumble(embed.rumble());   /* held N64PAD_HOLD_MS: stops when frames stop */
         UpdateTexture(embed.tex, f.rgb24);
         embed.last = f.rgb24;
     }

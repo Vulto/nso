@@ -16,6 +16,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -460,6 +461,18 @@ extern "C" bool NsoLusWriteControllerInput(OSContPad* pad) {
 }
 
 /* The game library's calls (--wrap in the Makefile) */
+
+/* Rumble Pak (sys_joybus.c Controller_Rumble, once per game frame): the motor goes
+ * to NSO (nsomod.h), never to libultraship's own SDL rumble, so the setting rules. */
+static std::atomic<bool> gMotorOn{false};
+extern "C" int32_t __wrap___osMotorAccess(OSPfs* pfs, uint32_t vibrate) {
+    if (pfs && pfs->channel == 0) gMotorOn.store(vibrate != 0, std::memory_order_relaxed);
+    return 0;
+}
+extern "C" __attribute__((visibility("default"))) float nsomod_rumble(void) {
+    return M.live && gMotorOn.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+}
+
 extern "C" void* __wrap_GameEngine_Malloc(size_t size) {
     void* p = GameEngine_Malloc(size);
     std::lock_guard<std::mutex> lock(gRegMutex);

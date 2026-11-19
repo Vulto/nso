@@ -63,6 +63,12 @@ typedef struct NsomodApi {
 typedef const NsomodApi *(*nsomod_get_api_fn)(void);
 const NsomodApi *nsomod_get_api(void);
 
+/* Optional export (looked up with dlsym, so the API above is unchanged): the
+ * Rumble Pak motor after the last frame(), 0 = off .. 1 = full. NSO plays it on
+ * the pad (src/n64pad.h) when the system's Rumble setting is on. */
+#define NSOMOD_RUMBLE_ENTRY "nsomod_rumble"
+typedef float (*nsomod_rumble_fn)(void);
+
 #ifdef __cplusplus
 }
 #endif

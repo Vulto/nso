@@ -25,6 +25,7 @@ screenshot*.png
 /nso
 /nso.exe
 /nso-menu-launcher
+/nso-norumble.so
 /*_test
 
 # Windows build output

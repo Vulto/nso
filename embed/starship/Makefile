@@ -51,7 +51,7 @@ $(B)/starshipmod.o: starshipmod.cpp ../nsomod.h
 $(B)/libsf64game.so: $(GAME_O)
 	@mkdir -p $(B)
 	$(CXX) -shared -o $@ $^ -Wl,-soname,libsf64game.so -Wl,-z,relro -Wl,-Bsymbolic -Wl,--build-id=sha1 -lm \
-	    -Wl,--wrap=GameEngine_Malloc
+	    -Wl,--wrap=GameEngine_Malloc -Wl,--wrap=__osMotorAccess
 
 $(B)/libstarshipmod.so: $(B)/starshipmod.o $(PORT_O) $(B)/libsf64game.so
 	$(CXX) -shared -o $@ $(B)/starshipmod.o $(PORT_O) -L$(B) -lsf64game -Wl,-rpath,'$$ORIGIN' \

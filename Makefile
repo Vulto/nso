@@ -1,11 +1,11 @@
 CC ?= cc
 CFLAGS := -std=c23 -Wall -Wextra -Isrc -Wextra -Werror
-SRC := src/main.c src/menu_launcher.c
+SRC := src/main.c src/menu_launcher.c src/n64pad.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
 	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h
 HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h
-HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h
+HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/n64pad.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -21,10 +21,14 @@ endif
 
 all: linux
 
-linux: nso
+linux: nso nso-norumble.so
 
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -pthread -o nso $(SRC) -lraylib -lm -ldl -lX11 -lXtst -lXext
+
+# Preloaded into external games when Rumble is off (src/norumble.c).
+nso-norumble.so: src/norumble.c
+	$(CC) $(CFLAGS) -shared -fPIC -o $@ $<
 
 # In-process modules: SMB Vanilla (repos/nes/smbvanilla), Mega Man 3
 # (repos/nes/mm3-recomp), SMW, Star Fox SNES recomp, sm64ex, and AeroGauge
@@ -56,7 +60,7 @@ check: export PULSE_SERVER = none
 check: export ALSA_CONFIG_PATH = /dev/null
 check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
-		src/launch_test.c src/launch.h src/input_test.c src/nso.h \
+		src/launch_test.c src/launch.h src/input_test.c src/nso.h src/n64pad.h \
 		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
 		src/sfx_test.c src/sfx.h src/sort_test.c src/sort.h src/catalog_test.c src/systems/nes.h \
 		src/systems/snes.h src/systems/n64.h src/systems/gamecube.h \
@@ -100,13 +104,13 @@ check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/hide_test.c sr
 check: src/status_test.c src/status.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h
 
 # Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
-test: check nso
+test: check nso nso-norumble.so
 	@for p in $$(pgrep -x nso); do \
 		if tr '\0' '\n' < /proc/$$p/environ 2>/dev/null | grep -qx 'DISPLAY=:1'; then kill $$p; fi; \
 	done; sleep 1
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test status_test enteranim_test rewindanim_test
+	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test status_test enteranim_test rewindanim_test
 
 .PHONY: embed soh-nso windows test clean

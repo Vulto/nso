@@ -102,8 +102,11 @@ void game_exit(void) {}   /* "Exit Game": NSO's End menu leaves instead */
 /* ---- controller_entry_point.c: the pad is NSO's ---- */
 s32 osContInit(UNUSED OSMesgQueue *mq, u8 *bits, UNUSED OSContStatus *status) { *bits = 1; return 0; }
 s32 osContStartReadData(UNUSED OSMesgQueue *mq) { return 0; }
-s32 osMotorStart(UNUSED void *pfs) { return 0; }
-s32 osMotorStop(UNUSED void *pfs) { return 0; }
+/* Rumble Pak (thread6.c, run once per frame): NSO reads the motor (nsomod.h). */
+static bool motorOn;
+s32 osMotorStart(UNUSED void *pfs) { motorOn = true; return 0; }
+s32 osMotorStop(UNUSED void *pfs) { motorOn = false; return 0; }
+__attribute__((visibility("default"))) float nsomod_rumble(void) { return M.live && motorOn ? 1.0f : 0.0f; }
 u32 osMotorInit(UNUSED OSMesgQueue *mq, UNUSED void *pfs, UNUSED s32 port) { return 0; }
 u32 controller_get_raw_key(void) { return VK_INVALID; }
 void controller_reconfigure(void) {}

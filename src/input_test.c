@@ -3,6 +3,7 @@
 #endif
 /* input_test.c - Nintendo confirm/back mapping. */
 #include "nso.h"
+#include "n64pad.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,6 +182,21 @@ int main(void)
         snprintf(path, sizeof path, "%s/uevent", hid); unlink(path);
         snprintf(path, sizeof path, "%s/capacity", bat); unlink(path);
         rmdir(hid); rmdir(bat); rmdir(dir);
+    }
+    {   /* n64pad.h: Switch-mode N64 mapping, sysfs capability bits */
+        char guid[33], map[512];
+        N64Pad_Guid(guid, 0x0003, 0x2dc8, 0x2869, 0x0111);
+        CHECK(strcmp(guid, "03000000c82d00006928000011010000") == 0);   /* = the D-mode entry */
+        N64Pad_Guid(guid, 0x0003, 0x057e, 0x2019, 0x8111);
+        CHECK(strcmp(guid, "030000007e0500001920000011810000") == 0);
+        CHECK(N64Pad_SwitchMapping(map, sizeof map, guid) > 0);
+        { const char *head = "030000007e0500001920000011810000,N64 Controller,a:b1,b:b0,"; CHECK(strncmp(map, head, strlen(head)) == 0); }
+        CHECK(strstr(map, "y:b10,x:b3,leftstick:b4,rightstick:b2,") && map[strlen(map) - 1] == '\n');
+        CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130 + 0x0f) == false);
+        CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130) == true);    /* BTN_A, word 4 */
+        CHECK(N64Pad_CapBit("0", 0x50) == false);
+        CHECK(N64Pad_CapBit("10000 0", 0x50) == true);                      /* FF_RUMBLE = 80 */
+        CHECK(N64Pad_CapBit("", 0) == false);
     }
     if (fails) return 1;
     puts("input_test: ok");

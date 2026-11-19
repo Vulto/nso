@@ -3808,6 +3808,18 @@ NsoProc LaunchGame(const GameEntry *game) {
         NsoSetEnv("NSO_REWIND_SHM", rewindShm);
     }
     GameEnvSet(game);
+#if !defined(_WIN32)
+    /* Rumble off: the game's SDL rumble calls do nothing (src/norumble.c). */
+    char *preloadSaved = getenv("LD_PRELOAD") ? strdup(getenv("LD_PRELOAD")) : NULL;
+    if (!sysSettings[currentSystem].rumble) {
+        char shim[1200], preload[2600];
+        snprintf(shim, sizeof(shim), "%s", GetDataPath("nso-norumble.so"));
+        if (FileExists(shim)) {
+            snprintf(preload, sizeof(preload), "%s%s%s", shim, preloadSaved ? ":" : "", preloadSaved ? preloadSaved : "");
+            NsoSetEnv("LD_PRELOAD", preload);
+        }
+    }
+#endif
     /* argv: [nso --menu-launcher] binary [GameEntry.args...] */
     char argsBuf[512];
     char *argv[32];
@@ -3847,6 +3859,10 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (selfLen > 0) NsoSetEnv("NSO_START_KEYS", NULL);
 #endif
     GameEnvRestore();
+#if !defined(_WIN32)
+    NsoSetEnv("LD_PRELOAD", preloadSaved);
+    free(preloadSaved);
+#endif
 
     if (game->appDir) NsoSetEnv("APP_FOLDER_PATH", NULL);
     if (mednafenHome[0]) {
@@ -3883,6 +3899,9 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
+    /* Rumble: NSO plays the module's motor (n64pad.h); AeroGauge drives its own pad. */
+    N64Pad_SetEnabled(sysSettings[currentSystem].rumble);
+    NsoSetEnv("AERO_RUMBLE", sysSettings[currentSystem].rumble ? "1" : "0");
     bool ok = Embed_Start(module, romPath, game->stateDir ? GetDataPath(game->stateDir) : NULL, stateLoadPath);
     stateLoadPath[0] = '\0';
     return ok;
@@ -4331,6 +4350,7 @@ int main(int argc, char **argv) {
     bool externalResumeAfterFrame = false;
     while (!WindowShouldClose()) {
 
+        N64Pad_Poll();   /* Switch-mode N64 pad mapping, rumble device */
         bool gp = IsGamepadAvailable(0);
         static bool padWasAvail = false;
         static double padSettleUntil = 0.0;
@@ -4349,8 +4369,7 @@ int main(int argc, char **argv) {
         if (gp) {
             lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
             ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
-            rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
-            ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+            N64Pad_RightAxes(0, &rx, &ry);
         }
         int eLX = Nso_PadAxisEdgeArmed(&armLX, lx);
         int eLY = Nso_PadAxisEdgeArmed(&armLY, ly);
