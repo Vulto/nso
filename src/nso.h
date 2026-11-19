@@ -165,9 +165,13 @@ typedef enum {
     NSO_PAD_PROFILE_N64,
 } NsoPadProfile;
 
+/* main.c sets it to n64pad.h's N64Pad_IsSwitchName: the 8BitDo in S mode on USB
+ * is named "... Pro Controller", so it is told apart by its layout, not its name. */
+static bool (*Nso_PadIsN64Hook)(const char *name);
+
 static inline bool Nso_PadNameIsN64(const char *name)
 {
-    return name && (strstr(name, "N64") || strstr(name, "8BitDo 64"));
+    return name && (strstr(name, "N64") || strstr(name, "8BitDo 64") || (Nso_PadIsN64Hook && Nso_PadIsN64Hook(name)));
 }
 
 static inline NsoPadProfile Nso_PadProfileFromName(const char *name)

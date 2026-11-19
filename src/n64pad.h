@@ -11,7 +11,9 @@
  *    itself when frames stop (pause menu, quit). External ports rumble through
  *    their own SDL; with the toggle off they get nso-norumble.so (norumble.c).
  *  - Layout: GLFW has no mapping for 057e:2019 (its GUID carries the device's
- *    version), so N64Pad_Poll registers one per connected device. Its C buttons
+ *    version; the 8BitDo in S mode on USB is 057e:2009 with the N64 layout, which
+ *    GLFW's Pro Controller entry misreads), so N64Pad_Poll registers one per
+ *    connected device and NSO treats it as an N64 pad. Its C buttons
  *    are buttons, not D mode's right stick: N64Pad_RightAxes rebuilds the stick
  *    NSO and the games read from them.
  * The string helpers are pure and unit-tested (input_test.c); the device
@@ -25,7 +27,8 @@
 #include <string.h>
 
 #define N64PAD_SWITCH_VENDOR 0x057e
-#define N64PAD_SWITCH_PRODUCT 0x2019
+#define N64PAD_SWITCH_PRODUCT 0x2019      /* Switch Online N64 controller */
+#define N64PAD_SWITCH_PRO_PRODUCT 0x2009  /* Pro Controller id: the 8BitDo in S mode over USB */
 #define N64PAD_HOLD_MS 150
 
 /* hid-nintendo's N64 buttons in GLFW's order (BTN_A..BTN_MODE = b0..b12): A b0,
@@ -37,6 +40,15 @@
     "a:b1,b:b0,y:b10,x:b3,leftstick:b4,rightstick:b2,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1," \
     "guide:b12,leftshoulder:b6,rightshoulder:b7,lefttrigger:b8,righttrigger:b9,start:b11," \
     "leftx:a0,lefty:a1,platform:Linux,"
+
+/* A Switch-mode N64 controller: 057e:2019, or 057e:2009 (the 8BitDo in S mode on
+ * USB calls itself a Pro Controller) that hid-nintendo set up with the N64 layout
+ * (BTN_C = C-right, no right stick; a real Pro Controller has ABS_RX, no BTN_C). */
+static inline bool N64Pad_IsSwitchN64(unsigned vendor, unsigned product, bool hasBtnC, bool hasAbsRx)
+{
+    if (vendor != N64PAD_SWITCH_VENDOR) return false;
+    return product == N64PAD_SWITCH_PRODUCT || (product == N64PAD_SWITCH_PRO_PRODUCT && hasBtnC && !hasAbsRx);
+}
 
 /* GLFW's Linux joystick GUID (input_id fields, little-endian). out: 33 bytes. */
 static inline void N64Pad_Guid(char *out, unsigned bus, unsigned vendor, unsigned product, unsigned version)

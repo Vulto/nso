@@ -86,13 +86,14 @@ void N64Pad_Poll(void)
     struct dirent *e;
     while ((e = readdir(d))) {
         if (strncmp(e->d_name, "event", 5) != 0) continue;
-        char name[128] = { 0 }, ff[256] = { 0 }, key[1024] = { 0 };
+        char name[128] = { 0 }, ff[256] = { 0 }, key[1024] = { 0 }, abs[256] = { 0 };
         ReadSys(e->d_name, "name", name, sizeof(name));
         ReadSys(e->d_name, "capabilities/key", key, sizeof(key));
+        ReadSys(e->d_name, "capabilities/abs", abs, sizeof(abs));
         if (!N64Pad_CapBit(key, BTN_A) && !N64Pad_CapBit(key, BTN_TRIGGER)) continue;   /* not a pad */
         unsigned vendor = ReadHex(e->d_name, "id/vendor");
         unsigned product = ReadHex(e->d_name, "id/product");
-        if (vendor == N64PAD_SWITCH_VENDOR && product == N64PAD_SWITCH_PRODUCT) {
+        if (N64Pad_IsSwitchN64(vendor, product, N64Pad_CapBit(key, BTN_C), N64Pad_CapBit(abs, ABS_RX))) {
             char guid[33];
             N64Pad_Guid(guid, ReadHex(e->d_name, "id/bustype"), vendor, product, ReadHex(e->d_name, "id/version"));
             bool known = false;

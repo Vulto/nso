@@ -197,6 +197,12 @@ int main(void)
         CHECK(N64Pad_CapBit("0", 0x50) == false);
         CHECK(N64Pad_CapBit("10000 0", 0x50) == true);                      /* FF_RUMBLE = 80 */
         CHECK(N64Pad_CapBit("", 0) == false);
+        CHECK(N64Pad_IsSwitchN64(0x057e, 0x2019, true, false));
+        CHECK(N64Pad_IsSwitchN64(0x057e, 0x2009, true, false));    /* 8BitDo, S mode, USB */
+        CHECK(!N64Pad_IsSwitchN64(0x057e, 0x2009, false, true));   /* a real Pro Controller */
+        CHECK(!N64Pad_IsSwitchN64(0x2dc8, 0x2869, false, true));   /* D mode */
+        CHECK(N64Pad_CapBit("1fff000000000000 0 0 0 0", 0x132));   /* the 8BitDo's BTN_C */
+        CHECK(!N64Pad_CapBit("30003", 3));                         /* its abs: no ABS_RX */
     }
     if (fails) return 1;
     puts("input_test: ok");

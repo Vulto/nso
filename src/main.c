@@ -4262,6 +4262,7 @@ int main(int argc, char **argv) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");
     SetGamepadMappings(NSO_PAD_MAPPINGS);
+    Nso_PadIsN64Hook = N64Pad_IsSwitchName;
     SetWindowTitle("NSO");
     SetTargetFPS(FPS);
 
