@@ -126,10 +126,10 @@ switches system (NES, SNES, Nintendo 64, GameCube).
 - **Language:** English / Português.
 - **NES controller (NES only, below the scrape/Hide rows):** shows the pad and
   lights each button you press in white. Holding A for 2 s starts the mapping (a ring
-  fills on the hint bar's A glyph): it asks for one button at a time (Up, Down, Left,
+  fills on the hint bar's A glyph; A and B also light the pad while held): it asks for one button at a time (Up, Down, Left,
   Right, Select, Start, B, A; the asked button blinks on the pad): press the key or pad
   button for it (inputs are edge-triggered: release everything between buttons). Esc
-  (or 10 s idle) cancels and keeps the old map. ZR (Left Shift on the keyboard) deletes
+  (or 10 s idle) cancels and keeps the old map. Holding ZR (Left Shift on the keyboard) for 2 s deletes
   the custom map. Leaving the screen takes holding B for 2 s (a ring fills on the B
   glyph); during the mapping, holding a button for 2 s skips that prompt and keeps its
   mapping. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it

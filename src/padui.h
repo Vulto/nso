@@ -4,11 +4,11 @@
  * scrape page; uses its statics. The screen is a third page below Image scraping:
  * the Settings page scrolls down to it like it does to the scrape rows.
  *
- * Entering the screen shows the controller, lighting live on every press (short A, B, ... only
- * light it). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   ZR: Reset
- * to default   Hold B: Back". Holding A for two seconds starts the mapping (a ring fills on the
- * bar's A glyph); ZR (the pad's, or Left Shift, N64's ZL/ZR = Z key in embed.h) deletes nes.map.*
- * and the live controller shows the defaults at once (ignored if that control is mapped to a
+ * Entering the screen shows the controller, lighting live on every press (A and B light it too
+ * while held, as the holds that remap / go back). There are no buttons: the bottom-right hint bar lists "Hold A: Remap   Hold ZR:
+ * Reset to default   Hold B: Back". Every hold here (A, B, ZR, skip a prompt) lasts exactly
+ * PADUI_HOLD_SEC, two seconds. Holding A starts the mapping (a ring fills on the bar's A glyph);
+ * holding ZR (the pad's, or Left Shift, N64's ZL/ZR = Z key in embed.h) deletes nes.map.* and the live controller shows the defaults at once (ignored if that control is mapped to a
  * button). The mapping asks for one button at a time ("Press: Up", Down, Left, Right, Select,
  * Start, B, A) while that button blinks on the drawn controller. A key sets the button's key,
  * a pad button its pad control; a short press assigns on release and advances, holding it two
@@ -37,14 +37,14 @@
 #define PADUI_LISTEN_SEC 10.0      /* idle seconds that cancel the mapping */
 #define PADUI_PAIR_SEC 0.06        /* how long a pad press waits for its other reading */
 #define PADUI_BLINK_HZ 3.0
-#define PADUI_HOLD_SEC 2.0         /* holding a button this long skips the prompt */
-#define PADUI_EXIT_SEC 2.0         /* holding B this long leaves the screen: the only way out */
-#define PADUI_REMAP_SEC 2.0        /* holding A this long starts the mapping */
+#define PADUI_HOLD_SEC 2.0         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
 
 static NesPadMap nesPad;
 static float padExitHeld = 0.0f;   /* seconds B has been held on the idle screen */
 static float padRing = 0.0f;       /* the ring on the B glyph, 0..1: follows the hold, drains on release */
 static float padRemapHeld = 0.0f, padRingA = 0.0f;   /* the same for A (remap) */
+static float padResetHeld = 0.0f, padRingZ = 0.0f;   /* and for ZR / Left Shift (reset) */
+static bool padResetWait = true;   /* ZR held on entering must be released first */
 static bool padRemapWait = true;   /* an A held when the screen opened (or a mapping ended) must be released first */
 static bool padExitGuard = false;  /* B is still held after leaving: Settings must not take it as Back */
 static bool padExitWait = true;    /* a B held when the screen opened (or a mapping ended) must be released first */
@@ -88,6 +88,8 @@ static void PadUi_ListenEnd(void) {
     padExitHeld = 0.0f;
     padRemapWait = true;
     padRemapHeld = 0.0f;
+    padResetWait = true;
+    padResetHeld = 0.0f;
 }
 
 static void PadUi_ListenBegin(void) {
@@ -112,6 +114,7 @@ static void PadUi_Close(void) {
     padOpen = false;
     padRing = 0.0f;
     padRingA = 0.0f;
+    padRingZ = 0.0f;
     SetExitKey(KEY_ESCAPE);
     JsPad_Close();
 }
@@ -124,7 +127,10 @@ static void PadUi_Open(void) {
     padExitHeld = 0.0f;
     padRemapWait = true;
     padRemapHeld = 0.0f;
+    padResetWait = true;
+    padResetHeld = 0.0f;
     padRingA = 0.0f;
+    padRingZ = 0.0f;
     padListen = false;
     JsPad_Open();
 }
@@ -233,7 +239,7 @@ static bool PadUi_BDown(void) {
     return b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx);
 }
 
-/* The one way out: B held for PADUI_EXIT_SEC. Short B, Left, Esc and the menu keys do nothing. */
+/* The one way out: B held for PADUI_HOLD_SEC. Short B, Left, Esc and the menu keys do nothing. */
 static void PadUi_ExitTick(void) {
     float dt = GetFrameTime();
     bool down = PadUi_BDown();
@@ -242,8 +248,8 @@ static void PadUi_ExitTick(void) {
         padExitHeld = 0.0f;
     } else if (down) {
         padExitHeld += dt;
-        padRing = fminf(1.0f, padExitHeld / PADUI_EXIT_SEC);
-        if (padExitHeld >= PADUI_EXIT_SEC) { Sfx_Play(SFX_CLICK); PadUi_Close(); padExitGuard = true; }
+        padRing = fminf(1.0f, padExitHeld / PADUI_HOLD_SEC);
+        if (padExitHeld >= PADUI_HOLD_SEC) { Sfx_Play(SFX_CLICK); PadUi_Close(); padExitGuard = true; }
         return;
     } else {
         padExitHeld = 0.0f;
@@ -259,7 +265,7 @@ static bool PadUi_ADown(void) {
     return b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx);
 }
 
-/* Holding A for PADUI_REMAP_SEC starts the mapping; a short A only lights the controller. */
+/* Holding A for PADUI_HOLD_SEC starts the mapping; a short A only lights the controller. */
 static bool PadUi_RemapTick(void) {
     float dt = GetFrameTime();
     bool down = PadUi_ADown();
@@ -268,10 +274,11 @@ static bool PadUi_RemapTick(void) {
         padRemapHeld = 0.0f;
     } else if (down) {
         padRemapHeld += dt;
-        padRingA = fminf(1.0f, padRemapHeld / PADUI_REMAP_SEC);
-        if (padRemapHeld >= PADUI_REMAP_SEC) {
+        padRingA = fminf(1.0f, padRemapHeld / PADUI_HOLD_SEC);
+        if (padRemapHeld >= PADUI_HOLD_SEC) {
             Sfx_Play(SFX_CLICK);
             padRingA = 0.0f;
+    padRingZ = 0.0f;
             PadUi_ListenBegin();   /* reads nothing this frame; the gate waits for A to be released */
             return true;
         }
@@ -283,21 +290,39 @@ static bool PadUi_RemapTick(void) {
     return false;
 }
 
-/* ZR (pad), or Left Shift on the keyboard (the N64 ZL / ZR = Z key): back to the defaults. */
+/* Holding ZR (pad), or Left Shift on the keyboard (the N64 ZL / ZR = Z key), for PADUI_HOLD_SEC
+ * puts the defaults back. A control that is mapped to a NES button never resets. */
 static void PadUi_ResetTick(void) {
-    bool zr = IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
-    bool shift = IsKeyPressed(KEY_LEFT_SHIFT);
-    for (int i = 0; i < NES_BTN_COUNT; i++) {   /* a control that is a NES button is not a reset */
+    float dt = GetFrameTime();
+    bool zr = IsGamepadAvailable(0) && IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
+    bool shift = IsKeyDown(KEY_LEFT_SHIFT);
+    bool down;
+    for (int i = 0; i < NES_BTN_COUNT; i++) {
         if (nesPad.b[i].pad == GAMEPAD_BUTTON_RIGHT_TRIGGER_2) zr = false;
         if (nesPad.b[i].key == KEY_LEFT_SHIFT) shift = false;
     }
-    if (zr || shift) {
-        char cfg[2112];
-        Sfx_Play(SFX_CLICK);
-        Lang_ConfigPath(cfg, sizeof(cfg));
-        PadMap_NesDefaults(&nesPad);
-        if (!PadMap_NesClear(cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+    down = zr || shift;
+    if (padResetWait) {
+        if (!down) padResetWait = false;
+        padResetHeld = 0.0f;
+    } else if (down) {
+        padResetHeld += dt;
+        padRingZ = fminf(1.0f, padResetHeld / PADUI_HOLD_SEC);
+        if (padResetHeld >= PADUI_HOLD_SEC) {
+            char cfg[2112];
+            Sfx_Play(SFX_CLICK);
+            Lang_ConfigPath(cfg, sizeof(cfg));
+            PadMap_NesDefaults(&nesPad);
+            if (!PadMap_NesClear(cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+            padResetHeld = 0.0f;
+            padRingZ = 0.0f;
+            padResetWait = true;   /* once per hold: release before it can fire again */
+        }
+        return;
+    } else {
+        padResetHeld = 0.0f;
     }
+    padRingZ = fmaxf(0.0f, padRingZ - dt * 4.0f);
 }
 
 static void PadUi_Input(bool up, bool down, bool ok, bool back, bool left) {
@@ -306,6 +331,7 @@ static void PadUi_Input(bool up, bool down, bool ok, bool back, bool left) {
     if (padListen) {   /* every button is just an input here: hold it to skip the prompt */
         padRing = fmaxf(0.0f, padRing - GetFrameTime() * 4.0f);
         padRingA = fmaxf(0.0f, padRingA - GetFrameTime() * 4.0f);
+        padRingZ = fmaxf(0.0f, padRingZ - GetFrameTime() * 4.0f);
         PadUi_ListenPoll();
         return;
     }
@@ -326,8 +352,8 @@ static bool PadUi_SwallowBack(void) {
     if (padExitGuard && !PadUi_BDown()) padExitGuard = false;
     return padExitGuard;
 }
-/* The fill of the ring on the bar's glyph: 0 = B (leave), 1 = A (remap). */
-static float PadUi_RingProgress(int which) { return padOpen ? (which ? padRingA : padRing) : 0.0f; }
+/* The fill of the ring on the bar's glyph: 0 = B (leave), 1 = A (remap), 2 = ZR (reset). */
+static float PadUi_RingProgress(int which) { return padOpen ? (which == 2 ? padRingZ : which == 1 ? padRingA : padRing) : 0.0f; }
 
 /* ---- the controller ---- */
 
@@ -457,6 +483,10 @@ static void PadUi_Draw(Font font, Color bg) {
     for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = false;
     if (padOpen && padListen) lit[padStep] = ((int)(GetTime() * PADUI_BLINK_HZ * 2.0) & 1) == 0;   /* blinks */
     else for (int i = 0; i < NES_BTN_COUNT; i++) lit[i] = padOpen && PadUi_Lit(i);
+    if (padOpen && !padListen) {   /* the A / B that hold to remap / go back still light the pad while held */
+        if (PadUi_ADown()) lit[NES_BTN_A] = true;
+        if (PadUi_BDown()) lit[NES_BTN_B] = true;
+    }
     DrawFitText(font, T(S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
     DrawNesController(bx, cy - (239.5f - 165.0f) * sc, bw, lit, WHITE);
     if (padOpen && padListen) {   /* the one prompt under the controller: "Press: A", and the skip cue */
