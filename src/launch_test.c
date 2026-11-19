@@ -132,7 +132,7 @@ int main(void)
         char *w[24];
         /* Both on (recommended): integer square scale + scanlines 90, shader none. */
         int n = NsoMednafenArgv("snes", true, true, "/r/Super Mario Kart.sfc", 1920, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 17);
+        EXPECT(n == 21);
         EXPECT(strcmp(w[0], "-video.fs") == 0 && strcmp(w[1], "0") == 0);
         EXPECT(strcmp(w[3], "state.%X") == 0);
         EXPECT(strcmp(w[4], "-snes.xscale") == 0 && strcmp(w[6], "-snes.yscale") == 0);
@@ -141,22 +141,25 @@ int main(void)
         EXPECT(strcmp(w[12], "-snes.videoip") == 0 && strcmp(w[13], "0") == 0);
         EXPECT(strcmp(w[14], "-snes.scanlines") == 0 && strcmp(w[15], "90") == 0);
         EXPECT(strcmp(w[n - 1], "/r/Super Mario Kart.sfc") == 0);
+        /* Rewind (Backspace) on, 600 frames of history, before the ROM. */
+        EXPECT(strcmp(w[16], "-srwautoenable") == 0 && strcmp(w[17], "1") == 0);
+        EXPECT(strcmp(w[18], "-srwframes") == 0 && strcmp(w[19], "600") == 0);
         /* Pixel Perfect only. */
         n = NsoMednafenArgv("nes", true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 17 && strcmp(w[4], "-nes.xscale") == 0);
+        EXPECT(n == 21 && strcmp(w[4], "-nes.xscale") == 0);
         EXPECT(atof(w[5]) == 4.0 && atof(w[7]) == 4.0);             /* integer, square */
         EXPECT(strcmp(w[11], "none") == 0 && strcmp(w[13], "0") == 0);
         EXPECT(strcmp(w[14], "-nes.scanlines") == 0 && strcmp(w[15], "0") == 0);
         /* Scanlines only: non-integer scale, same aspect, videoip 1, scanlines 90. */
         n = NsoMednafenArgv("nes", false, true, "a.nes", 1280, 720, buf, sizeof(buf), w, 24);
-        EXPECT(n == 17 && strcmp(w[11], "none") == 0);
+        EXPECT(n == 21 && strcmp(w[11], "none") == 0);
         EXPECT(fabs(atof(w[5]) - atof(w[7])) < 0.001);
         EXPECT(fabs(atof(w[7]) - 720.0 / 224.0) < 0.001);
         EXPECT(strcmp(w[13], "1") == 0);
         EXPECT(strcmp(w[14], "-nes.scanlines") == 0 && strcmp(w[15], "90") == 0);
         /* Both off: as large as fits, width-limited, no scanlines. */
         n = NsoMednafenArgv("nes", false, false, "a.nes", 800, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 17 && fabs(atof(w[5]) * 256.0 - 800.0) < 0.5);
+        EXPECT(n == 21 && fabs(atof(w[5]) * 256.0 - 800.0) < 0.5);
         EXPECT(fabs(atof(w[5]) - atof(w[7])) < 0.001 && strcmp(w[15], "0") == 0);
         EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, 20, w, 24) == 0);
         EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 5) == 0);

@@ -53,6 +53,8 @@
 #include "enteranim.h"
 #define EMBED_IMPLEMENTATION
 #include "embed.h"
+#define REWIND_IMPLEMENTATION
+#include "rewind.h"
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
@@ -3783,9 +3785,14 @@ NsoProc LaunchGame(const GameEntry *game) {
         snprintf(mednafenStates, sizeof(mednafenStates), "%s/mcs", mednafenHome);
         EnsureDirectoryTree(mednafenStates);
         snprintf(mednafenRom, sizeof(mednafenRom), "%s", GetDataPath(game->rom));
+        /* "Show controls in game": the caption bar (5% of the height) takes the bottom of the screen,
+         * the game window is fitted and centred above it; and rewind (rewind.h) is told where to
+         * find the game's frames. */
+        bool showBar = sysSettings[currentSystem].showControls;
+        int barPx = showBar ? REWIND_BAR_REAL_H(GetScreenHeight()) : 0;
         mednafenArgc = NsoMednafenArgv(game->mednafen, sysSettings[currentSystem].pixel,
                                        sysSettings[currentSystem].scanlines, mednafenRom,
-                                       GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
+                                       GetScreenWidth(), GetScreenHeight() - barPx, mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
                                        (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])));
         if (!mednafenArgc) {
             fprintf(stderr, "LaunchGame: Mednafen command line too long\n");
@@ -3793,6 +3800,16 @@ NsoProc LaunchGame(const GameEntry *game) {
         }
         NsoSetEnv("MEDNAFEN_HOME", mednafenHome);
         NsoSetEnv("NSO_EMU_STATE_DIR", mednafenStates);
+        char barEnv[16], rewindShm[1260];
+        snprintf(barEnv, sizeof(barEnv), "%d", barPx);
+        NsoSetEnv("NSO_BOTTOM_BAR", barPx > 0 ? barEnv : NULL);
+        snprintf(rewindShm, sizeof(rewindShm), "%s/nso-rewind.shm", mednafenHome);
+#if !defined(_WIN32)
+        remove(rewindShm);   /* a new file, so nothing maps the last run's */
+        Rewind_Begin(rewindShm, menuDir, sysSettings[currentSystem].pixel,
+                     sysSettings[currentSystem].scanlines, showBar);
+#endif
+        NsoSetEnv("NSO_REWIND_SHM", rewindShm);
     }
     GameEnvSet(game);
     /* argv: [nso --menu-launcher] binary [GameEntry.args...] */
@@ -3839,6 +3856,8 @@ NsoProc LaunchGame(const GameEntry *game) {
     if (mednafenHome[0]) {
         NsoSetEnv("MEDNAFEN_HOME", NULL);
         NsoSetEnv("NSO_EMU_STATE_DIR", NULL);
+        NsoSetEnv("NSO_BOTTOM_BAR", NULL);
+        NsoSetEnv("NSO_REWIND_SHM", NULL);
     }
     if (withStates) {
         NsoSetEnv("NSO_STATE_DIR", NULL);
@@ -4426,6 +4445,7 @@ int main(int argc, char **argv) {
                             if (fscanf(windowFile, "%lu", &childWindow) != 1) childWindow = 0;
                             fclose(windowFile);
                         }
+                        Rewind_Reset();   /* the window must be showing when its frame is captured */
                         if (Embed_StartExternal(menuDir, childWindow, runningGame->externalSlots)) {
                             currentState = EMBED;
                             RestoreWindow();
@@ -4452,6 +4472,20 @@ int main(int argc, char **argv) {
         int gameCount = ActiveGameCount();
         float dt = GetFrameTime();
         Pad_Update(dt);
+#ifndef _WIN32
+        if (Rewind_Session()) {
+            if (!waitingForGame) {
+                Rewind_End();
+            } else {
+                bool inGame = currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame
+                              && !externalQuitting && !isLaunching;
+                bool chord = IsGamepadAvailable(0) && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_TRIGGER_2)
+                             && IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
+                Rewind_Frame(dt, inGame, chord);
+                if (Rewind_MenuTap() && inGame && NsoProcOk(gamePid)) kill(gamePid, SIGUSR1);
+            }
+        }
+#endif
         {
             static bool padNoticeEnvDone = false;
             const char *force = getenv("NSO_PAD_NOTICE");
@@ -4829,6 +4863,8 @@ int main(int argc, char **argv) {
 
         if (waitingForGame && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame && !externalQuitting) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
+            if (Rewind_Session())
+                Rewind_Draw(font, T(S_RW_HOLD), T(S_RW_SUSPEND), T(S_RW_BACK), T(S_RW_OK));
         } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
             PadNotice_Draw(font);

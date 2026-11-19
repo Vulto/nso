@@ -426,7 +426,7 @@ static inline int NsoSplitWords(char *buf, char **words, int max)
  * -<module>.scanlines 90 (90% opacity; nes/snes.scanlines is an integer
  * -100 through 100). Off: scanlines 0, so the setting cannot leak. The two
  * are independent (both on is integer scale plus scanlines). Shader is
- * always none. One save-state file name lets NSO address slots, then the
+ * always none. Rewinding (Backspace; rewind.h) is on with 600 frames of history. One save-state file name lets NSO address slots, then the
  * ROM. argv[0..] point into buf; returns the word count, 0 if it did not fit. */
 static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines,
                                   const char *rom, int host_w, int host_h,
@@ -459,7 +459,8 @@ static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines
                             opt[0], xscale, opt[1], yscale, opt[2], "0",
                             opt[3], "none",
                             opt[4], pixel ? "0" : "1",
-                            opt[5], scanlines ? "90" : "0", rom };
+                            opt[5], scanlines ? "90" : "0",
+                            "-srwautoenable", "1", "-srwframes", "600", rom };
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
         size_t len = strlen(words[i]) + 1;

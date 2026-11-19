@@ -47,6 +47,8 @@ typedef enum {
     /* embedded game pause menu (embed.h) */
     S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
     S_EMB_SLOT, S_EMB_NODATA, S_EMB_DATE, S_EMB_LOADING,
+    /* game rewind caption bar (rewind.h) */
+    S_RW_HOLD, S_RW_SUSPEND, S_RW_BACK, S_RW_OK,
     /* N64 controller connect pop-up */
     S_PAD_N64_CONNECTED,
     S_COUNT
@@ -215,6 +217,10 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMB_NODATA] = "No data.",
         [S_EMB_DATE] = "%m/%d/%Y - %H:%M",
         [S_EMB_LOADING] = "Restoring suspend point...",
+        [S_RW_HOLD] = "Suspend Menu (Press and hold to rewind)",
+        [S_RW_SUSPEND] = "Suspend Menu",
+        [S_RW_BACK] = "Back",
+        [S_RW_OK] = "OK",
         [S_PAD_N64_CONNECTED] = "N64 controller connected",
     },
     [LANG_PT] = {
@@ -333,6 +339,10 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMB_NODATA] = "Sem dados.",
         [S_EMB_DATE] = "%d/%m/%Y - %H:%M",
         [S_EMB_LOADING] = "Restaurando ponto de suspensão...",
+        [S_RW_HOLD] = "Menu de suspensão (Mantenha pressionado para voltar)",
+        [S_RW_SUSPEND] = "Menu de suspensão",
+        [S_RW_BACK] = "Voltar",
+        [S_RW_OK] = "OK",
         [S_PAD_N64_CONNECTED] = "Controle N64 conectado",
     },
 };
