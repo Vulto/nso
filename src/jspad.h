@@ -12,6 +12,7 @@
 bool JsPad_Open(void);                 /* true if at least one device opened */
 void JsPad_Close(void);
 void JsPad_Update(void);
+bool JsPad_AnyDown(void);              /* is any button held or any axis away from its rest */
 bool JsPad_Down(int kind, int idx);    /* is that button / axis half held on any device */
 /* The first press since the last call (a button down, or an axis moved far from its
  * rest), with Mednafen's 32-hex-digit id of its device. */

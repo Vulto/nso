@@ -108,6 +108,16 @@ void JsPad_Update(void)
     }
 }
 
+bool JsPad_AnyDown(void)
+{
+    for (int i = 0; i < devCount; i++) {
+        const JsDev *d = &devs[i];
+        for (int b = 0; b < JS_BTN; b++) if (d->btn[b]) return true;
+        for (int a = 0; a < JS_AXES; a++) if (d->engaged[a]) return true;
+    }
+    return false;
+}
+
 bool JsPad_Down(int kind, int idx)
 {
     for (int i = 0; i < devCount; i++) {
@@ -153,6 +163,7 @@ bool JsPad_FirstId(char *out, size_t n)
 bool JsPad_Open(void) { return false; }
 void JsPad_Close(void) {}
 void JsPad_Update(void) {}
+bool JsPad_AnyDown(void) { return false; }
 bool JsPad_Down(int kind, int idx) { (void)kind; (void)idx; return false; }
 bool JsPad_TakePress(int *kind, int *idx, char *devId, size_t n) { (void)kind; (void)idx; (void)devId; (void)n; return false; }
 bool JsPad_FirstId(char *out, size_t n) { (void)out; (void)n; return false; }

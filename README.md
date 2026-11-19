@@ -127,8 +127,9 @@ switches system (NES, SNES, Nintendo 64, GameCube).
 - **NES controller (NES only, below the scrape/Hide rows):** shows the pad and
   lights each button you press in white. "Map Controls" asks for one button at a
   time (Up, Down, Left, Right, Select, Start, B, A; the asked button blinks on the
-  pad): press the key or pad button for it. Esc (or 10 s idle) cancels and keeps
-  the old map. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it
+  pad): press the key or pad button for it (inputs are edge-triggered: release
+  everything between buttons). Esc (or 10 s idle) cancels and keeps the old map;
+  "Reset to Defaults" below it deletes the custom map. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it
   applies to Mednafen (via `nes.input.port1.gamepad.*`), the embedded NES games
   and the NESRecomp ports (written to their `config.ini` on launch). OpenMadoola
   and OpenDana keep their own input settings.

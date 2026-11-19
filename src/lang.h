@@ -46,7 +46,7 @@ typedef enum {
     S_SET_HIDE, S_NO_PLAYABLE,
     /* Settings > Controller (padmap.h, padui.h); S_PC_UP.. follow the NES buttons' order */
     S_PC_HEAD, S_PC_ENTRY, S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START, S_PC_B, S_PC_A,
-    S_PC_PRESS, S_PC_MAP, S_PC_HINT, S_PC_HINT_LISTEN,
+    S_PC_PRESS, S_PC_MAP, S_PC_DEFAULTS, S_PC_HINT, S_PC_HINT_LISTEN,
     /* embedded game pause menu (embed.h) */
     S_EMB_CONTINUE, S_EMB_LOAD, S_EMB_SAVE, S_EMB_RESTART, S_EMB_QUIT,
     S_EMB_SLOT, S_EMB_NODATA, S_EMB_DATE, S_EMB_LOADING,
@@ -207,7 +207,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_PC_A] = "A",
         [S_PC_PRESS] = "Press",
         [S_PC_MAP] = "Map Controls",
-        [S_PC_HINT] = "A: map controls   B: back",
+        [S_PC_DEFAULTS] = "Reset to Defaults",
+        [S_PC_HINT] = "A: select   B: back",
         [S_PC_HINT_LISTEN] = "Esc: cancel",
         [S_GS_START] = "Download and install (%d)",
         [S_GS_NO_ROMS] = "No ROMs in repos/roms for this system",
@@ -343,7 +344,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_PC_A] = "A",
         [S_PC_PRESS] = "Pressione",
         [S_PC_MAP] = "Mapear controles",
-        [S_PC_HINT] = "A: mapear controles   B: voltar",
+        [S_PC_DEFAULTS] = "Restaurar padrão",
+        [S_PC_HINT] = "A: selecionar   B: voltar",
         [S_PC_HINT_LISTEN] = "Esc: cancelar",
         [S_GS_START] = "Baixar e instalar (%d)",
         [S_GS_NO_ROMS] = "Nenhuma ROM em repos/roms para este sistema",
