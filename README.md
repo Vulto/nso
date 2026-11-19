@@ -129,7 +129,9 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   time (Up, Down, Left, Right, Select, Start, B, A; the asked button blinks on the
   pad): press the key or pad button for it (inputs are edge-triggered: release
   everything between buttons). Esc (or 10 s idle) cancels and keeps the old map;
-  "Reset to Defaults" below it deletes the custom map. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it
+  "Reset to Defaults" below it deletes the custom map. Leaving the screen takes holding B
+  for 2 s (a ring fills on the hint bar's B glyph); during the mapping, holding a button
+  for 1 s skips that prompt and keeps its mapping. Saved as `nes.map.*` in `config/nso.cfg` after the last button; it
   applies to Mednafen (via `nes.input.port1.gamepad.*`), the embedded NES games
   and the NESRecomp ports (written to their `config.ini` on launch). OpenMadoola
   and OpenDana keep their own input settings.

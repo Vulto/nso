@@ -894,10 +894,14 @@ static void InfoBar_Update(float dt) {
     }
 }
 
+static const char *PadUi_BarText(void);   /* padui.h: the controller screen's own hint bar */
+static float PadUi_RingProgress(void);
+static bool PadUi_SwallowBack(void);
 static const char *InfoBar_Text(InfoBarId id) {
     switch (id) {
         case INFO_BAR_MOSAIC:  return T(gridLifted ? S_MOVE_INFO : S_MOSAIC_INFO);
         case INFO_BAR_SIDEBAR:
+            if (PadUi_BarText()) return PadUi_BarText();
             return scrapeBusy ? T(S_INFO_CANCEL) : T(S_SIDEBAR_INFO);
         default: return NULL;
     }
@@ -1348,6 +1352,25 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
                    fontSize,
                    spacing,
                    Fade(WHITE, opacity));
+    }
+
+    /* Controller screen: a white ring fills round the B glyph while B is held to leave. */
+    if (text == PadUi_BarText() && PadUi_RingProgress() > 0.001f) {
+        static const char bGlyph[] = "\xF0\x9F\x85\x91";   /* 🅑 */
+        const char *at = strstr(draw, bGlyph);
+        if (at) {
+            char prefix[256];
+            size_t n = (size_t)(at - draw);
+            if (n >= sizeof(prefix)) n = sizeof(prefix) - 1;
+            memcpy(prefix, draw, n);
+            prefix[n] = '\0';
+            float pw = n ? (n64Hints ? Hint_N64Width(font, prefix, fontSize, spacing)
+                                     : MeasureTextEx(font, prefix, fontSize, spacing).x) + spacing : 0.0f;
+            float adv = Hint_GlyphAdvance(font, 0x1F151, fontSize);
+            Vector2 c = { textPosition.x + pw + adv * 0.5f, textPosition.y + textSize.y * 0.5f };
+            float r = adv * 0.62f, th = fmaxf(2.0f, fontSize * 0.07f);
+            DrawRing(c, r - th * 0.5f, r + th * 0.5f, -90.0f, -90.0f + 360.0f * PadUi_RingProgress(), 48, Fade(WHITE, opacity));
+        }
     }
 }
 
@@ -3311,6 +3334,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     bool up = IsKeyPressed(KEY_UP) || gpUp, down = IsKeyPressed(KEY_DOWN) || gpDown;
     bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
     bool back = IsKeyPressed(KEY_B) || gpBack;
+    if (PadUi_SwallowBack()) back = false;
     if (gsOpen && sidebarPanelFocus) {   /* Select games owns the panel (and its runs) */
         GameSel_Input(up, down, ok, back, IsKeyPressed(KEY_LEFT) || gpLeft);
         return;

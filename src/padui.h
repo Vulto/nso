@@ -8,10 +8,14 @@
  * below it: "Map Controls" and "Reset to Defaults" (Up/Down, A). Map Controls starts the
  * mapping: one prompt at a time ("Press: Up", Down, Left, Right, Select, Start, B, A) while
  * that button blinks on the drawn controller. A key sets the button's key, a pad button its
- * pad control; each press assigns and advances. Esc (or ten seconds without input) cancels
+ * pad control; a short press assigns on release and advances, holding it one second skips
+ * the prompt and keeps that button's current mapping. Esc (or ten seconds without input) cancels
  * and keeps the old map. After the last button the map is saved (config/nso.cfg, nes.map.*).
  * Reset to Defaults deletes nes.map.* and the live controller shows the defaults at once.
- * B goes back to Settings.
+ * Leaving the screen takes holding B for two seconds (the hint bar says so, a ring fills on
+ * its B glyph): short B, Left, Esc and the menu keys do not leave, and Esc does not close NSO
+ * while the screen is open. B held on entering, or when a mapping ends, counts after release.
+ * During the mapping B is just an input (hold to skip).
  *
  * Capture is edge-triggered only (IsKeyPressed / IsGamepadButtonPressed, and a js button
  * going down or an axis leaving its rest after the step started): raylib's
@@ -31,8 +35,14 @@
 #define PADUI_LISTEN_SEC 10.0      /* idle seconds that cancel the mapping */
 #define PADUI_PAIR_SEC 0.06        /* how long a pad press waits for its other reading */
 #define PADUI_BLINK_HZ 3.0
+#define PADUI_HOLD_SEC 1.0         /* holding a button this long skips the prompt */
+#define PADUI_EXIT_SEC 2.0         /* holding B this long leaves the screen: the only way out */
 
 static NesPadMap nesPad;
+static float padExitHeld = 0.0f;   /* seconds B has been held on the idle screen */
+static float padRing = 0.0f;       /* the ring on the B glyph, 0..1: follows the hold, drains on release */
+static bool padExitGuard = false;  /* B is still held after leaving: Settings must not take it as Back */
+static bool padExitWait = true;    /* a B held when the screen opened (or a mapping ended) must be released first */
 static NesPadMap padWork;          /* the map being entered; replaces nesPad only when complete */
 static bool padOpen = false;
 static bool padListen = false;     /* mapping: prompting for button padStep */
@@ -43,6 +53,11 @@ static int padSel = 0;             /* 0 Map Controls, 1 Reset to Defaults */
 static int padPendStd = -1, padPendKind = PAD_JS_NONE, padPendIdx = 0;
 static char padPendDev[40];
 static double padPendT = 0.0;
+/* The press being judged: held past PADUI_HOLD_SEC it skips the prompt, released sooner it assigns. */
+enum { PADCAND_NONE, PADCAND_KEY, PADCAND_PAD };
+static int padCand = PADCAND_NONE, padCandKey = 0, padCandStd = -1, padCandJsKind = PAD_JS_NONE, padCandJsIdx = 0;
+static char padCandDev[40];
+static double padCandT = 0.0;
 
 static void Pad_LoadNes(void) {
     static char text[16384];
@@ -62,9 +77,11 @@ static void Pad_SaveNes(void) {
     if (!PadMap_NesSave(&nesPad, cfg)) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
+/* Esc must not close NSO while this screen is open: leaving takes a two second hold of B. */
 static void PadUi_ListenEnd(void) {
-    if (padListen) SetExitKey(KEY_ESCAPE);
     padListen = false;
+    padExitWait = true;
+    padExitHeld = 0.0f;
 }
 
 static void PadUi_ListenBegin(void) {
@@ -78,6 +95,7 @@ static void PadUi_ListenBegin(void) {
     padPendStd = -1;
     padPendKind = PAD_JS_NONE;
     padPendT = 0.0;
+    padCand = PADCAND_NONE;
     SetExitKey(KEY_NULL);   /* Esc cancels here, it must not close NSO */
     JsPad_Update();
     while (JsPad_TakePress(&k, &idx, dev, sizeof(dev))) { }
@@ -86,12 +104,17 @@ static void PadUi_ListenBegin(void) {
 static void PadUi_Close(void) {
     PadUi_ListenEnd();
     padOpen = false;
+    padRing = 0.0f;
+    SetExitKey(KEY_ESCAPE);
     JsPad_Close();
 }
 
 /* Entering the screen shows the live controller; "Map Controls" starts the mapping. */
 static void PadUi_Open(void) {
     padOpen = true;
+    SetExitKey(KEY_NULL);
+    padExitWait = true;
+    padExitHeld = 0.0f;
     padListen = false;
     padSel = 0;
     JsPad_Open();
@@ -104,9 +127,11 @@ static bool PadUi_Lit(int btn) {
         || (b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx));
 }
 
-/* The current button got its input: next one, or done (saved, shown live). */
-static void PadUi_Assigned(double now) {
-    Sfx_Play(SFX_CLICK);
+/* The current button is done (assigned, or skipped keeping its map): next one, or finished
+ * (saved, shown live). Everything must be released again before the next prompt reads. */
+static void PadUi_Assigned(double now, bool skipped) {
+    Sfx_Play(skipped ? SFX_PLUCK : SFX_CLICK);
+    padCand = PADCAND_NONE;
     padListenT = now;
     padWaitRelease = true;
     padPendT = 0.0;
@@ -140,11 +165,31 @@ static void PadUi_ListenPoll(void) {
         if (!PadUi_AnyHeld()) padWaitRelease = false;   /* the next frame listens */
         return;
     }
+    if (padCand != PADCAND_NONE) {   /* a press is being judged: short = assign on release, long = skip */
+        bool held = padCand == PADCAND_KEY ? IsKeyDown(padCandKey)
+                  : (padCandStd >= 0 && IsGamepadAvailable(0) && IsGamepadButtonDown(0, padCandStd))
+                    || (padCandJsKind != PAD_JS_NONE && JsPad_Down(padCandJsKind, padCandJsIdx));
+        if (held) {
+            if (now - padCandT >= PADUI_HOLD_SEC) PadUi_Assigned(now, true);   /* keeps the old mapping */
+            return;
+        }
+        if (padCand == PADCAND_KEY) padWork.b[padStep].key = padCandKey;
+        else {
+            PadBind *b = &padWork.b[padStep];
+            b->pad = padCandStd;
+            b->jsKind = padCandJsKind;
+            b->jsIdx = padCandJsKind != PAD_JS_NONE ? padCandJsIdx : 0;
+            if (padCandJsKind != PAD_JS_NONE) snprintf(padWork.joyId, sizeof(padWork.joyId), "%s", padCandDev);
+        }
+        PadUi_Assigned(now, false);
+        return;
+    }
     if (now - padListenT > PADUI_LISTEN_SEC) { PadUi_ListenEnd(); return; }
     for (int i = 0; i < PADMAP_KEY_COUNT; i++) {
         if (IsKeyPressed(PADMAP_KEYS[i].key)) {
-            padWork.b[padStep].key = PADMAP_KEYS[i].key;
-            PadUi_Assigned(now);
+            padCand = PADCAND_KEY;
+            padCandKey = PADMAP_KEYS[i].key;
+            padCandT = now;
             return;
         }
     }
@@ -159,19 +204,54 @@ static void PadUi_ListenPoll(void) {
         }
     }
     if (padPendT != 0.0 && ((padPendStd >= 0 && padPendKind != PAD_JS_NONE) || now - padPendT > PADUI_PAIR_SEC)) {
-        PadBind *b = &padWork.b[padStep];
-        b->pad = padPendStd;
-        b->jsKind = padPendKind;
-        b->jsIdx = padPendKind != PAD_JS_NONE ? padPendIdx : 0;
-        if (padPendKind != PAD_JS_NONE) snprintf(padWork.joyId, sizeof(padWork.joyId), "%s", padPendDev);
-        PadUi_Assigned(now);
+        padCand = PADCAND_PAD;   /* both readings are in: judge the press */
+        padCandStd = padPendStd;
+        padCandJsKind = padPendKind;
+        padCandJsIdx = padPendIdx;
+        snprintf(padCandDev, sizeof(padCandDev), "%s", padPendDev);
+        padCandT = padPendT;
+        padPendT = 0.0;
+        padPendStd = -1;
+        padPendKind = PAD_JS_NONE;
     }
 }
 
+/* Is B held: NSO's back (the B key, the pad's B) or the control mapped to the NES B. */
+static bool PadUi_BDown(void) {
+    const PadBind *b = &nesPad.b[NES_BTN_B];
+    if (IsKeyDown(KEY_B) || (b->key && IsKeyDown(b->key))) return true;
+    if (IsGamepadAvailable(0) && (IsGamepadButtonDown(0, NSO_BTN_B) || (b->pad >= 0 && IsGamepadButtonDown(0, b->pad)))) return true;
+    return b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx);
+}
+
+/* The one way out: B held for PADUI_EXIT_SEC. Short B, Left, Esc and the menu keys do nothing. */
+static void PadUi_ExitTick(void) {
+    float dt = GetFrameTime();
+    bool down = PadUi_BDown();
+    if (padExitWait) {
+        if (!down) padExitWait = false;
+        padExitHeld = 0.0f;
+    } else if (down) {
+        padExitHeld += dt;
+        padRing = fminf(1.0f, padExitHeld / PADUI_EXIT_SEC);
+        if (padExitHeld >= PADUI_EXIT_SEC) { Sfx_Play(SFX_CLICK); PadUi_Close(); padExitGuard = true; }
+        return;
+    } else {
+        padExitHeld = 0.0f;
+    }
+    padRing = fmaxf(0.0f, padRing - dt * 4.0f);   /* smoothly resets on release */
+}
+
 static void PadUi_Input(bool up, bool down, bool ok, bool back, bool left) {
+    (void)back; (void)left;
     JsPad_Update();
-    if (padListen) { PadUi_ListenPoll(); return; }
-    if (back || left) { PadUi_Close(); Sfx_Play(SFX_CLICK); return; }
+    if (padListen) {   /* B is just another input here: hold it to skip the prompt */
+        padRing = fmaxf(0.0f, padRing - GetFrameTime() * 4.0f);
+        PadUi_ListenPoll();
+        return;
+    }
+    PadUi_ExitTick();
+    if (!padOpen) return;
     if (up && padSel > 0) { padSel--; Sfx_Play(SFX_PLUCK); }
     if (down && padSel < 1) { padSel++; Sfx_Play(SFX_PLUCK); }
     if (ok) {
@@ -186,6 +266,19 @@ static void PadUi_Input(bool up, bool down, bool ok, bool back, bool left) {
         }
     }
 }
+
+/* The bottom-right hint bar text of this screen (NULL when it is not open) and the fill of
+ * the ring drawn on its B glyph; main.c's DrawInfoBarEx uses both. */
+static const char *PadUi_BarText(void) {
+    if (!padOpen) return NULL;
+    return padListen ? T(S_PC_BAR_MAP) : T(S_PC_BAR);
+}
+/* True while the B that left the screen is still held (it is not Back on the Settings page). */
+static bool PadUi_SwallowBack(void) {
+    if (padExitGuard && !PadUi_BDown()) padExitGuard = false;
+    return padExitGuard;
+}
+static float PadUi_RingProgress(void) { return padOpen ? padRing : 0.0f; }
 
 /* ---- the controller ---- */
 
@@ -324,6 +417,12 @@ static void PadUi_Draw(Font font, Color bg) {
             Vector2 m = MeasureTextEx(font, line, size, 1.0f);
             if (m.x > bw) { size *= bw / m.x; m = MeasureTextEx(font, line, size, 1.0f); }
             DrawFitText(font, line, (Vector2){ bx + (bw - m.x) * 0.5f, y + sh * 0.04f }, size, m.x + 1.0f, WHITE);
+            {   /* small hint under the prompt */
+                float hs = (float)font.baseSize * 0.75f;
+                Vector2 hm = MeasureTextEx(font, T(S_PC_SKIP), hs, 1.0f);
+                if (hm.x > bw) { hs *= bw / hm.x; hm = MeasureTextEx(font, T(S_PC_SKIP), hs, 1.0f); }
+                DrawFitText(font, T(S_PC_SKIP), (Vector2){ bx + (bw - hm.x) * 0.5f, y + sh * 0.095f }, hs, hm.x + 1.0f, WHITE);
+            }
         } else if (padOpen) {   /* the two options, in the row style of the other settings */
             static const StrId label[2] = { S_PC_MAP, S_PC_DEFAULTS };
             float step = sh * 0.0505f;
@@ -340,8 +439,6 @@ static void PadUi_Draw(Font font, Color bg) {
             }
         }
     }
-    DrawFitText(font, padListen ? T(S_PC_HINT_LISTEN) : T(S_PC_HINT), (Vector2){ hx, oy + sh * 0.945f },
-                (float)font.baseSize * 0.75f, sw - hx - sw * 0.02f, WHITE);
 }
 
 #endif /* NSO_PADUI_H */
