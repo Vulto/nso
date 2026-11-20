@@ -18,20 +18,67 @@
  	} else if (std::strcmp(action, "restart") == 0 || std::strcmp(action, "quit") == 0) {
  		std::exit(0); /* NSO distinguishes restart from quit using its menu result. */
  	}
-@@ -117,9 +120,12 @@
+@@ -73,6 +74,13 @@
+ 	nsoSignalRequested = 1;
+ }
+ 
++int nsoXErrorCode;
++int nsoXErrorTrap(Display *display, XErrorEvent *error)
++{
++	(void)display;
++	nsoXErrorCode = error->error_code;
++	return 0;
++}
+ }
+ #endif
+ 
+@@ -99,13 +107,14 @@
+ 		nsoStateDir[0] = '\0';
+ 		return;
+ 	}
+-	nsoDisplay = XOpenDisplay(nullptr);
++	/* Same Display as SDL, like Ship/SoH: a second XOpenDisplay left focus and
++	 * size out of sync, so the child never received keys or SDL joystick events. */
++	nsoDisplay = info.info.x11.display;
+ 	if (!nsoDisplay) return;
+ 
+ 	XWindowAttributes parentAttrs = {};
+ 	if (!XGetWindowAttributes(nsoDisplay, nsoParent, &parentAttrs)
+ 		|| parentAttrs.width <= 0 || parentAttrs.height <= 0) {
+-		XCloseDisplay(nsoDisplay);
+ 		nsoDisplay = nullptr;
+ 		return;
+ 	}
+@@ -117,12 +126,26 @@
+ 	}
  	int x = (parentAttrs.width - width) / 2;
  	int y = (parentAttrs.height - height) / 2;
++	/* Size first (SoH), so the GL drawable matches the 4:3 child. Do not PumpEvents
++	 * here: that can apply a focus-lost from the reparent and leave SDL unfocused. */
++	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
++	SDL_SetWindowSize(window, width, height);
++	XErrorHandler previousHandler = XSetErrorHandler(nsoXErrorTrap);
++	nsoXErrorCode = 0;
  	XReparentWindow(nsoDisplay, nsoChild, nsoParent, x, y);
- 	XResizeWindow(nsoDisplay, nsoChild, (unsigned int)width, (unsigned int)height);
+-	XResizeWindow(nsoDisplay, nsoChild, (unsigned int)width, (unsigned int)height);
++	XMoveResizeWindow(nsoDisplay, nsoChild, x, y, (unsigned int)width, (unsigned int)height);
  	XMapRaised(nsoDisplay, nsoChild);
  	XSync(nsoDisplay, False);
-+	/* keep SDL's drawable in line with the 4:3 child, so the CRT post pass uses the real size */
-+	SDL_SetWindowSize(window, width, height);
-+	SDL_PumpEvents();
++	/* Focus after the window is viewable. An X error here used to kill the
++	 * process (default handler) before the game could run. */
++	if (nsoXErrorCode == 0) {
++		nsoXErrorCode = 0;
++		XSetInputFocus(nsoDisplay, nsoChild, RevertToParent, CurrentTime);
++		XSync(nsoDisplay, False);
++	}
++	XSetErrorHandler(previousHandler);
++	SDL_SetWindowInputFocus(window);
  	nsoParentPid = (pid_t)parsedPid;
- 	XFlush(nsoDisplay);
+-	XFlush(nsoDisplay);
  	nsoWriteWindowId();
-@@ -149,10 +153,22 @@
+ 
+ #else
+@@ -150,10 +173,22 @@
  #if defined(__linux__)
  	if (!nsoParentPid) return false;
  	if (nsoSignalRequested) {
@@ -75,7 +122,7 @@
  #endif
 --- a/port/fast3d/nso_crtgeom.cpp
 +++ b/port/fast3d/nso_crtgeom.cpp
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,247 @@
 +/* NSO "CRT Geometry" for Perfect Dark: when NSO_CRTGEOM_SHADER names shaders/crtgeom.glsl, every finished frame
 + * (the window's back buffer, just before it is swapped) is copied and redrawn through that shader (its NSO_RAYLIB
 + * variant, GLSL 3.30). NSO_CRTGEOM_PARAMS names the file with the fine settings (13 numbers: twelve values, then
@@ -192,6 +239,11 @@
 +    };
 +    glGenVertexArrays(1, &s.vao);
 +    glGenBuffers(1, &s.vbo);
++    /* Fast3D binds its VAO/VBO once at init and does not rebind them each draw.
++     * Leave them as we found them when setup is done. */
++    GLint prevVao = 0, prevArray = 0;
++    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArray);
 +    glBindVertexArray(s.vao);
 +    glBindBuffer(GL_ARRAY_BUFFER, s.vbo);
 +    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
@@ -201,6 +253,8 @@
 +    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
 +    glEnableVertexAttribArray(2);
 +    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(5 * sizeof(float)));
++    glBindVertexArray((GLuint)prevVao);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArray);
 +    return true;
 +}
 +
@@ -239,8 +293,10 @@
 +    int w = 0, h = 0;
 +    SDL_GL_GetDrawableSize(wnd, &w, &h);
 +    if (w <= 0 || h <= 0) return;
-+    if (!s.prog && !Build()) { s.failed = true; return; }
 +
++    /* Save Fast3D's bindings before Build(): the first time used to leave our
++     * VAO bound, then "restore" it, so the next game draw used a 4-vertex CRT
++     * quad as GL_TRIANGLES (one triangle of the menu background, a stray sliver). */
 +    GLint prevProg, prevVao, prevArray, prevTex, prevActive, prevFbo, prevDraw, prevRead, prevView[4];
 +    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
 +    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
@@ -256,6 +312,13 @@
 +                    cf = glIsEnabled(GL_CULL_FACE), st = glIsEnabled(GL_STENCIL_TEST);
 +    GLboolean mask[4];
 +    glGetBooleanv(GL_COLOR_WRITEMASK, mask);
++
++    if (!s.prog && !Build()) {
++        s.failed = true;
++        glBindVertexArray((GLuint)prevVao);
++        glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArray);
++        return;
++    }
 +
 +    if (!(s.poll++ & 15u)) LoadParams();
 +    /* scissor must be off before the blit: Fast3D often leaves a smaller scissor, and
