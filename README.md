@@ -147,12 +147,9 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   CRT-monitor look (screen curvature, rounded corners, beam scanlines, glow, dot mask)
   from the shader in `shaders/crtgeom.glsl`. It draws inside the picture area picked by
   Pixel Perfect / 4:3, so those keep their sizes. Saved per system as `<system>.crtgeom`
-  in `config/nso.cfg` (off by default). On the CRT Geometry row, A cycles
-  Off, High (Alta) and Fast (Rápida); High is the full look, Fast skips the
-  3-tap scanline filter and uses a cheaper glow and tone map. While High or
-  Fast is on, the row reads "CRT Geometry  ·  High" or "Fast". The same
-  choice is the first item of the in-game CRT Geometry screen ("Fast CRT" /
-  "CRT rápido"). It is stored per system as `<system>.crtgeom_fast`.
+  in `config/nso.cfg` (off by default). A toggles it On or Off. When it is on,
+  the shader always uses the faster path (no 3-tap scanline filter, cheaper
+  glow, no filmic tone map).
   The shader runs at an internal size of about 960×720 (4:3) into a
   non-MSAA target, then the picture is scaled to the output so the 2-pixel
   phosphor mask stays sharp. Where it applies:

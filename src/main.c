@@ -2882,7 +2882,6 @@ typedef struct {
     bool pixel;       /* NES/SNES: largest integer scale, square pixels */
     bool scanlines;   /* NES/SNES: scanlines at 90% opacity */
     bool crtgeom;     /* "CRT Geometry" (shaders/crtgeom.glsl), off by default */
-    bool crtgeomFast; /* cheaper CRT shader path, off = the current look */
 } SysSettings;
 static const char *const SCREEN_MODE_KEYS[3] = { "4:3", "pixel", "crt" };
 static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
@@ -2899,7 +2898,7 @@ static void SysSettings_LoadAll(void) {
         const char *id = systems[i].platform->id;
         char key[64];
         /* defaults: NA, rumble on, controls hidden, Pixel Perfect + Scanlines on */
-        SysSettings s = { 0, true, false, 1, true, true, false, false };
+        SysSettings s = { 0, true, false, 1, true, true, false };
         snprintf(key, sizeof(key), "%s.versions", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.versions = strcmp(v, "na_eu") == 0 ? 1 : 0;
         snprintf(key, sizeof(key), "%s.rumble", id);
@@ -2916,8 +2915,6 @@ static void SysSettings_LoadAll(void) {
         }
         snprintf(key, sizeof(key), "%s.crtgeom", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.crtgeom = strcmp(v, "1") == 0;
-        snprintf(key, sizeof(key), "%s.crtgeom_fast", id);
-        if (Cfg_Get(text, key, v, sizeof(v))) s.crtgeomFast = strcmp(v, "1") == 0;
         sysSettings[i] = s;
     }
     if (retroReset) {
@@ -2957,8 +2954,6 @@ static void SysSettings_Save(int sys) {
     }
     snprintf(key, sizeof(key), "%s.crtgeom", id);
     ok &= Cfg_SaveKey(cfg, key, s->crtgeom ? "1" : "0");
-    snprintf(key, sizeof(key), "%s.crtgeom_fast", id);
-    ok &= Cfg_SaveKey(cfg, key, s->crtgeomFast ? "1" : "0");
     if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
@@ -3334,11 +3329,6 @@ static void SidebarPanelRetro_Draw(Font font, Color red) {
         if (cur) DrawRectangleRec(box, curFill);
         else DrawRectangleLinesEx(box, th * 0.6f, WHITE);
         const char *lab = T(labels[k]);
-        char labBuf[96];
-        if (k == SB_RETRO_CRTGEOM && st->crtgeom) {
-            snprintf(labBuf, sizeof(labBuf), "%s  ·  %s", lab, T(st->crtgeomFast ? S_SET_CRTFAST : S_SET_CRTHIGH));
-            lab = labBuf;
-        }
         DrawFitText(font, lab, (Vector2){ sw * 0.504f, y }, osize, bw - sw * 0.03f, cur ? pink : WHITE);
         Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
         if (on[k]) {
@@ -3424,15 +3414,7 @@ static void SidebarPanel_Draw(Font font, Color red) {
         Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
         if (cur) DrawRectangleRec(box, WHITE);
         else DrawRectangleLinesEx(box, th, WHITE);
-        {
-            const char *lab = T(S_SET_CRTGEOM);
-            char labBuf[96];
-            if (st->crtgeom) {
-                snprintf(labBuf, sizeof(labBuf), "%s  ·  %s", lab, T(st->crtgeomFast ? S_SET_CRTFAST : S_SET_CRTHIGH));
-                lab = labBuf;
-            }
-            DrawFitText(font, lab, (Vector2){ bx + sw * 0.0225f, y }, osize, bw - sw * 0.03f, cur ? red : WHITE);
-        }
+        DrawFitText(font, T(S_SET_CRTGEOM), (Vector2){ bx + sw * 0.0225f, y }, osize, bw - sw * 0.03f, cur ? red : WHITE);
         if (st->crtgeom) {
             DrawRectangleRec(cb, red);
             DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f }, th * 1.3f, WHITE);
@@ -3911,25 +3893,17 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
             if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_PIXEL) st->pixel = !st->pixel;
             else if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_SCANLINES) st->scanlines = !st->scanlines;
             else if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_CRTGEOM) {
-                if (!st->crtgeom) { st->crtgeom = true; st->crtgeomFast = false; }
-                else if (!st->crtgeomFast) st->crtgeomFast = true;
-                else { st->crtgeom = false; st->crtgeomFast = false; }
+                st->crtgeom = !st->crtgeom;
             }
             else if (SysIsRetro(currentSystem)) st->showControls = !st->showControls;
             else if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
             else if (sidebarSetRow == SB_SET_VER_NA_EU) st->versions = 1;
             else if (sidebarSetRow == SB_SET_RUMBLE) st->rumble = !st->rumble;
             else if (sidebarSetRow == SB_SET_CRTGEOM) {
-                if (!st->crtgeom) { st->crtgeom = true; st->crtgeomFast = false; }
-                else if (!st->crtgeomFast) st->crtgeomFast = true;
-                else { st->crtgeom = false; st->crtgeomFast = false; }
+                st->crtgeom = !st->crtgeom;
             }
             else st->showControls = !st->showControls;
             SysSettings_Save(currentSystem);
-            if (crtSession.active) {
-                CrtSession_SetFast(st->crtgeomFast);
-                CrtGeom_SetFast(st->crtgeomFast);
-            }
         }
         return;
     }
@@ -4299,14 +4273,6 @@ static void CrtSessionBegin(const GameEntry *game, const char *runPath, bool raw
     snprintf(defPath, sizeof(defPath), "%s", GetDataPath(TextFormat("config/crtgeom/%s/_default.cfg", sys)));
     CrtSession_Begin(gamePath, defPath, runPath);
     crtSession.rawFrames = rawFrames;
-    {
-        bool fast = sysSettings[currentSystem].crtgeomFast;
-        CrtSession_SetFast(fast);
-        CrtGeom_SetFast(fast);
-#ifndef _WIN32
-        setenv("NSO_CRTGEOM_FAST", fast ? "1" : "0", 1);
-#endif
-    }
     CrtGeom_SetParams(crtSession.val, crtSession.angleSet);
     CrtGeom_SetVirtualHeight(rawFrames ? 480.0f : 0.0f);
 }
@@ -5780,7 +5746,7 @@ int main(int argc, char **argv) {
                 T(S_EMB_LOADING),
                 T(S_CRT_GAMMA), T(S_CRT_MGAMMA), T(S_CRT_OVERSCAN), T(S_CRT_SAT), T(S_CRT_CURV), T(S_CRT_DIST),
                 T(S_CRT_ANGLE), T(S_CRT_ASPECT), T(S_CRT_CORNER), T(S_CRT_CSMOOTH), T(S_CRT_HALATION),
-                T(S_CRT_FILMIC), T(S_CRT_RESET), T(S_CRT_FAST) };
+                T(S_CRT_FILMIC), T(S_CRT_RESET) };
             if (Embed_MenuOpacity() > 0.0f) EnsureBlurResources(GetScreenWidth(), GetScreenHeight());
             Embed_Draw(font, ActiveEmbedScreen(), text, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
             DrawInfoBarEx(font, Embed_CrtOpen() ? T(S_EMB_CRT_INFO) : T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);

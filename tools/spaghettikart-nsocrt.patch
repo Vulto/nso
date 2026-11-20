@@ -27,7 +27,7 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
  #ifdef ENABLE_OPENGL
  #include <imgui_impl_opengl3.h>
  #include <imgui_impl_sdl2.h>
-@@ -37,6 +52,334 @@
+@@ -37,6 +52,328 @@
  IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
  #endif
  
@@ -36,8 +36,8 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 + * that shader (its NSO_RAYLIB variant, GLSL 3.30; the attribute slots of ImGui's own program are bound to
 + * its names) through draw-list callbacks around ImGui::Image. interpreter.cpp then always renders the game
 + * into its own framebuffer (NsoCrtRenderToFb), since the default framebuffer cannot go through ImGui.
-+ * The fine settings come from the file named by NSO_CRTGEOM_PARAMS (12 values, "angle set", then an optional
-+ * 14th "fast" flag), re-read whenever it changes, so NSO's End menu can adjust them while the game is paused.
++ * The fine settings come from the file named by NSO_CRTGEOM_PARAMS (12 values, then "angle set"),
++ * re-read whenever it changes, so NSO's End menu can adjust them while the game is paused.
 + * NSO captures a frame for its menu and filters that frozen picture itself, so the capture must be plain:
 + * either the port says so (NsoGameMenuFrameCaptured) or NSO's menu launcher creates the file named by
 + * NSO_CRTGEOM_PLAIN, and the port writes "<file>.ack" once two plain frames are on screen. */
@@ -48,12 +48,12 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    bool tried = false, failed = false;
 +    GLuint prog = 0, blitProg = 0, crtFbo = 0, crtTex = 0, vao = 0, vbo = 0;
 +    GLint locProj = -1, locTex = -1, locTexSize = -1, locOrigin = -1, locSize = -1, locAspect = -1, locScan = -1,
-+          locAngleSet = -1, locFast = -1, locDotMask = -1, locP[12] = {};
++          locAngleSet = -1, locDotMask = -1, locP[12] = {};
 +    GLint locBlitProj = -1, locBlitTex = -1, locBlitDot = -1;
 +    int crtW = 0, crtH = 0, attribPos = 0, attribUV = 1, attribCol = 2;
 +    std::string source, paramsPath, plainPath;
 +    int plainFrames = 0;
-+    float scan = 1.0f, fast = 0.0f;
++    float scan = 1.0f;
 +    float p[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
 +    long long stamp = -1;
 +    unsigned poll = 0;
@@ -72,13 +72,12 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    if (stamp == c.stamp) return;
 +    FILE* f = std::fopen(c.paramsPath.c_str(), "r");
 +    if (!f) return;
-+    float v[14];
++    float v[13];
 +    int n = 0;
-+    while (n < 14 && std::fscanf(f, "%f", &v[n]) == 1) n++;
++    while (n < 13 && std::fscanf(f, "%f", &v[n]) == 1) n++;
 +    std::fclose(f);
 +    if (n < 13) return;
 +    std::memcpy(c.p, v, sizeof(c.p));
-+    if (n >= 14) c.fast = v[13] > 0.5f ? 1.0f : 0.0f;
 +    c.stamp = stamp;
 +}
 +
@@ -94,8 +93,6 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    c.scan = (scan && *scan == '0') ? 0.0f : 1.0f;
 +    const char* params = std::getenv("NSO_CRTGEOM_PARAMS");
 +    if (params && params[0]) c.paramsPath = params;
-+    const char* fast = std::getenv("NSO_CRTGEOM_FAST");
-+    c.fast = (fast && *fast == '1') ? 1.0f : 0.0f;
 +    const char* plain = std::getenv("NSO_CRTGEOM_PLAIN");
 +    if (plain && plain[0]) c.plainPath = plain;
 +    return true;
@@ -162,7 +159,6 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    c.locAspect = glGetUniformLocation(prog, "OutAspect");
 +    c.locScan = glGetUniformLocation(prog, "ScanAmt");
 +    c.locAngleSet = glGetUniformLocation(prog, "angleSet");
-+    c.locFast = glGetUniformLocation(prog, "CrtFast");
 +    c.locDotMask = glGetUniformLocation(prog, "DotMask");
 +    for (int i = 0; i < 12; i++) c.locP[i] = glGetUniformLocation(prog, kNsoCrtUniform[i]);
 +    c.attribPos = aPos;
@@ -290,7 +286,6 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    glUniform1f(c.locScan, c.scan);
 +    for (int i = 0; i < 12; i++) glUniform1f(c.locP[i], c.p[i]);
 +    glUniform1f(c.locAngleSet, c.p[12]);
-+    glUniform1f(c.locFast, c.fast);
 +    glUniform1f(c.locDotMask, 0.0f);
 +    glBindVertexArray(c.vao);
 +    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -331,7 +326,6 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
 +    glUniform1f(c.locScan, c.scan);
 +    for (int i = 0; i < 12; i++) glUniform1f(c.locP[i], c.p[i]);
 +    glUniform1f(c.locAngleSet, c.p[12]);
-+    glUniform1f(c.locFast, c.fast);
 +    glUniform1f(c.locDotMask, 1.0f);
 +}
 +
@@ -362,7 +356,7 @@ diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dG
  namespace Fast {
  
  Fast3dGui::Fast3dGui() : Ship::Gui() {
-@@ -417,7 +760,30 @@
+@@ -417,7 +754,30 @@
      uintptr_t fb = Ship::Context::GetRawInstance()->GetWindow()->GetGfxFrameBuffer();
      if (fb) {
          ImGui::SetCursorPos(pos);

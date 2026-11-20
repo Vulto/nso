@@ -42,7 +42,6 @@ uniform vec2 VidOrigin;   /* picture's top-left in the texture, texels */
 uniform vec2 VidSize;     /* picture size, texels */
 uniform float OutAspect;  /* destination height / width */
 uniform float ScanAmt;    /* 1 = beam scanlines, 0 = smooth between lines */
-uniform float CrtFast;    /* 1 = faster path: no 3-tap scan AA, cheaper glow/tonemap */
 uniform float DotMask;    /* 1 = 2-px phosphor in this pass; 0 = applied later at full res */
 
 /* MAME-PSGS.vsh lines 86-97, as uniforms so NSO can adjust them (crtparams.h). The host always sets
@@ -65,8 +64,6 @@ uniform float angleY;
 #define SCREEN_ASPECT vec2(1.0, OutAspect * aspectK)
 #define PI 3.141592653589
 
-const float W = 1.2;
-const float T = 7.5;
 const vec3 gammaBoost = vec3(1.0 / 1.15);
 
 #ifdef NSO_VERT
@@ -155,16 +152,6 @@ varying vec2 vSin;
 varying vec2 vCos;
 #endif
 
-float filmicReinhardCurve(float x) {
-    float q = (T * T + 1.0) * x * x;
-    return q / (q + x + T * T);
-}
-
-vec3 fReinhard(vec3 x) {
-    float w = filmicReinhardCurve(W);
-    return vec3(filmicReinhardCurve(x.r), filmicReinhardCurve(x.g), filmicReinhardCurve(x.b)) / w;
-}
-
 vec3 sat(vec3 rgb, float adjustment) {
     const vec3 Wt = vec3(0.2125, 0.7154, 0.0721);
     return mix(vec3(dot(rgb, Wt)), rgb, adjustment);
@@ -230,7 +217,6 @@ void main() {
     float cval = corner(xy);
 
     vec2 ratio_scale = xy * VidSize - vec2(0.5);
-    float filt = fwidth(ratio_scale.y);
     vec2 uv_ratio = fract(ratio_scale);
     vec2 base = floor(ratio_scale);
 
@@ -255,14 +241,6 @@ void main() {
     if (ScanAmt > 0.5) {
         weights  = scanlineWeights(uv_ratio.y, col);
         weights2 = scanlineWeights(1.0 - uv_ratio.y, col2);
-        if (CrtFast < 0.5) {
-            float y = uv_ratio.y + 1.0 / 3.0 * filt;
-            weights  = (weights + scanlineWeights(y, col)) / 3.0;
-            weights2 = (weights2 + scanlineWeights(abs(1.0 - y), col2)) / 3.0;
-            y = y - 2.0 / 3.0 * filt;
-            weights  = weights + scanlineWeights(abs(y), col) / 3.0;
-            weights2 = weights2 + scanlineWeights(abs(1.0 - y), col2) / 3.0;
-        }
     } else {
         weights  = vec4(1.0 - uv_ratio.y);
         weights2 = vec4(uv_ratio.y);
@@ -271,14 +249,7 @@ void main() {
     vec3 mul_res = (col * weights + col2 * weights2).rgb * vec3(cval);
 
     /* halation: a soft, unfiltered bleed of the neighbourhood */
-    if (CrtFast > 0.5) {
-        mul_res = mix(mul_res, (col.rgb + col2.rgb) * 0.5, halation);
-    } else {
-        vec3 blur = mix(mix(fetchLin(base).rgb, fetchLin(base + vec2(1.0, 0.0)).rgb, uv_ratio.x),
-                        mix(fetchLin(base + vec2(0.0, 1.0)).rgb, fetchLin(base + vec2(1.0, 1.0)).rgb, uv_ratio.x),
-                        uv_ratio.y);
-        mul_res = mix(mul_res, blur, halation);
-    }
+    mul_res = mix(mul_res, (col.rgb + col2.rgb) * 0.5, halation);
     mul_res *= vec3(cval);
 
     if (DotMask > 0.5) {
@@ -287,8 +258,6 @@ void main() {
     }
     mul_res = clamp(pow(mul_res, vec3(1.0 / monitorgamma)) * 2.0, 0.0, 1.0);
 
-    if (CrtFast < 0.5)
-        mul_res = mix(mul_res, fReinhard(mul_res), filmicReinhardAmt);
     mul_res = sat(mul_res, saturationAmt);
     mul_res = pow(mul_res, gammaBoost * 0.8);
 

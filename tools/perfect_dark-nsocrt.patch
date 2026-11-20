@@ -122,11 +122,11 @@
  #endif
 --- a/port/fast3d/nso_crtgeom.cpp
 +++ b/port/fast3d/nso_crtgeom.cpp
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,323 @@
 +/* NSO "CRT Geometry" for Perfect Dark: when NSO_CRTGEOM_SHADER names shaders/crtgeom.glsl, every finished frame
 + * (the window's back buffer, just before it is swapped) is copied and redrawn through that shader (its NSO_RAYLIB
 + * variant, GLSL 3.30). NSO_CRTGEOM_PARAMS names the file with the fine settings (13 numbers: twelve values, then
-+ * "angle set", then an optional 14th "fast" flag), re-read whenever it changes. NSO captures a frame for its End menu and filters that frozen picture
++ * "angle set"), re-read whenever it changes. NSO captures a frame for its End menu and filters that frozen picture
 + * itself, so the port shows plain frames while the menu is opening (nsoCrtSetPlain / nsoCrtPlainReady). */
 +#include <cstdio>
 +#include <cstdlib>
@@ -152,14 +152,13 @@
 +    std::string source, paramsPath;
 +    float scan = 1.0f;
 +    float p[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
-+    float fast = 0.0f;
 +    long long stamp = -1;
 +    unsigned poll = 0;
 +    GLuint prog = 0, vao = 0, vbo = 0, tex = 0, fbo = 0;
 +    GLuint crtFbo = 0, crtTex = 0, blitProg = 0;
 +    int texW = 0, texH = 0, crtW = 0, crtH = 0;
 +    GLint locProj = -1, locTex = -1, locTexSize = -1, locOrigin = -1, locSize = -1, locAspect = -1, locScan = -1,
-+          locAngleSet = -1, locFast = -1, locDotMask = -1, locP[12] = {};
++          locAngleSet = -1, locDotMask = -1, locP[12] = {};
 +    GLint locBlitProj = -1, locBlitTex = -1, locBlitDot = -1;
 +} s;
 +
@@ -175,8 +174,6 @@
 +    s.scan = (scan && *scan == '0') ? 0.0f : 1.0f;
 +    const char *params = std::getenv("NSO_CRTGEOM_PARAMS");
 +    if (params && params[0]) s.paramsPath = params;
-+    const char *fast = std::getenv("NSO_CRTGEOM_FAST");
-+    s.fast = (fast && *fast == '1') ? 1.0f : 0.0f;
 +    return true;
 +}
 +
@@ -187,13 +184,12 @@
 +    if (stamp == s.stamp) return;
 +    FILE *f = std::fopen(s.paramsPath.c_str(), "r");
 +    if (!f) return;
-+    float v[14];
++    float v[13];
 +    int n = 0;
-+    while (n < 14 && std::fscanf(f, "%f", &v[n]) == 1) n++;
++    while (n < 13 && std::fscanf(f, "%f", &v[n]) == 1) n++;
 +    std::fclose(f);
 +    if (n < 13) return;
 +    std::memcpy(s.p, v, sizeof(s.p));
-+    if (n >= 14) s.fast = v[13] > 0.5f ? 1.0f : 0.0f;
 +    s.stamp = stamp;
 +}
 +
@@ -237,7 +233,6 @@
 +    s.locAspect = glGetUniformLocation(prog, "OutAspect");
 +    s.locScan = glGetUniformLocation(prog, "ScanAmt");
 +    s.locAngleSet = glGetUniformLocation(prog, "angleSet");
-+    s.locFast = glGetUniformLocation(prog, "CrtFast");
 +    s.locDotMask = glGetUniformLocation(prog, "DotMask");
 +    for (int i = 0; i < 12; i++) s.locP[i] = glGetUniformLocation(prog, kUniform[i]);
 +    static const char *blitVs =
@@ -419,7 +414,6 @@
 +    glUniform1f(s.locScan, s.scan);
 +    for (int i = 0; i < 12; i++) glUniform1f(s.locP[i], s.p[i]);
 +    glUniform1f(s.locAngleSet, s.p[12]);
-+    glUniform1f(s.locFast, s.fast);
 +    glUniform1f(s.locDotMask, twoPass ? 0.0f : 1.0f);
 +    glBindVertexArray(s.vao);
 +    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

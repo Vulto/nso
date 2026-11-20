@@ -1,5 +1,5 @@
 diff --git a/src/drivers/shader.cpp b/src/drivers/shader.cpp
-index f9a2f35..a235dba 100644
+index f9a2f35..388827b 100644
 --- a/src/drivers/shader.cpp
 +++ b/src/drivers/shader.cpp
 @@ -21,6 +21,17 @@
@@ -43,7 +43,7 @@ index f9a2f35..a235dba 100644
  }
  
  OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType shader_type, const ShaderParams& in_params) : oblt(in_oblt), params(in_params)
-@@ -267,6 +294,41 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
+@@ -267,6 +294,40 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
  		CompileShader(CSP[0], vertSABR, fragSABR);
  		break;
  
@@ -71,7 +71,6 @@ index f9a2f35..a235dba 100644
 +		  NsoCrtParamsPath = (pp && *pp) ? pp : "";
 +		  NsoCrtParamsStamp = -1;
 +		  NsoCrtPollCount = 0;
-+		  NsoCrtFast = (getenv("NSO_CRTGEOM_FAST") && getenv("NSO_CRTGEOM_FAST")[0] == '1') ? 1.0f : 0.0f;
 +		  NsoCrtFbo = NsoCrtColor = NsoCrtBlitP = 0;
 +		  NsoCrtIw = NsoCrtIh = NsoCrtSw = NsoCrtSh = 0;
 +		  NsoCrtPrevTex = NsoCrtScissor = 0;
@@ -85,7 +84,7 @@ index f9a2f35..a235dba 100644
  	  case SHADER_GOAT:
  		{
  #if 0
-@@ -424,6 +486,113 @@ void OpenGL_Blitter_Shader::UpdateGoatMask(const unsigned rotated)
+@@ -424,6 +485,111 @@ void OpenGL_Blitter_Shader::UpdateGoatMask(const unsigned rotated)
   GoatMaskLastRot = rotated;
  }
  
@@ -100,17 +99,15 @@ index f9a2f35..a235dba 100644
 + FILE *fp = fopen(NsoCrtParamsPath.c_str(), "r");
 + if(!fp)
 +  return;
-+ float v[14];
++ float v[13];
 + unsigned n = 0;
-+ while(n < 14 && fscanf(fp, "%f", &v[n]) == 1)
++ while(n < 13 && fscanf(fp, "%f", &v[n]) == 1)
 +  n++;
 + fclose(fp);
 + if(n < 13)
 +  return;
 + for(unsigned i = 0; i < 13; i++)
 +  NsoCrtP[i] = v[i];
-+ if(n >= 14)
-+  NsoCrtFast = v[13] > 0.5f ? 1.0f : 0.0f;
 + NsoCrtParamsStamp = stamp;
 +}
 +
@@ -199,7 +196,7 @@ index f9a2f35..a235dba 100644
  void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_screen_h, const MDFN_Rect *rect, const MDFN_Rect *dest_rect, int tw, int th, int orig_tw, int orig_th, unsigned rotated)
  {
          oblt->p_glEnable(GL_FRAGMENT_PROGRAM_ARB);
-@@ -446,6 +615,62 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -446,6 +612,61 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
           oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTexture"), 0);
           oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTextureSize"), tw, th);
  	}
@@ -249,7 +246,6 @@ index f9a2f35..a235dba 100644
 +	 for(unsigned i = 0; i < 12; i++)
 +	  oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, pn[i]), NsoCrtP[i]);
 +	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "angleSet"), NsoCrtP[12]);
-+	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "CrtFast"), NsoCrtFast);
 +	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "DotMask"), NsoCrtFbo ? 0.0f : 1.0f);
 +
 +         oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "Tex0"), 0);
@@ -262,7 +258,7 @@ index f9a2f35..a235dba 100644
  	else if(OurType == SHADER_GOAT)
  	{
   	 oblt->p_glUseProgramObjectARB(CSP[0].p);
-@@ -582,6 +807,49 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -582,6 +803,49 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
  
  void OpenGL_Blitter_Shader::ShaderEnd(void)
  {
@@ -313,7 +309,7 @@ index f9a2f35..a235dba 100644
  	oblt->p_glDisable(GL_FRAGMENT_PROGRAM_ARB);
  }
 diff --git a/src/drivers/shader.h b/src/drivers/shader.h
-index 38499e7..6424d30 100644
+index 38499e7..f79547d 100644
 --- a/src/drivers/shader.h
 +++ b/src/drivers/shader.h
 @@ -17,6 +17,7 @@ enum ShaderType
@@ -324,7 +320,7 @@ index 38499e7..6424d30 100644
  };
  
  struct ShaderParams
-@@ -69,6 +70,22 @@ class OpenGL_Blitter_Shader
+@@ -69,6 +70,21 @@ class OpenGL_Blitter_Shader
  
   const ShaderParams params;
  
@@ -332,7 +328,6 @@ index 38499e7..6424d30 100644
 + float NsoCrtScan;
 + // NSO: the fine settings (12 values + "angle set"), re-read when the file named by NSO_CRTGEOM_PARAMS changes
 + float NsoCrtP[13];
-+ float NsoCrtFast;
 + std::string NsoCrtParamsPath;
 + long long NsoCrtParamsStamp;
 + unsigned NsoCrtPollCount;

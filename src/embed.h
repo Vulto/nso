@@ -32,7 +32,7 @@ enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RES
 /* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime), loading, and the
  * CRT Geometry sub-screen's twelve slider labels (crtparams.h order) and its reset row. */
 enum { EMBED_TXT_SLOT = EMBED_MENU_COUNT, EMBED_TXT_NODATA, EMBED_TXT_DATE,
-       EMBED_TXT_LOADING, EMBED_TXT_CRT0, EMBED_TXT_CRT_RESET = EMBED_TXT_CRT0 + CRTP_COUNT, EMBED_TXT_CRT_FAST, EMBED_TXT_COUNT };
+       EMBED_TXT_LOADING, EMBED_TXT_CRT0, EMBED_TXT_CRT_RESET = EMBED_TXT_CRT0 + CRTP_COUNT, EMBED_TXT_COUNT };
 #define EMBED_SLOTS 4
 enum { EMBED_EXTERNAL_NONE, EMBED_EXTERNAL_RESUME, EMBED_EXTERNAL_QUIT, EMBED_EXTERNAL_RESTART };
 
@@ -1058,9 +1058,8 @@ static void Embed_SlotsInput(bool gp)
 
 /* ---- CRT Geometry sub-screen: sliders only. Back / End commit: the steps are saved per game and (Mednafen)
  * written to the run file the emulator re-reads when it resumes. ---- */
-#define EMBED_CRT_FAST 0
-#define EMBED_CRT_SLIDER0 1
-#define EMBED_CRT_ROWS (CRTP_COUNT + 2)   /* Fast CRT, sliders, reset */
+#define EMBED_CRT_SLIDER0 0
+#define EMBED_CRT_ROWS (CRTP_COUNT + 1)   /* sliders, reset */
 #define EMBED_CRT_HOLD_SEC 0.9f           /* the 0.9 s hold convention (padui.h) */
 #define EMBED_CRT_REPEAT_DELAY 0.35f
 #define EMBED_CRT_REPEAT_SEC 0.04f
@@ -1116,17 +1115,6 @@ static void Embed_CrtInput(float dt, bool gp, bool end)
     bool l = IsKeyDown(KEY_LEFT) || (gp && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) || lx < -NSO_PAD_DEADZONE;
     bool r = IsKeyDown(KEY_RIGHT) || (gp && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) || lx > NSO_PAD_DEADZONE;
     int dir = (r ? 1 : 0) - (l ? 1 : 0);
-    if (embed.crtSel == EMBED_CRT_FAST) {
-        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT)
-            || (gp && (IsGamepadButtonPressed(0, NSO_BTN_A) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)
-                       || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)))) {
-            bool fast = !crtSession.fast;
-            CrtSession_SetFast(fast);
-            CrtGeom_SetFast(fast);
-            Sfx_Play(SFX_CLICK);
-        }
-        dir = 0;
-    }
     if (dir == 0) { embed.crtWait = false; embed.crtRepDir = 0; }
     else if (!embed.crtWait) {
         if (dir != embed.crtRepDir) {
@@ -1144,8 +1132,7 @@ static void Embed_CrtInput(float dt, bool gp, bool end)
     else if (!embed.crtHoldDone) {
         embed.crtHold += dt;
         if (embed.crtHold >= EMBED_CRT_HOLD_SEC) {
-            if (embed.crtSel == EMBED_CRT_FAST) { /* no-op */ }
-            else if (embed.crtSel >= EMBED_CRT_SLIDER0 + CRTP_COUNT) memset(embed.crtSteps, -1, sizeof(embed.crtSteps));
+            if (embed.crtSel >= EMBED_CRT_SLIDER0 + CRTP_COUNT) memset(embed.crtSteps, -1, sizeof(embed.crtSteps));
             else embed.crtSteps[embed.crtSel - EMBED_CRT_SLIDER0] = -1;
             embed.crtHoldDone = true;
             embed.crtHold = 0.0f;
@@ -1388,16 +1375,12 @@ static void Embed_DrawCrt(Font font, EmbedScreen screen, const char *const text[
         bool sel = (i == embed.crtSel);
         Color ink = sel ? selInk : WHITE;
         if (sel) DrawRectangleRec((Rectangle){ bx, cy - barH * 0.5f, divX - bx, barH }, Fade(panel, a));
-        const char *label = (i == EMBED_CRT_FAST) ? text[EMBED_TXT_CRT_FAST]
-            : (i < EMBED_CRT_SLIDER0 + CRTP_COUNT) ? text[EMBED_TXT_CRT0 + (i - EMBED_CRT_SLIDER0)]
+        const char *label = (i < EMBED_CRT_SLIDER0 + CRTP_COUNT)
+            ? text[EMBED_TXT_CRT0 + (i - EMBED_CRT_SLIDER0)]
             : text[EMBED_TXT_CRT_RESET];
         Vector2 m = MeasureTextEx(font, label, fs, 0.0f);
         DrawTextEx(font, label, (Vector2){ bx + roundf(34.0f * k), roundf(cy - m.y * 0.5f) }, fs, 0.0f, Fade(ink, a));
-        if (i == EMBED_CRT_FAST) {
-            const char *val = T(crtSession.fast ? S_SET_CRTFAST : S_SET_CRTHIGH);
-            Vector2 vm = MeasureTextEx(font, val, fs, 0.0f);
-            DrawTextEx(font, val, (Vector2){ divX - vm.x - roundf(24.0f * k), roundf(cy - vm.y * 0.5f) }, fs, 0.0f, Fade(ink, a));
-        } else if (i < EMBED_CRT_SLIDER0 + CRTP_COUNT) {
+        if (i < EMBED_CRT_SLIDER0 + CRTP_COUNT) {
             int step = CrtSteps_Shown(embed.crtSteps, crtSession.def, i - EMBED_CRT_SLIDER0);
             float x0 = roundf(640.0f * k) + ox, w = roundf(300.0f * k), h = roundf(16.0f * k), bw = fmaxf(1.0f, roundf(2.0f * k));
             Rectangle box = { x0, roundf(cy - h * 0.5f), w, h };

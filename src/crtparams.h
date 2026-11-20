@@ -72,14 +72,12 @@ typedef struct {
     float val[CRTP_COUNT];
     bool angleSet;
     bool rawFrames;   /* a hosted game whose captured frames are unfiltered (the port draws them plain): NSO applies the CRT look itself */
-    bool fast;        /* cheaper shader path */
 } CrtSession;
 extern CrtSession crtSession;
 
 void CrtSession_End(void);
 /* defPath / runPath may be NULL (runPath: only Mednafen has one). Loads the steps and resolves them. */
 void CrtSession_Begin(const char *gamePath, const char *defPath, const char *runPath);
-void CrtSession_SetFast(bool fast);
 /* The game's new steps (-1 = unset): saved, resolved, and written to the run file. false: a file failed. */
 bool CrtSession_Commit(const signed char game[CRTP_COUNT]);
 
@@ -163,7 +161,7 @@ bool CrtRun_Write(const char *path, const float val[CRTP_COUNT], bool angleSet)
     if (!f) return false;
     bool ok = true;
     for (int i = 0; i < CRTP_COUNT; i++) ok &= fprintf(f, "%.7g ", (double)val[i]) > 0;
-    ok &= fprintf(f, "%d %d\n", angleSet ? 1 : 0, crtSession.fast ? 1 : 0) > 0;
+    ok &= fprintf(f, "%d\n", angleSet ? 1 : 0) > 0;
     ok &= fclose(f) == 0;
     if (ok) ok = rename(tmp, path) == 0;
     if (!ok) remove(tmp);
@@ -183,13 +181,6 @@ void CrtSession_Begin(const char *gamePath, const char *defPath, const char *run
     CrtSteps_Resolve(crtSession.game, crtSession.def, crtSession.val, &crtSession.angleSet);
     crtSession.active = true;
     CrtRun_Write(crtSession.runPath, crtSession.val, crtSession.angleSet);
-}
-
-void CrtSession_SetFast(bool fast)
-{
-    crtSession.fast = fast;
-    if (crtSession.active)
-        CrtRun_Write(crtSession.runPath, crtSession.val, crtSession.angleSet);
 }
 
 bool CrtSession_Commit(const signed char game[CRTP_COUNT])
