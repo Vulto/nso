@@ -16,6 +16,11 @@
  *    connected device and NSO treats it as an N64 pad. Its C buttons
  *    are buttons, not D mode's right stick: N64Pad_RightAxes rebuilds the stick
  *    NSO and the games read from them.
+ *  - SDL ports (Perfect Dark): SDL's HIDAPI Switch driver reads this pad as a Pro Controller, and the
+ *    Pro report's right stick is a constant 0 here (the C buttons are buttons), which SDL calibrates
+ *    to a full deflection: the game turns left forever. So NSO starts such a port with that HIDAPI
+ *    driver off and N64Pad_SdlMapping in SDL_GAMECONTROLLERCONFIG (C buttons as the right stick, like
+ *    D mode). main.c does it for a game whose env has N64PAD_SDL.
  * The string helpers are pure and unit-tested (input_test.c); the device
  * part is src/n64pad.c. */
 #ifndef NSO_N64PAD_H
@@ -41,6 +46,13 @@
     "guide:b12,leftshoulder:b6,rightshoulder:b7,lefttrigger:b8,righttrigger:b9,start:b11," \
     "leftx:a0,lefty:a1,platform:Linux,"
 
+/* The same layout for SDL (game controller mappings, evdev button numbers as above): D mode's
+ * (nso.h NSO_PAD_MAPPINGS) with the right stick made of the four C buttons, half axis each. */
+#define N64PAD_SDL_LAYOUT \
+    "a:b1,b:b0,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,lefttrigger:b8," \
+    "leftx:a0,lefty:a1,rightshoulder:b7,righttrigger:b9,start:b11," \
+    "-rightx:b4,+rightx:b2,-righty:b10,+righty:b3,platform:Linux,"
+
 /* A Switch-mode N64 controller: 057e:2019, or 057e:2009 (the 8BitDo in S mode on
  * USB calls itself a Pro Controller) that hid-nintendo set up with the N64 layout
  * (BTN_C = C-right, no right stick; a real Pro Controller has ABS_RX, no BTN_C). */
@@ -62,6 +74,12 @@ static inline void N64Pad_Guid(char *out, unsigned bus, unsigned vendor, unsigne
 static inline int N64Pad_SwitchMapping(char *out, size_t cap, const char *guid)
 {
     return snprintf(out, cap, "%s,N64 Controller," N64PAD_SWITCH_LAYOUT "\n", guid);
+}
+
+/* One SDL mapping line (SDL_GAMECONTROLLERCONFIG) for the pad with this GUID. */
+static inline int N64Pad_SdlMapping(char *out, size_t cap, const char *guid)
+{
+    return snprintf(out, cap, "%s,N64 Controller," N64PAD_SDL_LAYOUT "\n", guid);
 }
 
 /* Bit `bit` of a sysfs capabilities file ("hex words, most significant first"). */
@@ -88,6 +106,9 @@ static inline bool N64Pad_CapBit(const char *text, int bit)
 void N64Pad_Poll(void);
 /* Whether an evdev name (GetGamepadName) is a Switch-mode N64 pad's. */
 bool N64Pad_IsSwitchName(const char *name);
+/* For an SDL port: the SDL_GAMECONTROLLERCONFIG text (mapping lines) for the Switch-mode N64 pads
+ * connected now, 0 when there is none. */
+int N64Pad_SdlConfig(char *out, size_t cap);
 /* The N64 Rumble setting (on by default). */
 void N64Pad_SetEnabled(bool on);
 /* level 0..1: the motor this frame (0 stops it), held N64PAD_HOLD_MS. */

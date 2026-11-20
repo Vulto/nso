@@ -57,6 +57,7 @@ GameEntry n64_games[] = {
         .binary = "build/pd.x86_64",
         .stateDir = "saves/n64/perfect-dark",
         .externalMenu = true,
+        .env = "N64PAD_SDL",   /* the 8BitDo N64 in S mode: not a Pro Controller with a stuck right stick */
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

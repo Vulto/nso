@@ -3824,10 +3824,47 @@ static char *gameEnvWords[GAME_ENV_MAX];
 static char *gameEnvSaved[GAME_ENV_MAX];
 static int gameEnvCount = 0;
 
+/* The env word N64PAD_SDL (a game's env): an SDL port that would read a Switch-mode N64 pad as a Pro
+ * Controller (n64pad.h) gets that HIDAPI driver off and NSO's N64 mapping for the pad instead. */
+static const char *const n64SdlVars[3] = { "SDL_JOYSTICK_HIDAPI_SWITCH", "SDL_JOYSTICK_HIDAPI_JOY_CONS", "SDL_GAMECONTROLLERCONFIG" };
+static char *n64SdlSaved[3];
+static bool n64SdlSet = false;
+
+static void N64SdlEnvSet(void)
+{
+    static char config[2048];
+    char merged[3072];
+    const char *old;
+    n64SdlSet = false;
+    if (N64Pad_SdlConfig(config, sizeof(config)) <= 0) return;
+    for (int i = 0; i < 3; i++) {
+        old = getenv(n64SdlVars[i]);
+        n64SdlSaved[i] = old ? strdup(old) : NULL;
+    }
+    old = n64SdlSaved[2];
+    snprintf(merged, sizeof(merged), "%s%s%s", old ? old : "", old && old[0] ? "\n" : "", config);
+    NsoSetEnv(n64SdlVars[0], "0");
+    NsoSetEnv(n64SdlVars[1], "0");
+    NsoSetEnv(n64SdlVars[2], merged);
+    n64SdlSet = true;
+}
+
+static void N64SdlEnvRestore(void)
+{
+    if (!n64SdlSet) return;
+    for (int i = 0; i < 3; i++) {
+        NsoSetEnv(n64SdlVars[i], n64SdlSaved[i]);
+        free(n64SdlSaved[i]);
+        n64SdlSaved[i] = NULL;
+    }
+    n64SdlSet = false;
+}
+
 static void GameEnvSet(const GameEntry *game)
 {
     gameEnvCount = 0;
     if (!game->env || !game->env[0]) return;
+    if (strstr(game->env, "N64PAD_SDL")) N64SdlEnvSet();
     snprintf(gameEnvSpec, sizeof(gameEnvSpec), "%s", game->env);
     gameEnvCount = NsoSplitWords(gameEnvSpec, gameEnvWords, GAME_ENV_MAX);
     for (int i = 0; i < gameEnvCount; i++) {
@@ -3850,6 +3887,7 @@ static void GameEnvSet(const GameEntry *game)
 
 static void GameEnvRestore(void)
 {
+    N64SdlEnvRestore();
     for (int i = 0; i < gameEnvCount; i++) {
         NsoSetEnv(gameEnvWords[i], gameEnvSaved[i]);
         free(gameEnvSaved[i]);

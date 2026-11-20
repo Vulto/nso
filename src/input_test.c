@@ -192,6 +192,10 @@ int main(void)
         CHECK(N64Pad_SwitchMapping(map, sizeof map, guid) > 0);
         { const char *head = "030000007e0500001920000011810000,N64 Controller,a:b1,b:b0,"; CHECK(strncmp(map, head, strlen(head)) == 0); }
         CHECK(strstr(map, "y:b10,x:b3,leftstick:b4,rightstick:b2,") && map[strlen(map) - 1] == '\n');
+        CHECK(N64Pad_SdlMapping(map, sizeof map, guid) > 0);
+        CHECK(strncmp(map, "030000007e0500001920000011810000,N64 Controller,a:b1,b:b0,", 56) == 0);
+        CHECK(strstr(map, "-rightx:b4,+rightx:b2,-righty:b10,+righty:b3,"));      /* the C buttons are the right stick */
+        CHECK(!strstr(map, "rightx:a") && !strstr(map, "righty:a") && map[strlen(map) - 1] == '\n');
         CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130 + 0x0f) == false);
         CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130) == true);    /* BTN_A, word 4 */
         CHECK(N64Pad_CapBit("0", 0x50) == false);
