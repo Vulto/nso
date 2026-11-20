@@ -1,0 +1,82 @@
+diff --git a/src/drivers/shader.cpp b/src/drivers/shader.cpp
+index f9a2f35..50f0b1c 100644
+--- a/src/drivers/shader.cpp
++++ b/src/drivers/shader.cpp
+@@ -267,6 +267,26 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
+ 		CompileShader(CSP[0], vertSABR, fragSABR);
+ 		break;
+ 
++	  case SHADER_NSOCRT:
++		{
++		 // NSO CRT Geometry: one GLSL file (vertex stage under NSO_VERT), path from the environment.
++		 const char *path = getenv("NSO_CRTGEOM_SHADER");
++		 const char *scan = getenv("NSO_CRTGEOM_SCAN");
++		 if(!path || !*path)
++		  throw MDFN_Error(0, "NSO_CRTGEOM_SHADER is not set.");
++		 FILE *fp = fopen(path, "rb");
++		 if(!fp)
++		  throw MDFN_Error(0, "Cannot open CRT geometry shader \"%s\".", path);
++		 char fb[4096];
++		 size_t rn;
++		 while((rn = fread(fb, 1, sizeof(fb), fp)) > 0)
++		  NsoCrtSource.append(fb, rn);
++		 fclose(fp);
++		 NsoCrtScan = (scan && *scan == '0') ? 0.0f : 1.0f;
++		 CompileShader(CSP[0], (std::string("#define NSO_VERT 1\n") + NsoCrtSource).c_str(), NsoCrtSource.c_str());
++		}
++		break;
++
+ 	  case SHADER_GOAT:
+ 		{
+ #if 0
+@@ -446,6 +466,17 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+          oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTexture"), 0);
+          oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTextureSize"), tw, th);
+ 	}
++	else if(OurType == SHADER_NSOCRT)
++	{
++ 	 oblt->p_glUseProgramObjectARB(CSP[0].p);
++
++         oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "Tex0"), 0);
++         oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "TexSize"), tw, th);
++         oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "VidOrigin"), 0, 0);
++         oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "VidSize"), rect->w, rect->h);
++         oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "OutAspect"), (float)dest_rect->h / dest_rect->w);
++         oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "ScanAmt"), NsoCrtScan);
++	}
+ 	else if(OurType == SHADER_GOAT)
+ 	{
+  	 oblt->p_glUseProgramObjectARB(CSP[0].p);
+diff --git a/src/drivers/shader.h b/src/drivers/shader.h
+index 38499e7..a496fe1 100644
+--- a/src/drivers/shader.h
++++ b/src/drivers/shader.h
+@@ -17,6 +17,7 @@ enum ShaderType
+         SHADER_IPYNOTXSHARPER,
+ 
+ 	SHADER_GOAT,
++	SHADER_NSOCRT,	// NSO: "CRT Geometry" (GLSL file named by NSO_CRTGEOM_SHADER)
+ };
+ 
+ struct ShaderParams
+@@ -69,6 +70,8 @@ class OpenGL_Blitter_Shader
+ 
+  const ShaderParams params;
+ 
++ std::string NsoCrtSource;
++ float NsoCrtScan;
+  void UpdateGoatMask(const unsigned rotated);
+  unsigned GoatMaskLastRot;
+ };
+diff --git a/src/drivers/video.cpp b/src/drivers/video.cpp
+index edeff4e..06f9478 100644
+--- a/src/drivers/video.cpp
++++ b/src/drivers/video.cpp
+@@ -270,6 +270,7 @@ static const MDFNSetting_EnumList Shader_List[] =
+     { "ipxnotysharper", SHADER_IPXNOTYSHARPER, 	gettext_noop("Sharper version of \"ipxnoty\".") },
+     { "ipynotxsharper", SHADER_IPYNOTXSHARPER, 	gettext_noop("Sharper version of \"ipynotx\".") },
+ 
++    { "nsocrt",		SHADER_NSOCRT,		"NSO CRT Geometry", gettext_noop("Curved CRT look (NSO; shader file from NSO_CRTGEOM_SHADER).") },
+     { "goat", 		SHADER_GOAT, 		gettext_noop("Simple approximation of a color TV CRT look."), gettext_noop("Intended for fullscreen modes with a vertical resolution of around 1000 to 1500 pixels.  Doesn't simulate halation and electron beam energy distribution nuances.") },
+ 
+     { NULL, 0 },

@@ -124,6 +124,14 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
   long time to build.
 - **Language:** English / Português.
+- **CRT Geometry (NES / SNES, below Scanlines):** a CRT-monitor look (screen
+  curvature, rounded corners, beam scanlines, glow, dot mask) from the shader
+  in `shaders/crtgeom.glsl`. It draws inside the picture area picked by Pixel
+  Perfect / 4:3, so those keep their sizes. With it on, the shader draws the
+  scanlines (follow the Scanlines toggle) instead of Mednafen's line overlay.
+  Saved per system as `<system>.crtgeom` in `config/nso.cfg`. NES/SNES run in a
+  Mednafen with a small patch: `tools/mednafen-nsocrt.patch` (apply to the
+  `mednafen/` tree); an unpatched Mednafen fails to start with the toggle on. Other systems/ports are not covered yet.
 - **NES / SNES / N64 controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
   fills on the hint bar's A glyph; the holds' controls light only the button they are bound to): it asks for one button at a time (Up, Down, Left,
@@ -234,3 +242,10 @@ gear screen before anything is built.
 ## Third-party font
 
 `assets/fonts/NotoSansCJKkr-Regular.otf` is Noto Sans CJK by Google/Adobe, licensed under the SIL Open Font License 1.1 (see `assets/fonts/LICENSE-NotoSansCJK.txt`).
+
+## Third-party shader
+
+`shaders/crtgeom.glsl` is derived from [MAME-PSGS](https://github.com/TheCodeTherapy/MAME-PSGS)
+by Marco Gomez (@TheCodeTherapy), licensed under the Apache License 2.0, itself
+based on the CRT-geom shader family. Changes (single-file port, uniforms, beam
+scanline control, no palette emulation) are listed in the file header.

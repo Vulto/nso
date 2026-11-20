@@ -426,9 +426,10 @@ static inline int NsoSplitWords(char *buf, char **words, int max)
  * -<module>.scanlines 90 (90% opacity; nes/snes.scanlines is an integer
  * -100 through 100). Off: scanlines 0, so the setting cannot leak. The two
  * are independent (both on is integer scale plus scanlines). Shader is
- * always none. Rewinding (Backspace; rewind.h) is on with 600 frames of history. One save-state file name lets NSO address slots, then the
+ * none, or nsocrt (shaders/crtgeom.glsl, the "CRT Geometry" toggle; Mednafen's
+ * own scanlines are then 0: the shader draws its beam lines, see NSO_CRTGEOM_SCAN). Rewinding (Backspace; rewind.h) is on with 600 frames of history. One save-state file name lets NSO address slots, then the
  * ROM (NsoMednafenArgvEx puts extra words, e.g. the controller bindings of padmap.h, just before it). argv[0..] point into buf; returns the word count, 0 if it did not fit. */
-static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlines,
+static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlines, bool crtgeom,
                                     const char *rom, int host_w, int host_h,
                                     char *buf, size_t cap, char **argv, int max,
                                     char *const *extra, int extra_count)
@@ -458,9 +459,9 @@ static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlin
     snprintf(yscale, sizeof(yscale), "%.4f", (double)ys);
     const char *words[] = { "-video.fs", "0", "-filesys.fname_state", "state.%X",
                             opt[0], xscale, opt[1], yscale, opt[2], "0",
-                            opt[3], "none",
+                            opt[3], crtgeom ? "nsocrt" : "none",
                             opt[4], pixel ? "0" : "1",
-                            opt[5], scanlines ? "90" : "0",
+                            opt[5], scanlines && !crtgeom ? "90" : "0",
                             "-srwautoenable", "1", "-srwframes", "600", rom };
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
@@ -487,7 +488,7 @@ static inline int NsoMednafenArgv(const char *module, bool pixel, bool scanlines
                                   const char *rom, int host_w, int host_h,
                                   char *buf, size_t cap, char **argv, int max)
 {
-    return NsoMednafenArgvEx(module, pixel, scanlines, rom, host_w, host_h, buf, cap, argv, max, NULL, 0);
+    return NsoMednafenArgvEx(module, pixel, scanlines, false, rom, host_w, host_h, buf, cap, argv, max, NULL, 0);
 }
 
 #endif /* NSO_LAUNCH_H */

@@ -2426,6 +2426,7 @@ typedef struct {
     int screen;       /* N64/GC embeds: EMBED_SCREEN_*; unused for NES/SNES */
     bool pixel;       /* NES/SNES: largest integer scale, square pixels */
     bool scanlines;   /* NES/SNES: scanlines at 90% opacity */
+    bool crtgeom;     /* "CRT Geometry" (shaders/crtgeom.glsl), off by default */
 } SysSettings;
 static const char *const SCREEN_MODE_KEYS[3] = { "4:3", "pixel", "crt" };
 static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
@@ -2442,7 +2443,7 @@ static void SysSettings_LoadAll(void) {
         const char *id = systems[i].platform->id;
         char key[64];
         /* defaults: NA, rumble on, controls hidden, Pixel Perfect + Scanlines on */
-        SysSettings s = { 0, true, false, 1, true, true };
+        SysSettings s = { 0, true, false, 1, true, true, false };
         snprintf(key, sizeof(key), "%s.versions", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.versions = strcmp(v, "na_eu") == 0 ? 1 : 0;
         snprintf(key, sizeof(key), "%s.rumble", id);
@@ -2457,6 +2458,8 @@ static void SysSettings_LoadAll(void) {
             if (Cfg_Get(text, key, v, sizeof(v)))
                 for (int m = 0; m < 3; m++) if (strcmp(v, SCREEN_MODE_KEYS[m]) == 0) s.screen = m;
         }
+        snprintf(key, sizeof(key), "%s.crtgeom", id);
+        if (Cfg_Get(text, key, v, sizeof(v))) s.crtgeom = strcmp(v, "1") == 0;
         sysSettings[i] = s;
     }
     if (retroReset) {
@@ -2494,6 +2497,8 @@ static void SysSettings_Save(int sys) {
         snprintf(key, sizeof(key), "%s.screen_ver", id);
         ok &= Cfg_SaveKey(cfg, key, NSO_RETRO_SCREEN_VER);
     }
+    snprintf(key, sizeof(key), "%s.crtgeom", id);
+    ok &= Cfg_SaveKey(cfg, key, s->crtgeom ? "1" : "0");
     if (!ok) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
@@ -2723,7 +2728,7 @@ static void DrawFitText(Font font, const char *text, Vector2 at, float size, flo
 /* ---- NES / SNES Settings panel: "Game Screen" with two independent toggles
  * (Pixel Perfect and Scanlines), a preview of the current combination, then
  * "Control Display". N64 keeps SidebarPanel_Draw as is. ---- */
-enum { SB_RETRO_PIXEL = 0, SB_RETRO_SCANLINES = 1 };
+enum { SB_RETRO_PIXEL = 0, SB_RETRO_SCANLINES = 1, SB_RETRO_CRTGEOM = 2 };
 static bool SysIsRetro(int sys) {
     const char *id = systems[sys].platform->id;
     return strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0;
@@ -2856,12 +2861,12 @@ static void SidebarPanelRetro_Draw(Font font, Color red) {
     Rectangle thumb = { frame.x + th, frame.y + th, sw * 0.112f, ch - 2.0f * th };
     DrawRetroThumb(thumb, snes, st->scanlines);
 
-    static const StrId labels[2] = { S_SET_PIXEL, S_SET_SCANLINES };
+    static const StrId labels[3] = { S_SET_PIXEL, S_SET_SCANLINES, S_SET_CRTGEOM };
     /* Raised to sit under the small thumb without a large gap. */
-    static const float rowY[2] = { 0.36f, 0.48f };
-    bool on[2] = { st->pixel, st->scanlines };
+    static const float rowY[3] = { 0.36f, 0.48f, 0.60f };
+    bool on[3] = { st->pixel, st->scanlines, st->crtgeom };
     float bh = sh * 0.069f;
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < 3; k++) {
         float y = sh * rowY[k];
         bool cur = (k == sidebarSetRow);
         Rectangle box = { bx, y - bh * 0.5f, bw * 0.99f, bh };
@@ -3381,14 +3386,10 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; Hide_Resync(true); return; }
         if (up && sidebarSetRow > 0) {
             sidebarSetRow--;
-            if (SysIsRetro(currentSystem) && sidebarSetRow == SB_SET_RUMBLE)
-                sidebarSetRow = SB_RETRO_SCANLINES;
             Sfx_Play(SFX_PLUCK);
         }
         if (down && sidebarSetRow < SetRowLast()) {
             sidebarSetRow++;
-            if (SysIsRetro(currentSystem) && sidebarSetRow == SB_SET_RUMBLE)
-                sidebarSetRow = SB_SET_CONTROLS;
             Sfx_Play(SFX_PLUCK);
         }
         if (ok) {
@@ -3412,6 +3413,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
             }
             if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_PIXEL) st->pixel = !st->pixel;
             else if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_SCANLINES) st->scanlines = !st->scanlines;
+            else if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_CRTGEOM) st->crtgeom = !st->crtgeom;
             else if (SysIsRetro(currentSystem)) st->showControls = !st->showControls;
             else if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
             else if (sidebarSetRow == SB_SET_VER_NA_EU) st->versions = 1;
@@ -3925,8 +3927,16 @@ NsoProc LaunchGame(const GameEntry *game) {
             padCount = PadMap_MednafenWordsSys(&PADSYS_NES, &nesPad, padArgs, sizeof(padArgs), padWords, 2 * PAD_MAX_BTN);
         else if (strcmp(game->mednafen, "snes") == 0)
             padCount = PadMap_MednafenWordsSys(&PADSYS_SNES, &snesPad, padArgs, sizeof(padArgs), padWords, 2 * PAD_MAX_BTN);
+        /* CRT Geometry: Mednafen's own OpenGL path runs shaders/crtgeom.glsl ("nsocrt" shader of the patched
+         * Mednafen). Its beam scanlines follow the Scanlines toggle (NSO_CRTGEOM_SCAN). */
+        char crtShader[1200];
+        bool crt = sysSettings[currentSystem].crtgeom;
+        snprintf(crtShader, sizeof(crtShader), "%s", GetDataPath("shaders/crtgeom.glsl"));
+        if (crt && !FileExists(crtShader)) crt = false;
+        NsoSetEnv("NSO_CRTGEOM_SHADER", crt ? crtShader : NULL);
+        NsoSetEnv("NSO_CRTGEOM_SCAN", sysSettings[currentSystem].scanlines ? "1" : "0");
         mednafenArgc = NsoMednafenArgvEx(game->mednafen, sysSettings[currentSystem].pixel,
-                                         sysSettings[currentSystem].scanlines, mednafenRom,
+                                         sysSettings[currentSystem].scanlines, crt, mednafenRom,
                                          GetScreenWidth(), GetScreenHeight(), mednafenArgs, sizeof(mednafenArgs), mednafenArgv,
                                          (int)(sizeof(mednafenArgv) / sizeof(mednafenArgv[0])), padWords, padCount);
         if (!mednafenArgc) {
@@ -3940,7 +3950,7 @@ NsoProc LaunchGame(const GameEntry *game) {
 #if !defined(_WIN32)
         remove(rewindShm);   /* a new file, so nothing maps the last run's */
         Rewind_Begin(rewindShm, menuDir, sysSettings[currentSystem].pixel,
-                     sysSettings[currentSystem].scanlines, showBar);
+                     sysSettings[currentSystem].scanlines && !crt, showBar);
 #endif
         NsoSetEnv("NSO_REWIND_SHM", rewindShm);
     }
