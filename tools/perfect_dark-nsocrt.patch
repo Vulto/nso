@@ -18,7 +18,20 @@
  	} else if (std::strcmp(action, "restart") == 0 || std::strcmp(action, "quit") == 0) {
  		std::exit(0); /* NSO distinguishes restart from quit using its menu result. */
  	}
-@@ -149,10 +150,22 @@
+@@ -117,9 +120,12 @@
+ 	int x = (parentAttrs.width - width) / 2;
+ 	int y = (parentAttrs.height - height) / 2;
+ 	XReparentWindow(nsoDisplay, nsoChild, nsoParent, x, y);
+ 	XResizeWindow(nsoDisplay, nsoChild, (unsigned int)width, (unsigned int)height);
+ 	XMapRaised(nsoDisplay, nsoChild);
+ 	XSync(nsoDisplay, False);
++	/* keep SDL's drawable in line with the 4:3 child, so the CRT post pass uses the real size */
++	SDL_SetWindowSize(window, width, height);
++	SDL_PumpEvents();
+ 	nsoParentPid = (pid_t)parsedPid;
+ 	XFlush(nsoDisplay);
+ 	nsoWriteWindowId();
+@@ -149,10 +153,22 @@
  #if defined(__linux__)
  	if (!nsoParentPid) return false;
  	if (nsoSignalRequested) {
@@ -62,7 +75,7 @@
  #endif
 --- a/port/fast3d/nso_crtgeom.cpp
 +++ b/port/fast3d/nso_crtgeom.cpp
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,231 @@
 +/* NSO "CRT Geometry" for Perfect Dark: when NSO_CRTGEOM_SHADER names shaders/crtgeom.glsl, every finished frame
 + * (the window's back buffer, just before it is swapped) is copied and redrawn through that shader (its NSO_RAYLIB
 + * variant, GLSL 3.30). NSO_CRTGEOM_PARAMS names the file with the fine settings (13 numbers: twelve values, then
@@ -244,20 +257,23 @@
 +    GLboolean mask[4];
 +    glGetBooleanv(GL_COLOR_WRITEMASK, mask);
 +
-+    EnsureTexture(w, h);
-+    /* the back buffer, upside down (row 0 = top, like the texture NSO's shader expects) */
-+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s.fbo);
-+    glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-+
 +    if (!(s.poll++ & 15u)) LoadParams();
++    /* scissor must be off before the blit: Fast3D often leaves a smaller scissor, and
++     * glBlitFramebuffer is clipped by it, which leaves black bars in the copied frame. */
 +    glDisable(GL_SCISSOR_TEST);
 +    glDisable(GL_DEPTH_TEST);
 +    glDisable(GL_BLEND);
 +    glDisable(GL_CULL_FACE);
 +    glDisable(GL_STENCIL_TEST);
 +    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glViewport(0, 0, w, h);
++
++    EnsureTexture(w, h);
++    /* the back buffer, upside down (row 0 = top, like the texture NSO's shader expects) */
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s.fbo);
++    glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 +    glViewport(0, 0, w, h);
 +    glUseProgram(s.prog);
 +    static const float ident[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };

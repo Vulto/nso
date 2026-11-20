@@ -3856,34 +3856,36 @@ static char *gameEnvSaved[GAME_ENV_MAX];
 static int gameEnvCount = 0;
 
 /* The env word N64PAD_SDL (a game's env): an SDL port that would read a Switch-mode N64 pad as a Pro
- * Controller (n64pad.h) gets that HIDAPI driver off and NSO's N64 mapping for the pad instead. */
-static const char *const n64SdlVars[3] = { "SDL_JOYSTICK_HIDAPI_SWITCH", "SDL_JOYSTICK_HIDAPI_JOY_CONS", "SDL_GAMECONTROLLERCONFIG" };
-static char *n64SdlSaved[3];
+ * Controller (n64pad.h) gets HIDAPI off (all of it, not only the Switch driver) and NSO's N64 mapping
+ * instead. The mapping is always applied (known GUIDs), so a missing Poll result cannot skip this. */
+static const char *const n64SdlVars[4] = { "SDL_JOYSTICK_HIDAPI", "SDL_JOYSTICK_HIDAPI_SWITCH", "SDL_JOYSTICK_HIDAPI_JOY_CONS", "SDL_GAMECONTROLLERCONFIG" };
+static char *n64SdlSaved[4];
 static bool n64SdlSet = false;
 
 static void N64SdlEnvSet(void)
 {
-    static char config[2048];
-    char merged[3072];
+    static char config[4096];
+    char merged[5120];
     const char *old;
     n64SdlSet = false;
     if (N64Pad_SdlConfig(config, sizeof(config)) <= 0) return;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         old = getenv(n64SdlVars[i]);
         n64SdlSaved[i] = old ? strdup(old) : NULL;
     }
-    old = n64SdlSaved[2];
+    old = n64SdlSaved[3];
     snprintf(merged, sizeof(merged), "%s%s%s", old ? old : "", old && old[0] ? "\n" : "", config);
     NsoSetEnv(n64SdlVars[0], "0");
     NsoSetEnv(n64SdlVars[1], "0");
-    NsoSetEnv(n64SdlVars[2], merged);
+    NsoSetEnv(n64SdlVars[2], "0");
+    NsoSetEnv(n64SdlVars[3], merged);
     n64SdlSet = true;
 }
 
 static void N64SdlEnvRestore(void)
 {
     if (!n64SdlSet) return;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         NsoSetEnv(n64SdlVars[i], n64SdlSaved[i]);
         free(n64SdlSaved[i]);
         n64SdlSaved[i] = NULL;

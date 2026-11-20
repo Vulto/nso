@@ -122,11 +122,14 @@ void N64Pad_Poll(void)
 
 int N64Pad_SdlConfig(char *out, size_t cap)
 {
-    size_t n = 0;
+    size_t n;
     if (!out || cap == 0) return 0;
-    out[0] = '\0';
-    if (pad.switchCount == 0) return 0;
+    n = (size_t)N64Pad_SdlKnownConfig(out, cap);
     for (int i = 0; i < pad.guidCount && n + 1 < cap; i++) {
+        int already = 0;
+        for (size_t k = 0; out[k]; k++)
+            if (strncmp(out + k, pad.guids[i], 32) == 0 && (k == 0 || out[k - 1] == '\n')) { already = 1; break; }
+        if (already) continue;
         int w = N64Pad_SdlMapping(out + n, cap - n, pad.guids[i]);
         if (w < 0 || (size_t)w >= cap - n) { out[n] = '\0'; break; }
         n += (size_t)w;
@@ -175,7 +178,7 @@ void N64Pad_Rumble(float level)
 }
 #else
 void N64Pad_Poll(void) {}
-int N64Pad_SdlConfig(char *out, size_t cap) { if (out && cap) out[0] = '\0'; return 0; }
+int N64Pad_SdlConfig(char *out, size_t cap) { return N64Pad_SdlKnownConfig(out, cap); }
 bool N64Pad_IsSwitchName(const char *name) { (void)name; return false; }
 void N64Pad_SetEnabled(bool on) { (void)on; }
 void N64Pad_Rumble(float level) { (void)level; }

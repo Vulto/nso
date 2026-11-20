@@ -184,7 +184,7 @@ int main(void)
         rmdir(hid); rmdir(bat); rmdir(dir);
     }
     {   /* n64pad.h: Switch-mode N64 mapping, sysfs capability bits */
-        char guid[33], map[512];
+        char guid[33], map[2048];
         N64Pad_Guid(guid, 0x0003, 0x2dc8, 0x2869, 0x0111);
         CHECK(strcmp(guid, "03000000c82d00006928000011010000") == 0);   /* = the D-mode entry */
         N64Pad_Guid(guid, 0x0003, 0x057e, 0x2019, 0x8111);
@@ -194,8 +194,11 @@ int main(void)
         CHECK(strstr(map, "y:b10,x:b3,leftstick:b4,rightstick:b2,") && map[strlen(map) - 1] == '\n');
         CHECK(N64Pad_SdlMapping(map, sizeof map, guid) > 0);
         CHECK(strncmp(map, "030000007e0500001920000011810000,N64 Controller,a:b1,b:b0,", 56) == 0);
-        CHECK(strstr(map, "-rightx:b4,+rightx:b2,-righty:b10,+righty:b3,"));      /* the C buttons are the right stick */
-        CHECK(!strstr(map, "rightx:a") && !strstr(map, "righty:a") && map[strlen(map) - 1] == '\n');
+        CHECK(strstr(map, "rightx:a0,righty:a1,"));                              /* PD SwapSticks=1: N64 stick is the SDL right stick */
+        CHECK(strstr(map, "-leftx:b4,+leftx:b2,-lefty:b10,+lefty:b3,"));           /* C buttons are the left stick (look) */
+        CHECK(map[strlen(map) - 1] == '\n');
+        CHECK(N64Pad_SdlKnownConfig(map, sizeof map) > 0);
+        CHECK(strstr(map, "0300bb977e0500000920000011810000,N64 Controller,"));    /* the CRC GUID SDL uses on USB */
         CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130 + 0x0f) == false);
         CHECK(N64Pad_CapBit("7fff000000000000 0 0 0 0", 0x130) == true);    /* BTN_A, word 4 */
         CHECK(N64Pad_CapBit("0", 0x50) == false);
