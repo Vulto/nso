@@ -3377,15 +3377,6 @@ static void DrawMissingCover(Texture2D tex, Rectangle r, Color tint) {
 }
 
 
-static void Live_HintDraw(Rectangle r)
-{
-    if (!live.parked || live.sys != currentSystem) return;
-    /* small selInk bar at the bottom of the parked game's cover */
-    const Color selInk = { 246, 80, 59, 255 };
-    float h = fmaxf(4.0f, r.height * 0.035f);
-    DrawRectangleRec((Rectangle){ r.x, r.y + r.height - h, r.width, h }, selInk);
-}
-
 static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numImgs) {
     if (numImgs <= 0 || !layout) return;
 
@@ -3427,8 +3418,6 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
             DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, ColorTint(GameTint(i), othersTint));
             if (Repo_Offer(Game_Repo(&ActiveGames()[i])))
                 Repo_BadgeDraw(slotFont, (Rectangle){ox, oy, draw_w, draw_h});
-            if (Live_IsSame(currentSystem, i))
-                Live_HintDraw((Rectangle){ox, oy, draw_w, draw_h});
         }
     }
 
@@ -3488,8 +3477,6 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                          GameTint(GameIdx));
         if (Repo_Offer(Game_Repo(&ActiveGames()[GameIdx])))
             Repo_BadgeDraw(slotFont, (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
-        if (Live_IsSame(currentSystem, GameIdx))
-            Live_HintDraw((Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
 
         float pulse = sinf((float)GetTime() * 5.6f) * 0.5f + 0.5f;
         unsigned char r = (unsigned char)(255 * (1.0f - pulse));

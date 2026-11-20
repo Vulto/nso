@@ -109,7 +109,7 @@ the controller Guide button to Continue, Reset Game, or return To Game
 Selection. Embedded games keep their module menu and suspend-point support.
 
 To Game Selection leaves the game paused in the background (one game at a
-time; a red bar marks its cover). Starting it again resumes it where it was.
+time). Starting it again resumes it where it was.
 Starting a different game first asks "Close <game>?": Yes (A / Enter) closes
 the paused game and starts the new one, No (B / Backspace) goes back to the
 grid. Quitting NSO closes the paused game too.
