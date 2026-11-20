@@ -49,6 +49,7 @@ void Main_SetVIMode(void);
 void Main_Initialize(void);
 void Main_ThreadEntry(void* arg);
 void Lib_FillScreen(u8 setFill);
+extern u16 gNextGameState;   /* sys.h */
 }
 void push_frame();   /* port/Game.cpp */
 
@@ -71,6 +72,7 @@ struct Mod {
     bool live = false;
     std::string path;
 } M;
+std::atomic<bool> gMotorOn{false};   /* Rumble Pak motor, see __wrap___osMotorAccess */
 
 bool HostRestore() {
     return M.hostDpy && M.hostCtx && M.hostDraw && glXMakeCurrent(M.hostDpy, M.hostDraw, M.hostCtx) != 0;
@@ -85,8 +87,19 @@ void GameRelease() {
 
 bool ModInit(const NsomodConfig* cfg) {
     if (!cfg || !cfg->data_path || !cfg->data_path[0]) return false;
-    if (M.live) return M.path == cfg->data_path && (M.hostDpy = glXGetCurrentDisplay(), M.hostDraw = glXGetCurrentDrawable(),
-                                                    M.hostCtx = glXGetCurrentContext(), HostRestore());
+    if (M.live) {   /* back from Game Selection (keep_loaded): the session is still there */
+        if (M.path != cfg->data_path) return false;
+        M.hostDpy = glXGetCurrentDisplay();
+        M.hostDraw = glXGetCurrentDrawable();
+        M.hostCtx = glXGetCurrentContext();
+        {
+            std::lock_guard<std::mutex> lock(M.audioMutex);   /* sound of before the pause */
+            M.audio.clear();
+            M.audioPos = 0.0;
+        }
+        gMotorOn.store(false, std::memory_order_relaxed);
+        return HostRestore();
+    }
     M.hostDpy = glXGetCurrentDisplay();
     M.hostDraw = glXGetCurrentDrawable();
     M.hostCtx = glXGetCurrentContext();
@@ -387,21 +400,22 @@ bool ModStateLoad(const char* path) {
     return true;
 }
 
+/* Reset Game, or the module being replaced by another one. libultraship cannot be torn down
+ * and built again inside one process (its Context, window and threads outlive Destroy(), and
+ * a second GameEngine::Create() crashed in Fast3dWindow's destructor), and the libraries never
+ * unload (see the Makefile), so the session stays and the game restarts from its boot state,
+ * what the port's own F4 key does. */
 void ModShutdown() {
     if (!M.live) return;
-    GameCurrent();
-    GameEngine::Instance->Destroy();
-    M.win = nullptr;
-    M.ctx = nullptr;
-    HostRestore();
+    gNextGameState = 100;   /* GSTATE_BOOT (sf64thread.h) */
+    std::lock_guard<std::mutex> lock(M.audioMutex);
     M.audio.clear();
     M.audioPos = 0.0;
-    M.live = false;
-    M.path.clear();
+    gMotorOn.store(false, std::memory_order_relaxed);
 }
 
 const NsomodApi kApi = {
-    NSOMOD_API_VERSION, kW, kH, 30.0, 2, ModInit, ModFrame, ModAudioPull, ModStateSave, ModStateLoad, ModShutdown, false,
+    NSOMOD_API_VERSION, kW, kH, 30.0, 2, ModInit, ModFrame, ModAudioPull, ModStateSave, ModStateLoad, ModShutdown, true,
 };
 }  // namespace
 
@@ -464,7 +478,6 @@ extern "C" bool NsoLusWriteControllerInput(OSContPad* pad) {
 
 /* Rumble Pak (sys_joybus.c Controller_Rumble, once per game frame): the motor goes
  * to NSO (nsomod.h), never to libultraship's own SDL rumble, so the setting rules. */
-static std::atomic<bool> gMotorOn{false};
 extern "C" int32_t __wrap___osMotorAccess(OSPfs* pfs, uint32_t vibrate) {
     if (pfs && pfs->channel == 0) gMotorOn.store(vibrate != 0, std::memory_order_relaxed);
     return 0;

@@ -55,7 +55,7 @@ $(B)/libsf64game.so: $(GAME_O)
 
 $(B)/libstarshipmod.so: $(B)/starshipmod.o $(PORT_O) $(B)/libsf64game.so
 	$(CXX) -shared -o $@ $(B)/starshipmod.o $(PORT_O) -L$(B) -lsf64game -Wl,-rpath,'$$ORIGIN' \
-	    -Wl,-Bsymbolic -Wl,--build-id=sha1 -pthread $(LIBS) -lGL -lX11 -lz
+	    -Wl,-Bsymbolic -Wl,-z,nodelete -Wl,--build-id=sha1 -pthread $(LIBS) -lGL -lX11 -lz
 
 clean:
 	rm -rf $(B)
