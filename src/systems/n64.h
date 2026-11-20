@@ -95,6 +95,7 @@ GameEntry n64_games[] = {
         .appDir = "saves/n64/bk",   /* config, saves and bk.o2r */
         .env = "SHIP_HOME=@saves/n64/bk",   /* libultraship app dir */
         .orient = SLOT_ORIENT_INHERIT,
+        .crtHook = true,
     },
     {
         .title = "Banjo-Tooie",
