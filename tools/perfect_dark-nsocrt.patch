@@ -1,0 +1,293 @@
+--- a/port/fast3d/gfx_sdl2.cpp
++++ b/port/fast3d/gfx_sdl2.cpp
+@@ -360,6 +360,7 @@
+     if (target_fps) {
+         sync_framerate_with_timer();
+     }
++    nsoCrtPostPass(wnd);
+     SDL_GL_SwapWindow(wnd);
+ }
+ 
+--- a/port/src/nso_bridge.cpp
++++ b/port/src/nso_bridge.cpp
+@@ -62,6 +62,7 @@
+ 	nsoRemoveAction(path);
+ 	if (std::strcmp(action, "resume") == 0) {
+ 		nsoPaused = false;
++		nsoCrtSetPlain(false);
+ 	} else if (std::strcmp(action, "restart") == 0 || std::strcmp(action, "quit") == 0) {
+ 		std::exit(0); /* NSO distinguishes restart from quit using its menu result. */
+ 	}
+@@ -149,10 +150,22 @@
+ #if defined(__linux__)
+ 	if (!nsoParentPid) return false;
+ 	if (nsoSignalRequested) {
+-		nsoSignalRequested = 0;
+-		if (!nsoPaused) {
+-			nsoPaused = true;
+-			if (kill(nsoParentPid, SIGUSR1) != 0) nsoPaused = false;
++		/* with CRT Geometry the game first shows plain frames: NSO filters the frame it captures itself */
++		static bool waitingPlain;
++		if (!waitingPlain && nsoCrtActive()) {
++			waitingPlain = true;
++			nsoCrtSetPlain(true);
++		}
++		if (nsoCrtPlainReady()) {
++			waitingPlain = false;
++			nsoSignalRequested = 0;
++			if (!nsoPaused) {
++				nsoPaused = true;
++				if (kill(nsoParentPid, SIGUSR1) != 0) {
++					nsoPaused = false;
++					nsoCrtSetPlain(false);
++				}
++			}
+ 		}
+ 	}
+ 	nsoCheckAction();
+--- a/port/include/nso_bridge.h
++++ b/port/include/nso_bridge.h
+@@ -11,6 +11,12 @@
+ void nsoBridgeHandleEvent(const SDL_Event *event);
+ /* Call from the game loop. Returns nonzero while gameplay must remain paused. */
+ int nsoBridgePoll(void);
++
++/* NSO "CRT Geometry" (port/fast3d/nso_crtgeom.cpp): the frame is redrawn through NSO's shader before the swap. */
++int nsoCrtActive(void);
++void nsoCrtSetPlain(int plain);   /* plain frames: the ones NSO captures for its menu, which it filters itself */
++int nsoCrtPlainReady(void);        /* two plain frames are on screen */
++void nsoCrtPostPass(SDL_Window *window);
+ #ifdef __cplusplus
+ }
+ #endif
+--- a/port/fast3d/nso_crtgeom.cpp
++++ b/port/fast3d/nso_crtgeom.cpp
+@@ -0,0 +1,228 @@
++/* NSO "CRT Geometry" for Perfect Dark: when NSO_CRTGEOM_SHADER names shaders/crtgeom.glsl, every finished frame
++ * (the window's back buffer, just before it is swapped) is copied and redrawn through that shader (its NSO_RAYLIB
++ * variant, GLSL 3.30). NSO_CRTGEOM_PARAMS names the file with the fine settings (13 numbers: twelve values, then
++ * "angle set"), re-read whenever it changes. NSO captures a frame for its End menu and filters that frozen picture
++ * itself, so the port shows plain frames while the menu is opening (nsoCrtSetPlain / nsoCrtPlainReady). */
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <iterator>
++#include <string>
++#include <sys/stat.h>
++
++#include <SDL.h>
++#include "glad/glad.h"
++#include "nso_bridge.h"
++
++extern "C" __attribute__((used)) const char nsoCrtGeomHookMarker[] = "nso-crtgeom-hook-v1";
++
++namespace {
++const char *const kUniform[12] = { "CRTgamma", "monitorgamma", "overscanK", "saturationAmt", "curvR", "curvD",
++                                   "angleY", "aspectK", "cornersize", "cornersmooth", "halation", "filmicReinhardAmt" };
++
++struct State {
++    bool tried = false, failed = false, plain = false;
++    int plainFrames = 0;
++    std::string source, paramsPath;
++    float scan = 1.0f;
++    float p[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
++    long long stamp = -1;
++    unsigned poll = 0;
++    GLuint prog = 0, vao = 0, vbo = 0, tex = 0, fbo = 0;
++    int texW = 0, texH = 0;
++    GLint locProj = -1, locTex = -1, locTexSize = -1, locOrigin = -1, locSize = -1, locAspect = -1, locScan = -1,
++          locAngleSet = -1, locP[12] = {};
++} s;
++
++bool Wanted() {
++    if (s.tried) return !s.failed;
++    s.tried = true;
++    const char *path = std::getenv("NSO_CRTGEOM_SHADER");
++    if (!path || !path[0]) { s.failed = true; return false; }
++    std::ifstream in(path, std::ios::binary);
++    if (!in) { s.failed = true; return false; }
++    s.source.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
++    const char *scan = std::getenv("NSO_CRTGEOM_SCAN");
++    s.scan = (scan && *scan == '0') ? 0.0f : 1.0f;
++    const char *params = std::getenv("NSO_CRTGEOM_PARAMS");
++    if (params && params[0]) s.paramsPath = params;
++    return true;
++}
++
++void LoadParams() {
++    struct stat st;
++    if (s.paramsPath.empty() || stat(s.paramsPath.c_str(), &st) != 0) return;
++    const long long stamp = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec + (long long)st.st_size;
++    if (stamp == s.stamp) return;
++    FILE *f = std::fopen(s.paramsPath.c_str(), "r");
++    if (!f) return;
++    float v[13];
++    int n = 0;
++    while (n < 13 && std::fscanf(f, "%f", &v[n]) == 1) n++;
++    std::fclose(f);
++    if (n != 13) return;
++    std::memcpy(s.p, v, sizeof(v));
++    s.stamp = stamp;
++}
++
++GLuint Compile(GLenum type, const std::string &text) {
++    GLuint sh = glCreateShader(type);
++    const char *src = text.c_str();
++    glShaderSource(sh, 1, &src, nullptr);
++    glCompileShader(sh);
++    GLint ok = 0;
++    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
++    if (!ok) { glDeleteShader(sh); return 0; }
++    return sh;
++}
++
++bool Build() {
++    GLuint vs = Compile(GL_VERTEX_SHADER, "#version 330\n#define NSO_RAYLIB 1\n#define NSO_VERT 1\n" + s.source);
++    GLuint fs = Compile(GL_FRAGMENT_SHADER, "#version 330\n#define NSO_RAYLIB 1\n" + s.source);
++    if (!vs || !fs) {
++        if (vs) glDeleteShader(vs);
++        if (fs) glDeleteShader(fs);
++        return false;
++    }
++    GLuint prog = glCreateProgram();
++    glAttachShader(prog, vs);
++    glAttachShader(prog, fs);
++    glBindAttribLocation(prog, 0, "vertexPosition");
++    glBindAttribLocation(prog, 1, "vertexTexCoord");
++    glBindAttribLocation(prog, 2, "vertexColor");
++    glLinkProgram(prog);
++    glDeleteShader(vs);
++    glDeleteShader(fs);
++    GLint ok = 0;
++    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
++    if (!ok) { glDeleteProgram(prog); return false; }
++    s.prog = prog;
++    s.locProj = glGetUniformLocation(prog, "mvp");
++    s.locTex = glGetUniformLocation(prog, "Tex0");
++    s.locTexSize = glGetUniformLocation(prog, "TexSize");
++    s.locOrigin = glGetUniformLocation(prog, "VidOrigin");
++    s.locSize = glGetUniformLocation(prog, "VidSize");
++    s.locAspect = glGetUniformLocation(prog, "OutAspect");
++    s.locScan = glGetUniformLocation(prog, "ScanAmt");
++    s.locAngleSet = glGetUniformLocation(prog, "angleSet");
++    for (int i = 0; i < 12; i++) s.locP[i] = glGetUniformLocation(prog, kUniform[i]);
++    /* one quad (triangle strip), top-left first: x y z, u v, r g b a */
++    static const float quad[4][9] = {
++        { -1.f, 1.f, 0.f, 0.f, 0.f, 1.f, 1.f, 1.f, 1.f }, { 1.f, 1.f, 0.f, 1.f, 0.f, 1.f, 1.f, 1.f, 1.f },
++        { -1.f, -1.f, 0.f, 0.f, 1.f, 1.f, 1.f, 1.f, 1.f }, { 1.f, -1.f, 0.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
++    };
++    glGenVertexArrays(1, &s.vao);
++    glGenBuffers(1, &s.vbo);
++    glBindVertexArray(s.vao);
++    glBindBuffer(GL_ARRAY_BUFFER, s.vbo);
++    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
++    glEnableVertexAttribArray(0);
++    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
++    glEnableVertexAttribArray(1);
++    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
++    glEnableVertexAttribArray(2);
++    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(5 * sizeof(float)));
++    return true;
++}
++
++void EnsureTexture(int w, int h) {
++    if (s.tex && s.texW == w && s.texH == h) return;
++    if (!s.tex) { glGenTextures(1, &s.tex); glGenFramebuffers(1, &s.fbo); }
++    glBindTexture(GL_TEXTURE_2D, s.tex);
++    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    glBindFramebuffer(GL_FRAMEBUFFER, s.fbo);
++    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s.tex, 0);
++    s.texW = w;
++    s.texH = h;
++}
++} // namespace
++
++extern "C" int nsoCrtActive(void) {
++    return Wanted();
++}
++
++extern "C" void nsoCrtSetPlain(int plain) {
++    s.plain = plain != 0;
++    s.plainFrames = 0;
++}
++
++extern "C" int nsoCrtPlainReady(void) {
++    return !Wanted() || s.plainFrames >= 2;
++}
++
++extern "C" void nsoCrtPostPass(SDL_Window *wnd) {
++    if (!Wanted()) return;
++    if (s.plain) { s.plainFrames++; return; }
++    int w = 0, h = 0;
++    SDL_GL_GetDrawableSize(wnd, &w, &h);
++    if (w <= 0 || h <= 0) return;
++    if (!s.prog && !Build()) { s.failed = true; return; }
++
++    GLint prevProg, prevVao, prevArray, prevTex, prevActive, prevFbo, prevDraw, prevRead, prevView[4];
++    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
++    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArray);
++    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
++    glActiveTexture(GL_TEXTURE0);
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
++    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDraw);
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
++    glGetIntegerv(GL_VIEWPORT, prevView);
++    const GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), dt = glIsEnabled(GL_DEPTH_TEST), bl = glIsEnabled(GL_BLEND),
++                    cf = glIsEnabled(GL_CULL_FACE), st = glIsEnabled(GL_STENCIL_TEST);
++    GLboolean mask[4];
++    glGetBooleanv(GL_COLOR_WRITEMASK, mask);
++
++    EnsureTexture(w, h);
++    /* the back buffer, upside down (row 0 = top, like the texture NSO's shader expects) */
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s.fbo);
++    glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    glBindFramebuffer(GL_FRAMEBUFFER, 0);
++
++    if (!(s.poll++ & 15u)) LoadParams();
++    glDisable(GL_SCISSOR_TEST);
++    glDisable(GL_DEPTH_TEST);
++    glDisable(GL_BLEND);
++    glDisable(GL_CULL_FACE);
++    glDisable(GL_STENCIL_TEST);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glViewport(0, 0, w, h);
++    glUseProgram(s.prog);
++    static const float ident[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
++    glUniformMatrix4fv(s.locProj, 1, GL_FALSE, ident);
++    glBindTexture(GL_TEXTURE_2D, s.tex);
++    glUniform1i(s.locTex, 0);
++    const float vw = 480.0f * (float)w / (float)h;   /* a 480-line source, like the console's */
++    glUniform2f(s.locTexSize, vw, 480.0f);
++    glUniform2f(s.locOrigin, 0.0f, 0.0f);
++    glUniform2f(s.locSize, vw, 480.0f);
++    glUniform1f(s.locAspect, (float)h / (float)w);
++    glUniform1f(s.locScan, s.scan);
++    for (int i = 0; i < 12; i++) glUniform1f(s.locP[i], s.p[i]);
++    glUniform1f(s.locAngleSet, s.p[12]);
++    glBindVertexArray(s.vao);
++    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++
++    glBindVertexArray((GLuint)prevVao);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArray);
++    glUseProgram((GLuint)prevProg);
++    glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
++    glActiveTexture((GLenum)prevActive);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prevDraw);
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevRead);
++    glViewport(prevView[0], prevView[1], prevView[2], prevView[3]);
++    glColorMask(mask[0], mask[1], mask[2], mask[3]);
++    if (sc) glEnable(GL_SCISSOR_TEST);
++    if (dt) glEnable(GL_DEPTH_TEST);
++    if (bl) glEnable(GL_BLEND);
++    if (cf) glEnable(GL_CULL_FACE);
++    if (st) glEnable(GL_STENCIL_TEST);
++    (void)prevFbo;
++}

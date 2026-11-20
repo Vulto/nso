@@ -151,12 +151,28 @@ switches system (NES, SNES, Nintendo 64, GameCube).
     same 480-line source, so nothing is filtered twice. `nso` looks for the marker
     `nso-crtgeom-hook-v1` in `soh.elf`: an unpatched build keeps the CRT Geometry items hidden
     for Ocarina of Time (the game runs as before).
+  - **Mario Kart 64 (SpaghettiKart) and Banjo-Kazooie (Lighthouse):** the same libultraship
+    hook as Ocarina of Time, as `tools/spaghettikart-nsocrt.patch` and
+    `tools/lighthouse-nsocrt.patch` (`patch -p1` in `repos/n64/spaghettikart` /
+    `repos/n64/Lighthouse`, rebuild). These ports use NSO's generic End-menu launcher
+    (`nso --menu-launcher`), which stops the game right after End, so the last frame would
+    already be filtered. For `crtHook` games the launcher therefore creates the flag file
+    `<state dir>/nso-crt-plain` (`NSO_CRTGEOM_PLAIN`), waits up to 2 s for the hook's
+    `<flag>.ack` (written after two plain frames), and only then stops the game; "resume"
+    removes both files before continuing. Any other libultraship port with the same
+    `Fast3dGui.cpp` / `interpreter.cpp` can reuse these patches.
+  - **Perfect Dark:** `tools/perfect_dark-nsocrt.patch` (on top of the NSO End-menu bridge
+    in `port/src/nso_bridge.cpp`; `patch -p1` in `repos/n64/perfect_dark-src`, rebuild).
+    The port has no ImGui, so the hook is a post pass at the buffer swap
+    (`port/fast3d/nso_crtgeom.cpp`): the back buffer is copied and redrawn through the
+    `NSO_RAYLIB` shader. The bridge asks for two plain frames before it signals NSO.
   - **Not covered** (separate programs with their own window and renderer, NSO cannot
     filter them): NES OpenMadoola, OpenDana (Fire 'n Ice), Dr. Mario, Faxanadu, Zelda,
     Metroid; SNES zelda3, Super Metroid, F-Zero, Go Go Ackman, Kirby Super Star, Super
-    Mario All-Stars, Super Mario RPG, Mega Man X2/X3; every other N64 port or recomp
-    (Perfect Dark, ...); all GameCube ports (the toggle shows there but
-    has no effect until one is embedded).
+    Mario All-Stars, Super Mario RPG, Mega Man X2/X3; the N64 ports that are not built
+    here or use RT64 / Aurora / Vulkan renderers (recomps, GameCube ports), and Super Smash
+    Bros (older libultraship without `Fast3dGui.cpp`). The toggle shows for them but has no
+    effect (the item stays hidden in their menus) until the port gets the hook.
   - **Fine settings (End menu > "CRT Geometry"):** with the toggle on, the pause menu of every
     covered game has a "CRT Geometry" item that opens a screen with sliders only (Back returns
     to the list; the toggle on the games screen stays the master on/off): CRT Gamma, Monitor
