@@ -51,6 +51,8 @@
 #include "sfx.h"
 #define ENTERANIM_IMPLEMENTATION
 #include "enteranim.h"
+#define CRTGEOM_IMPLEMENTATION
+#include "crtgeom.h"
 #define EMBED_IMPLEMENTATION
 #include "embed.h"
 #define REWIND_IMPLEMENTATION
@@ -2407,10 +2409,11 @@ static void Manage_Draw(Font font) {
  * the selected one loops a small animation. ---- */
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
-enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS,
+enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_CRTGEOM,
        SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_HIDE, SB_SET_PAD,
        SB_SET_COUNT };   /* COVERS_*, GAMES: box-art scrape of this system; HIDE: Hide unplayable;
-                          * PAD: the controller screen (NES only, padui.h) */
+                          * PAD: the controller screen (NES only, padui.h);
+                          * CRTGEOM: N64/GameCube only (NES/SNES have it as SB_RETRO_CRTGEOM) */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
  * "<id>.show_controls"; NES/SNES also independent "<id>.pixel" and
@@ -2737,11 +2740,12 @@ static bool SysIsRetro(int sys) {
 static EmbedScreen ActiveEmbedScreen(void) {
     const SysSettings *s = &sysSettings[currentSystem];
     if (SysIsRetro(currentSystem))
-        return (EmbedScreen){ s->pixel, s->scanlines, false };
+        return (EmbedScreen){ s->pixel, s->scanlines, false, s->crtgeom };
     return (EmbedScreen){
         s->screen == EMBED_SCREEN_PIXEL,
-        s->screen == EMBED_SCREEN_CRT,
-        s->screen != EMBED_SCREEN_PIXEL
+        s->screen == EMBED_SCREEN_CRT || s->crtgeom,   /* no Scanlines toggle: the CRT look has its beam lines */
+        s->screen != EMBED_SCREEN_PIXEL,
+        s->crtgeom
     };
 }
 
@@ -2947,6 +2951,23 @@ static void SidebarPanel_Draw(Font font, Color red) {
             } else {
                 DrawRectangleLinesEx(cb, th, WHITE);
             }
+        }
+    }
+    {   /* Game Screen: CRT Geometry (N64 / GameCube games drawn by NSO; the others keep their window) */
+        float hy = 0.858f, y = sh * 0.922f, r = sh * 0.016f;
+        bool cur = (sidebarSetRow == SB_SET_CRTGEOM);
+        DrawFitText(font, T(S_SET_SCREEN), (Vector2){ hx, sh * hy }, hsize, sw - hx, WHITE);
+        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
+        Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
+        if (cur) DrawRectangleRec(box, WHITE);
+        else DrawRectangleLinesEx(box, th, WHITE);
+        DrawFitText(font, T(S_SET_CRTGEOM), (Vector2){ bx + sw * 0.0225f, y }, osize, bw - sw * 0.03f, cur ? red : WHITE);
+        if (st->crtgeom) {
+            DrawRectangleRec(cb, red);
+            DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f }, th * 1.3f, WHITE);
+            DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f }, th * 1.3f, WHITE);
+        } else {
+            DrawRectangleLinesEx(cb, th, WHITE);
         }
     }
 }
@@ -3384,12 +3405,16 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     }
     if (sidebarPanelFocus) {
         if (back || IsKeyPressed(KEY_LEFT) || gpLeft) { sidebarPanelFocus = false; Hide_Resync(true); return; }
+        /* the CRT Geometry row of N64/GameCube does not exist for NES/SNES (theirs sits under Scanlines) */
+        int skipRow = SysIsRetro(currentSystem) ? SB_SET_CRTGEOM : -1;
         if (up && sidebarSetRow > 0) {
             sidebarSetRow--;
+            if (sidebarSetRow == skipRow) sidebarSetRow--;
             Sfx_Play(SFX_PLUCK);
         }
         if (down && sidebarSetRow < SetRowLast()) {
             sidebarSetRow++;
+            if (sidebarSetRow == skipRow) sidebarSetRow++;
             Sfx_Play(SFX_PLUCK);
         }
         if (ok) {
@@ -3418,6 +3443,7 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
             else if (sidebarSetRow == SB_SET_VER_NA) st->versions = 0;
             else if (sidebarSetRow == SB_SET_VER_NA_EU) st->versions = 1;
             else if (sidebarSetRow == SB_SET_RUMBLE) st->rumble = !st->rumble;
+            else if (sidebarSetRow == SB_SET_CRTGEOM) st->crtgeom = !st->crtgeom;
             else st->showControls = !st->showControls;
             SysSettings_Save(currentSystem);
         }
@@ -3950,7 +3976,7 @@ NsoProc LaunchGame(const GameEntry *game) {
 #if !defined(_WIN32)
         remove(rewindShm);   /* a new file, so nothing maps the last run's */
         Rewind_Begin(rewindShm, menuDir, sysSettings[currentSystem].pixel,
-                     sysSettings[currentSystem].scanlines && !crt, showBar);
+                     sysSettings[currentSystem].scanlines, crt, showBar);
 #endif
         NsoSetEnv("NSO_REWIND_SHM", rewindShm);
     }
@@ -4422,6 +4448,8 @@ int main(int argc, char **argv) {
     if (NsoChdir(base) != 0) {
         perror("Failed to chdir to base directory");
     }
+    /* CRT Geometry for the games NSO draws itself (embedded, rewind): built once here, so no hitch later */
+    if (!CrtGeom_Load(GetDataPath("shaders/crtgeom.glsl"))) fprintf(stderr, "NSO: CRT Geometry shader unavailable\n");
 
     InitSystems();
     {
@@ -5063,6 +5091,7 @@ int main(int argc, char **argv) {
     PadNotice_Unload();
     RetroShots_Unload();
     UnloadBlurResources();
+    CrtGeom_Unload();
     SortPanel_Unload();
     SidebarIcons_Unload();
     UnloadSystems();

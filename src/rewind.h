@@ -14,7 +14,9 @@
 #include <stdbool.h>
 #include "raylib.h"
 
-void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool scanlines, bool showControls);
+/* scanlines: the Scanlines toggle (with crtgeom, the CRT shader's beam scanlines); crtgeom: draw the live
+ * frame with shaders/crtgeom.glsl (crtgeom.h) like Mednafen does, so rewinding does not change the look. */
+void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool scanlines, bool crtgeom, bool showControls);
 void Rewind_End(void);
 /* Back to the plain game window at once (key released, window shown): before the Suspend Menu grabs it. */
 void Rewind_Reset(void);
@@ -29,6 +31,7 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
 #ifndef REWIND_IMPLEMENTATION_ONCE
 #define REWIND_IMPLEMENTATION_ONCE
 #include "rewindanim.h"
+#include "crtgeom.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,7 +55,7 @@ typedef struct {   /* same layout as Mednafen's NsoRwHeader */
 } RewindShm;
 
 static struct {
-    bool session, pixel, scanlines, showControls, texOk, hidden, injected, menuTap, filterPoint;
+    bool session, pixel, scanlines, crtgeom, showControls, texOk, hidden, injected, menuTap, filterPoint;
     char shmPath[1300], menuDir[1200];
     void *map;
     size_t mapSize;
@@ -111,7 +114,7 @@ void Rewind_End(void)
     memset(&rw, 0, sizeof(rw));
 }
 
-void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool scanlines, bool showControls)
+void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool scanlines, bool crtgeom, bool showControls)
 {
     Rewind_End();
     if (!shmPath || !menuDir) return;
@@ -120,6 +123,7 @@ void Rewind_Begin(const char *shmPath, const char *menuDir, bool pixel, bool sca
     snprintf(rw.menuDir, sizeof(rw.menuDir), "%s", menuDir);
     rw.pixel = pixel;
     rw.scanlines = scanlines;
+    rw.crtgeom = crtgeom;
     rw.showControls = showControls;
     rw.session = true;
     RewindAnim_Init(&rw.anim);
@@ -302,9 +306,12 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
             rw.filterPoint = point;
         }
         Rectangle src = { 0, 0, (float)s->w, (float)s->h };
-        if (RewindAnim_RealWindowShows(&rw.anim) == false)
-            DrawTexturePro(rw.liveTex, src, (Rectangle){ x, y, w, h }, (Vector2){ 0, 0 }, 0.0f, WHITE);
-        if (rw.scanlines && look.scale > 0.9f && !RewindAnim_RealWindowShows(&rw.anim)) {
+        bool crt = rw.crtgeom && CrtGeom_Ready();
+        if (RewindAnim_RealWindowShows(&rw.anim) == false) {
+            if (crt) CrtGeom_Draw(rw.liveTex, src, (Rectangle){ x, y, w, h }, rw.scanlines, WHITE);
+            else DrawTexturePro(rw.liveTex, src, (Rectangle){ x, y, w, h }, (Vector2){ 0, 0 }, 0.0f, WHITE);
+        }
+        if (rw.scanlines && !crt && look.scale > 0.9f && !RewindAnim_RealWindowShows(&rw.anim)) {
             /* Mednafen's scanlines (90%): the lower half of every source row, only while the
              * picture is close to its real size where the lines are still clean */
             float row = h / (float)s->h, a = 0.9f * fminf(1.0f, (look.scale - 0.9f) / 0.1f);
@@ -361,7 +368,7 @@ void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const c
 }
 
 #else   /* not Linux: no rewind */
-void Rewind_Begin(const char *a, const char *b, bool c, bool d, bool e) { (void)a; (void)b; (void)c; (void)d; (void)e; }
+void Rewind_Begin(const char *a, const char *b, bool c, bool d, bool e, bool f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; }
 void Rewind_Reset(void) {}
 void Rewind_End(void) {}
 void Rewind_Frame(float dt, bool a, bool b) { (void)dt; (void)a; (void)b; }

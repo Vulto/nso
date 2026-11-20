@@ -5,7 +5,7 @@ HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
 	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h
 HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h
-HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/n64pad.h
+HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/crtgeom.h src/n64pad.h
 HDRS += src/padmap.h src/padui.h src/jspad.h
 
 ifeq ($(OS),Windows_NT)

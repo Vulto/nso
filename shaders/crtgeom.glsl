@@ -17,11 +17,17 @@
  * One source, three users (selected by the macro the host prepends):
  *   NSO_VERT   vertex stage  (Mednafen's ARB GLSL path, GLSL 1.10/1.20)
  *   (nothing)  fragment stage of the same
- *   NSO_RAYLIB fragment stage for raylib (#version 330); the host sets it.
+ *   NSO_RAYLIB both stages for raylib (#version 330); the host sets it (with
+ *              NSO_VERT for the vertex stage). The fragment colour is tinted by
+ *              raylib's vertex colour (fades) like a normal DrawTexturePro.
  */
 
 #ifdef NSO_RAYLIB
+#ifdef NSO_VERT
+#define varying out
+#else
 #define varying in
+#endif
 #define TEX2D_RAW(c) texture(Tex0, (c))
 #else
 #define TEX2D_RAW(c) texture2D(Tex0, (c))
@@ -56,6 +62,13 @@ varying vec2 vUV;
 varying vec3 vStretch;
 varying vec2 vSin;
 varying vec2 vCos;
+#ifdef NSO_RAYLIB
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec4 vertexColor;
+uniform mat4 mvp;
+varying vec4 vColor;
+#endif
 
 float intersectV(vec2 xy, vec2 sa, vec2 ca) {
     float A = dot(xy, xy) + curvD * curvD;
@@ -98,12 +111,19 @@ vec3 maxscale(vec2 sa, vec2 ca, vec2 aspect) {
 
 void main() {
     const vec2 angle = vec2(0.0, -0.01);   /* tilt, radians */
+#ifdef NSO_RAYLIB
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    vColor = vertexColor;
+    vec2 tc = vertexTexCoord;
+#else
     gl_Position = ftransform();
+    vec2 tc = gl_MultiTexCoord0.xy;
+#endif
     vSin = sin(angle);
     vCos = cos(angle);
     vStretch = maxscale(vSin, vCos, vec2(1.0, OutAspect));
     /* 0..1 over the picture */
-    vUV = (gl_MultiTexCoord0.xy * TexSize - VidOrigin) / VidSize;
+    vUV = (tc * TexSize - VidOrigin) / VidSize;
 }
 #else
 /* -------------------------------------------------------------- fragment */
@@ -112,6 +132,7 @@ in vec2 vUV;
 in vec3 vStretch;
 in vec2 vSin;
 in vec2 vCos;
+in vec4 vColor;
 out vec4 finalColor;
 #else
 varying vec2 vUV;
@@ -251,7 +272,7 @@ void main() {
     if (xy.x < 0.0 || xy.x > 1.0 || xy.y < 0.0 || xy.y > 1.0) mul_res = vec3(0.0);
 
 #ifdef NSO_RAYLIB
-    finalColor = vec4(mul_res, 1.0);
+    finalColor = vec4(mul_res * vColor.rgb, vColor.a);
 #else
     gl_FragColor = vec4(mul_res, 1.0);
 #endif

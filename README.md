@@ -124,14 +124,27 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   are listed as "Missing deps: ...". N64 and GameCube ports are large and can take a
   long time to build.
 - **Language:** English / Português.
-- **CRT Geometry (NES / SNES, below Scanlines):** a CRT-monitor look (screen
-  curvature, rounded corners, beam scanlines, glow, dot mask) from the shader
-  in `shaders/crtgeom.glsl`. It draws inside the picture area picked by Pixel
-  Perfect / 4:3, so those keep their sizes. With it on, the shader draws the
-  scanlines (follow the Scanlines toggle) instead of Mednafen's line overlay.
-  Saved per system as `<system>.crtgeom` in `config/nso.cfg`. NES/SNES run in a
-  Mednafen with a small patch: `tools/mednafen-nsocrt.patch` (apply to the
-  `mednafen/` tree); an unpatched Mednafen fails to start with the toggle on. Other systems/ports are not covered yet.
+- **CRT Geometry (below Scanlines on NES / SNES; "Game Screen" on N64 / GameCube):** a
+  CRT-monitor look (screen curvature, rounded corners, beam scanlines, glow, dot mask)
+  from the shader in `shaders/crtgeom.glsl`. It draws inside the picture area picked by
+  Pixel Perfect / 4:3, so those keep their sizes. Saved per system as `<system>.crtgeom`
+  in `config/nso.cfg` (off by default). Where it applies:
+  - **Games NSO draws itself** (the embedded modules: Super Mario Bros, Mega Man 3,
+    Super Mario World, Star Fox, Super Mario 64, Majora's Mask, Star Fox 64, AeroGauge),
+    including the pause menu's frozen frame, the return-to-grid zoom and the rewind
+    overlay: raylib shader, built once at start. NES/SNES: the shader draws the scanlines
+    (they follow the Scanlines toggle) instead of the plain dark bands. N64: always with its
+    beam scanlines (no Scanlines toggle there).
+  - **NES / SNES games run by Mednafen** (all `repos/roms` games): a Mednafen with a small
+    patch, `tools/mednafen-nsocrt.patch` (apply to the `mednafen/` tree; an unpatched
+    Mednafen fails to start with the toggle on). The rewind overlay uses the same shader,
+    so holding rewind does not change the look.
+  - **Not covered** (separate programs with their own window and renderer, NSO cannot
+    filter them): NES OpenMadoola, OpenDana (Fire 'n Ice), Dr. Mario, Faxanadu, Zelda,
+    Metroid; SNES zelda3, Super Metroid, F-Zero, Go Go Ackman, Kirby Super Star, Super
+    Mario All-Stars, Super Mario RPG, Mega Man X2/X3; every other N64 port or recomp
+    (Ocarina of Time, Perfect Dark, ...); all GameCube ports (the toggle shows there but
+    has no effect until one is embedded).
 - **NES / SNES / N64 controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
   fills on the hint bar's A glyph; the holds' controls light only the button they are bound to): it asks for one button at a time (Up, Down, Left,

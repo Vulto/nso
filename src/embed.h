@@ -21,11 +21,12 @@
 #include "raylib.h"
 #include "../embed/nsomod.h"
 #include "padmap.h"
+#include "crtgeom.h"
 
 /* Legacy "<system>.screen" values for N64/GameCube embeds (not shown in Settings).
  * NES/SNES use EmbedScreen (Pixel Perfect + Scanlines toggles) instead. */
 enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
-typedef struct { bool pixel; bool scanlines; bool fill43; } EmbedScreen;
+typedef struct { bool pixel; bool scanlines; bool fill43; bool crtgeom; } EmbedScreen;   /* crtgeom: shaders/crtgeom.glsl */
 enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_QUIT,
        EMBED_MENU_COUNT };
 /* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime). */
@@ -144,6 +145,8 @@ void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_
 void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t);
 void Embed_DrawExternalResumeFrame(EmbedScreen screen);
 void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim);
+/* The same, the game frame drawn with CRT Geometry (crt) and its beam scanlines (scan). */
+void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim, bool crt, bool scan);
 float Embed_MenuOpacity(void);
 void Embed_Stop(void);
 bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots);
@@ -166,13 +169,19 @@ int Embed_ExternalResult(void);
 #include "n64pad.h"
 
 /* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
-void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
+void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim, bool crt, bool scan)
 {
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, dim));
     Rectangle r = Embed_ZoomRect(card, game, p);
-    if (tex.id) DrawTexturePro(tex, (Rectangle){ 0, 0, (float)tex.width, (float)tex.height }, r,
-                               (Vector2){ 0 }, 0.0f, Fade(WHITE, alpha));
+    Rectangle src = { 0, 0, (float)tex.width, (float)tex.height };
+    if (tex.id && crt) CrtGeom_Draw(tex, src, r, scan, Fade(WHITE, alpha));
+    else if (tex.id) DrawTexturePro(tex, src, r, (Vector2){ 0 }, 0.0f, Fade(WHITE, alpha));
     else DrawRectangleRec(r, Fade(BLACK, alpha));
+}
+
+void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim)
+{
+    Embed_DrawZoomCrt(tex, game, card, p, alpha, dim, false, false);
 }
 
 static const PadSysMap *embedPadMap = NULL;   /* a custom controller mapping (padmap.h), NULL = the defaults */
@@ -191,6 +200,8 @@ bool Embed_Update(float dt) { (void)dt; return false; }
 void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
 { (void)font; (void)screen; (void)text; (void)blur; (void)blurDirLoc; }
 void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t) { (void)screen; (void)card; (void)t; }
+void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim, bool crt, bool scan)
+{ (void)tex; (void)game; (void)card; (void)p; (void)alpha; (void)dim; (void)crt; (void)scan; }
 void Embed_DrawExternalResumeFrame(EmbedScreen screen) { (void)screen; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 void Embed_Stop(void) {}
@@ -1119,6 +1130,19 @@ static void Embed_DrawSlots(Font font, const char *const text[EMBED_TXT_COUNT], 
     }
 }
 
+/* CRT Geometry applies when the toggle is on and the shader built. Its beam scanlines follow
+ * EmbedScreen.scanlines (NES/SNES: the Scanlines toggle; N64/GameCube: main.c sets it with
+ * CRT Geometry, they have no Scanlines toggle). The plain overlay lines are replaced by it. */
+static bool Embed_UseCrt(EmbedScreen sc) { return sc.crtgeom && CrtGeom_Ready(); }
+static bool Embed_CrtScan(EmbedScreen sc) { return sc.scanlines; }
+
+static void DrawTexturePro_OrCrt(bool crt, EmbedScreen sc, Rectangle dst)
+{
+    Rectangle src = { 0, 0, (float)embed.fbw, (float)embed.fbh };
+    if (crt) CrtGeom_Draw(embed.tex, src, dst, Embed_CrtScan(sc), WHITE);
+    else DrawTexturePro(embed.tex, src, dst, (Vector2){ 0 }, 0.0f, WHITE);
+}
+
 void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
 {
     if (!embed.active) return;
@@ -1127,9 +1151,9 @@ void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_
     float a = Embed_MenuOpacity();
     ClearBackground(BLACK);
     Rectangle dst = Embed_DestForScreen(screen, sw, sh, embed.fbw, embed.fbh);
-    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,
-                   (Vector2){ 0 }, 0.0f, WHITE);
-    if (screen.scanlines) {   /* a dark band under every NES line */
+    bool crt = Embed_UseCrt(screen);
+    DrawTexturePro_OrCrt(crt, screen, dst);
+    if (screen.scanlines && !crt) {   /* a dark band under every NES line */
         float lh = dst.height / embed.fbh;
         for (int y = 0; y < embed.fbh; y++)
             DrawRectangleRec((Rectangle){ dst.x, dst.y + y * lh + lh * 0.6f, dst.width, fmaxf(1.0f, lh * 0.4f) },
@@ -1210,7 +1234,8 @@ void Embed_DrawBack(EmbedScreen screen, Rectangle card, float t)
     Rectangle a = Embed_DestForScreen(screen, (float)GetScreenWidth(), (float)GetScreenHeight(),
                                  embed.fbw, embed.fbh);
     float q = 1.0f - t;
-    Embed_DrawZoom(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q);
+    Embed_DrawZoomCrt(embed.tex, a, card, 1.0f - Embed_BackEase(t), q * q, 0.35f * q,
+                      Embed_UseCrt(screen), Embed_CrtScan(screen));
 }
 
 void Embed_DrawExternalResumeFrame(EmbedScreen screen)
@@ -1219,8 +1244,7 @@ void Embed_DrawExternalResumeFrame(EmbedScreen screen)
     Rectangle dst = Embed_DestForScreen(screen, (float)GetScreenWidth(), (float)GetScreenHeight(),
                                    embed.fbw, embed.fbh);
     ClearBackground(BLACK);
-    DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh }, dst,
-                   (Vector2){ 0 }, 0.0f, WHITE);
+    DrawTexturePro_OrCrt(Embed_UseCrt(screen), screen, dst);
 }
 #endif /* _WIN32 */
 
