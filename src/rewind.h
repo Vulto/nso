@@ -25,6 +25,8 @@ void Rewind_Frame(float dt, bool inGame, bool zlzrHeld);
 /* True once after a short tap of ZL+ZR: open the Suspend Menu. */
 bool Rewind_MenuTap(void);
 bool Rewind_Session(void);
+/* True when the rewind panel, live frame or start-of-game caption must be drawn. */
+bool Rewind_NeedsDraw(void);
 /* The game's latest raw frame (what Mednafen's own shader receives), uploaded to a texture: the CRT
  * Geometry sub-screen previews on it, because the End menu's screenshot already carries the shader.
  * false while no frame was published yet. */
@@ -76,6 +78,13 @@ static struct {
 static int Rewind_XError(Display *d, XErrorEvent *e) { (void)d; (void)e; return 0; }
 
 bool Rewind_Session(void) { return rw.session; }
+bool Rewind_NeedsDraw(void)
+{
+    if (!rw.session) return false;
+    if (RewindAnim_Active(&rw.anim)) return true;
+    if (rw.showControls && RewindAnim_StartAlpha(rw.startT) > 0.003f) return true;
+    return false;
+}
 
 static void Rewind_SetHidden(bool hide)
 {
@@ -393,6 +402,7 @@ void Rewind_End(void) {}
 void Rewind_Frame(float dt, bool a, bool b) { (void)dt; (void)a; (void)b; }
 bool Rewind_MenuTap(void) { return false; }
 bool Rewind_Session(void) { return false; }
+bool Rewind_NeedsDraw(void) { return false; }
 bool Rewind_LiveFrame(Texture2D *t, Rectangle *r) { (void)t; (void)r; return false; }
 void Rewind_Draw(Font f, const char *a, const char *b, const char *c, const char *d) { (void)f; (void)a; (void)b; (void)c; (void)d; }
 #endif

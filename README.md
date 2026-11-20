@@ -114,6 +114,12 @@ Starting a different game first asks "Close <game>?": Yes (A / Enter) closes
 the paused game and starts the new one, No (B / Backspace) goes back to the
 grid. Quitting NSO closes the paused game too.
 
+While a Mednafen game or a reparented port owns the screen, NSO stops
+redrawing the 1920×1080 4×-MSAA grid and waits on input (End still opens
+the menu, and the enter/leave animations still play). Embedded modules
+keep the game loop and only skip that extra frontend drawing. Covers stay
+loaded, so coming back to the grid has no loading screen.
+
 ### Settings screen (gear icon)
 
 On the main menu press Down to select the gear, then Enter/A. Left/Right
@@ -134,7 +140,15 @@ switches system (NES, SNES, Nintendo 64, GameCube).
   CRT-monitor look (screen curvature, rounded corners, beam scanlines, glow, dot mask)
   from the shader in `shaders/crtgeom.glsl`. It draws inside the picture area picked by
   Pixel Perfect / 4:3, so those keep their sizes. Saved per system as `<system>.crtgeom`
-  in `config/nso.cfg` (off by default). Where it applies:
+  in `config/nso.cfg` (off by default). On the CRT Geometry row, A cycles
+  Off, High (Alta) and Fast (Rápida); High is the full look, Fast skips the
+  3-tap scanline filter and uses a cheaper glow and tone map. While High or
+  Fast is on, the row reads "CRT Geometry  ·  High" or "Fast". The same
+  choice is the first item of the in-game CRT Geometry screen ("Fast CRT" /
+  "CRT rápido"). It is stored per system as `<system>.crtgeom_fast`.
+  The shader runs at an internal size of about 960×720 (4:3) into a
+  non-MSAA target, then the picture is scaled to the output so the 2-pixel
+  phosphor mask stays sharp. Where it applies:
   - **Games NSO draws itself** (the embedded modules: Super Mario Bros, Mega Man 3,
     Super Mario World, Star Fox, Super Mario 64, Majora's Mask, Star Fox 64, AeroGauge),
     including the pause menu's frozen frame, the return-to-grid zoom and the rewind

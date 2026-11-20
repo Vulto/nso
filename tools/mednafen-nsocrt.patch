@@ -1,16 +1,49 @@
 diff --git a/src/drivers/shader.cpp b/src/drivers/shader.cpp
-index f9a2f35..58ed9dd 100644
+index f9a2f35..a235dba 100644
 --- a/src/drivers/shader.cpp
 +++ b/src/drivers/shader.cpp
-@@ -21,6 +21,7 @@
+@@ -21,6 +21,17 @@
  
  #include <mednafen/FileStream.h>
  #include <mednafen/MemoryStream.h>
 +#include <sys/stat.h>
++#ifndef GL_FRAMEBUFFER
++#define GL_FRAMEBUFFER 0x8D40
++#define GL_COLOR_ATTACHMENT0 0x8CE0
++#endif
++#ifndef GL_FRAMEBUFFER_COMPLETE
++#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
++#endif
++#ifndef GL_RGBA8
++#define GL_RGBA8 0x8058
++#endif
  
  #define MDFN_GL_TRY(x, ...)								\
  	{										\
-@@ -267,6 +268,36 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
+@@ -247,6 +258,22 @@ void OpenGL_Blitter_Shader::Cleanup(void)
+ 	}
+ 
+         oblt->p_glDisable(GL_FRAGMENT_PROGRAM_ARB);
++#ifdef __linux__
++	if(NsoCrtBlitP) {
++	 oblt->p_glDeleteObjectARB((GLhandleARB)NsoCrtBlitP);
++	 NsoCrtBlitP = 0;
++	}
++	if(NsoCrtFbo && NsoCrtGL[3]) {
++	 typedef void (*DelFB)(GLsizei, const GLuint *);
++	 ((DelFB)NsoCrtGL[3])(1, &NsoCrtFbo);
++	 NsoCrtFbo = 0;
++	}
++	if(NsoCrtColor) {
++	 oblt->p_glDeleteTextures(1, &NsoCrtColor);
++	 NsoCrtColor = 0;
++	}
++	NsoCrtIw = NsoCrtIh = 0;
++#endif
+ }
+ 
+ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType shader_type, const ShaderParams& in_params) : oblt(in_oblt), params(in_params)
+@@ -267,6 +294,41 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
  		CompileShader(CSP[0], vertSABR, fragSABR);
  		break;
  
@@ -38,6 +71,11 @@ index f9a2f35..58ed9dd 100644
 +		  NsoCrtParamsPath = (pp && *pp) ? pp : "";
 +		  NsoCrtParamsStamp = -1;
 +		  NsoCrtPollCount = 0;
++		  NsoCrtFast = (getenv("NSO_CRTGEOM_FAST") && getenv("NSO_CRTGEOM_FAST")[0] == '1') ? 1.0f : 0.0f;
++		  NsoCrtFbo = NsoCrtColor = NsoCrtBlitP = 0;
++		  NsoCrtIw = NsoCrtIh = NsoCrtSw = NsoCrtSh = 0;
++		  NsoCrtPrevTex = NsoCrtScissor = 0;
++		  for(int i = 0; i < 10; i++) NsoCrtGL[i] = 0;
 +		  NsoCrtPollParams();
 +		 }
 +		 CompileShader(CSP[0], (std::string("#define NSO_VERT 1\n") + NsoCrtSource).c_str(), NsoCrtSource.c_str());
@@ -47,7 +85,7 @@ index f9a2f35..58ed9dd 100644
  	  case SHADER_GOAT:
  		{
  #if 0
-@@ -424,6 +455,29 @@ void OpenGL_Blitter_Shader::UpdateGoatMask(const unsigned rotated)
+@@ -424,6 +486,113 @@ void OpenGL_Blitter_Shader::UpdateGoatMask(const unsigned rotated)
   GoatMaskLastRot = rotated;
  }
  
@@ -62,22 +100,106 @@ index f9a2f35..58ed9dd 100644
 + FILE *fp = fopen(NsoCrtParamsPath.c_str(), "r");
 + if(!fp)
 +  return;
-+ float v[13];
++ float v[14];
 + unsigned n = 0;
-+ while(n < 13 && fscanf(fp, "%f", &v[n]) == 1)
++ while(n < 14 && fscanf(fp, "%f", &v[n]) == 1)
 +  n++;
 + fclose(fp);
-+ if(n != 13)
++ if(n < 13)
 +  return;
 + for(unsigned i = 0; i < 13; i++)
 +  NsoCrtP[i] = v[i];
++ if(n >= 14)
++  NsoCrtFast = v[13] > 0.5f ? 1.0f : 0.0f;
 + NsoCrtParamsStamp = stamp;
++}
++
++
++static void *NsoCrtProc(const char *name)
++{
++	return (void *)SDL_GL_GetProcAddress(name);
++}
++
++void OpenGL_Blitter_Shader::NsoCrtEnsure(int w, int h)
++{
++#ifdef __linux__
++	if(w < 1) w = 1;
++	if(h < 1) h = 1;
++	if(!NsoCrtGL[0]) {
++		NsoCrtGL[0] = NsoCrtProc("glGenFramebuffers");
++		NsoCrtGL[1] = NsoCrtProc("glBindFramebuffer");
++		NsoCrtGL[2] = NsoCrtProc("glFramebufferTexture2D");
++		NsoCrtGL[3] = NsoCrtProc("glDeleteFramebuffers");
++		NsoCrtGL[4] = NsoCrtProc("glGenTextures");
++		NsoCrtGL[5] = NsoCrtProc("glDeleteTextures");
++		NsoCrtGL[6] = NsoCrtProc("glCheckFramebufferStatus");
++		NsoCrtGL[7] = NsoCrtProc("glBlitFramebuffer");
++		if(!NsoCrtGL[7]) NsoCrtGL[7] = NsoCrtProc("glBlitFramebufferEXT");
++		NsoCrtGL[8] = NsoCrtProc("glDrawBuffer");
++	}
++	if(!NsoCrtGL[0] || !NsoCrtGL[1] || !NsoCrtGL[2]) return;
++	typedef void (*GenFB)(GLsizei, GLuint *);
++	typedef void (*BindFB)(GLenum, GLuint);
++	typedef void (*FBTex)(GLenum, GLenum, GLenum, GLuint, GLint);
++	typedef void (*DelFB)(GLsizei, const GLuint *);
++	if(NsoCrtFbo && (NsoCrtIw != w || NsoCrtIh != h)) {
++		if(NsoCrtGL[3]) ((DelFB)NsoCrtGL[3])(1, &NsoCrtFbo);
++		if(NsoCrtColor) oblt->p_glDeleteTextures(1, &NsoCrtColor);
++		NsoCrtFbo = NsoCrtColor = 0;
++	}
++	if(!NsoCrtFbo) {
++		oblt->p_glGenTextures(1, &NsoCrtColor);
++		oblt->p_glBindTexture(GL_TEXTURE_2D, NsoCrtColor);
++		oblt->p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++		oblt->p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++		oblt->p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++		oblt->p_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++		oblt->p_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
++		((GenFB)NsoCrtGL[0])(1, &NsoCrtFbo);
++		((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, NsoCrtFbo);
++		((FBTex)NsoCrtGL[2])(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, NsoCrtColor, 0);
++		GLenum ok = GL_FRAMEBUFFER_COMPLETE;
++		if (NsoCrtGL[6]) {
++		 typedef GLenum (*ChkFB)(GLenum);
++		 ok = ((ChkFB)NsoCrtGL[6])(GL_FRAMEBUFFER);
++		}
++		((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
++		if (ok != GL_FRAMEBUFFER_COMPLETE) {
++		 if(NsoCrtGL[3]) { typedef void (*DelFB)(GLsizei, const GLuint *); ((DelFB)NsoCrtGL[3])(1, &NsoCrtFbo); }
++		 if(NsoCrtColor) oblt->p_glDeleteTextures(1, &NsoCrtColor);
++		 NsoCrtFbo = NsoCrtColor = 0;
++		 NsoCrtIw = NsoCrtIh = 0;
++		 return;
++		}
++		NsoCrtIw = w;
++		NsoCrtIh = h;
++	}
++	if(!NsoCrtBlitP) {
++		static const char vs[] = "void main(void){ gl_Position = ftransform(); gl_TexCoord[0] = gl_MultiTexCoord0; }";
++		static const char fs[] =
++			"uniform sampler2D Tex0;\n"
++			"uniform float DotMask;\n"
++			"void main(void){\n"
++			" vec3 c = texture2D(Tex0, gl_TexCoord[0].xy).rgb;\n"
++			" if(DotMask > 0.5){\n"
++			"  vec3 m = mix(vec3(1.0, 0.7, 1.0), vec3(0.7, 1.0, 0.7), floor(mod(gl_FragCoord.x, 2.0)));\n"
++			"  c *= m * 1.05;\n"
++			" }\n"
++			" gl_FragColor = vec4(c, 1.0);\n"
++			"}\n";
++		CompiledShader cs = {};
++		try { CompileShader(cs, vs, fs); NsoCrtBlitP = (GLuint)cs.p; }
++		catch(...) { NsoCrtBlitP = 0; }
++	}
++#else
++	(void)w; (void)h;
++#endif
 +}
 +
  void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_screen_h, const MDFN_Rect *rect, const MDFN_Rect *dest_rect, int tw, int th, int orig_tw, int orig_th, unsigned rotated)
  {
          oblt->p_glEnable(GL_FRAGMENT_PROGRAM_ARB);
-@@ -446,6 +500,24 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -446,6 +615,59 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
           oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTexture"), 0);
           oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTextureSize"), tw, th);
  	}
@@ -87,10 +209,45 @@ index f9a2f35..58ed9dd 100644
 +					     "aspectK", "cornersize", "cornersmooth", "halation", "filmicReinhardAmt" };
 +	 if(!(NsoCrtPollCount++ & 15))
 +	  NsoCrtPollParams();
++	 int dw = dest_rect->w, dh = dest_rect->h;
++	 int ih = dh > 720 ? 720 : dh;
++	 int iw = dh > 0 ? (int)((float)ih * (float)dw / (float)dh + 0.5f) : dw;
++	 if(iw < 1) iw = 1;
++	 if(ih < 1) ih = 1;
++	 iw &= ~1; ih &= ~1;
++	 NsoCrtDest[0] = dest_rect->x; NsoCrtDest[1] = dest_rect->y;
++	 NsoCrtDest[2] = dw; NsoCrtDest[3] = dh;
++	 NsoCrtSw = gl_screen_w; NsoCrtSh = gl_screen_h;
++	 GLint prevTex = 0, scissorOn = 0;
++	 oblt->p_glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
++	 oblt->p_glGetIntegerv(GL_SCISSOR_TEST, &scissorOn);
++	 NsoCrtPrevTex = (int)prevTex;
++	 NsoCrtScissor = (int)scissorOn;
++	 NsoCrtEnsure(iw, ih);
++#ifdef __linux__
++	 if(NsoCrtFbo && NsoCrtGL[1]) {
++	  typedef void (*BindFB)(GLenum, GLuint);
++	  ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, NsoCrtFbo);
++	  if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(GL_COLOR_ATTACHMENT0); }
++	  oblt->p_glViewport(0, 0, NsoCrtIw, NsoCrtIh);
++	  if(scissorOn) oblt->p_glDisable(GL_SCISSOR_TEST);
++	  oblt->p_glMatrixMode(GL_PROJECTION);
++	  oblt->p_glPushMatrix();
++	  oblt->p_glLoadIdentity();
++	  oblt->p_glOrtho(dest_rect->x, dest_rect->x + dw, dest_rect->y + dh, dest_rect->y, -1.0, 1.0);
++	  oblt->p_glMatrixMode(GL_MODELVIEW);
++	 }
++#endif
++	 /* Ensure and the FBO path bind our target texture; the caller then
++	  * uploads the new frame with TexSubImage2D and DrawQuad, so put the
++	  * game texture back first. */
++	 if(prevTex) oblt->p_glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
 + 	 oblt->p_glUseProgramObjectARB(CSP[0].p);
 +	 for(unsigned i = 0; i < 12; i++)
 +	  oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, pn[i]), NsoCrtP[i]);
 +	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "angleSet"), NsoCrtP[12]);
++	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "CrtFast"), NsoCrtFast);
++	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "DotMask"), NsoCrtFbo ? 0.0f : 1.0f);
 +
 +         oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "Tex0"), 0);
 +         oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "TexSize"), tw, th);
@@ -102,8 +259,53 @@ index f9a2f35..58ed9dd 100644
  	else if(OurType == SHADER_GOAT)
  	{
   	 oblt->p_glUseProgramObjectARB(CSP[0].p);
+@@ -582,6 +804,44 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+ 
+ void OpenGL_Blitter_Shader::ShaderEnd(void)
+ {
++#ifdef __linux__
++	if(OurType == SHADER_NSOCRT && NsoCrtFbo && NsoCrtGL[1]) {
++		typedef void (*BindFB)(GLenum, GLuint);
++		oblt->p_glMatrixMode(GL_PROJECTION);
++		oblt->p_glPopMatrix();
++		oblt->p_glMatrixMode(GL_MODELVIEW);
++		int dx = NsoCrtDest[0], dy = NsoCrtDest[1], dw = NsoCrtDest[2], dh = NsoCrtDest[3];
++		bool blitOk = false;
++		if(NsoCrtGL[7]) {
++		 typedef void (*BlitFB)(GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLbitfield,GLenum);
++		 int gy0 = NsoCrtSh - (dy + dh);
++		 int gy1 = NsoCrtSh - dy;
++		 ((BindFB)NsoCrtGL[1])(0x8CA8, NsoCrtFbo);
++		 ((BindFB)NsoCrtGL[1])(0x8CA9, 0);
++		 ((BlitFB)NsoCrtGL[7])(0, 0, NsoCrtIw, NsoCrtIh, dx, gy0, dx + dw, gy1, 0x00004000, 0x2601);
++		 ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
++		 if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(0x0405); } /* GL_BACK */
++		 blitOk = true;
++		} else {
++		 ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
++		 if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(0x0405); }
++		}
++		oblt->p_glViewport(0, 0, NsoCrtSw, NsoCrtSh);
++		if(!blitOk && NsoCrtBlitP) {
++		 oblt->p_glUseProgramObjectARB((GLhandleARB)NsoCrtBlitP);
++		 oblt->p_glBindTexture(GL_TEXTURE_2D, NsoCrtColor);
++		 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB((GLhandleARB)NsoCrtBlitP, "DotMask"), 1.0f);
++		 oblt->p_glBegin(GL_QUADS);
++		 oblt->p_glTexCoord2f(0.0f, 1.0f); oblt->p_glVertex2f((float)dx, (float)dy);
++		 oblt->p_glTexCoord2f(1.0f, 1.0f); oblt->p_glVertex2f((float)(dx + dw), (float)dy);
++		 oblt->p_glTexCoord2f(1.0f, 0.0f); oblt->p_glVertex2f((float)(dx + dw), (float)(dy + dh));
++		 oblt->p_glTexCoord2f(0.0f, 0.0f); oblt->p_glVertex2f((float)dx, (float)(dy + dh));
++		 oblt->p_glEnd();
++		}
++		if(NsoCrtPrevTex) oblt->p_glBindTexture(GL_TEXTURE_2D, (GLuint)NsoCrtPrevTex);
++		if(NsoCrtScissor) oblt->p_glEnable(GL_SCISSOR_TEST);
++	}
++#endif
+ 	oblt->p_glUseProgramObjectARB(0);
+ 	oblt->p_glDisable(GL_FRAGMENT_PROGRAM_ARB);
+ }
 diff --git a/src/drivers/shader.h b/src/drivers/shader.h
-index 38499e7..9715a0a 100644
+index 38499e7..6424d30 100644
 --- a/src/drivers/shader.h
 +++ b/src/drivers/shader.h
 @@ -17,6 +17,7 @@ enum ShaderType
@@ -114,7 +316,7 @@ index 38499e7..9715a0a 100644
  };
  
  struct ShaderParams
-@@ -69,6 +70,14 @@ class OpenGL_Blitter_Shader
+@@ -69,6 +70,22 @@ class OpenGL_Blitter_Shader
  
   const ShaderParams params;
  
@@ -122,10 +324,18 @@ index 38499e7..9715a0a 100644
 + float NsoCrtScan;
 + // NSO: the fine settings (12 values + "angle set"), re-read when the file named by NSO_CRTGEOM_PARAMS changes
 + float NsoCrtP[13];
++ float NsoCrtFast;
 + std::string NsoCrtParamsPath;
 + long long NsoCrtParamsStamp;
 + unsigned NsoCrtPollCount;
 + void NsoCrtPollParams(void);
++ GLuint NsoCrtFbo, NsoCrtColor, NsoCrtBlitP;
++ int NsoCrtIw, NsoCrtIh;
++ int NsoCrtDest[4];
++ int NsoCrtSw, NsoCrtSh;
++ int NsoCrtPrevTex, NsoCrtScissor;
++ void *NsoCrtGL[10];
++ void NsoCrtEnsure(int w, int h);
   void UpdateGoatMask(const unsigned rotated);
   unsigned GoatMaskLastRot;
  };

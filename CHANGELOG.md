@@ -4,6 +4,10 @@ All notable changes to NSO. Newest first. Versions follow the Git tags.
 
 ## [Unreleased]
 
+### Performance
+- While a Mednafen game or a reparented port owns the screen, NSO no longer redraws the grid at 60 fps (it waits on input). End, the close prompt and park/resume still work; enter/leave animations still play; covers stay loaded.
+- CRT Geometry is rendered at about 960×720 (4:3) into a non-MSAA target and scaled up, with the 2-pixel phosphor mask applied at the output. An optional Fast path (cheaper scanline filter, glow and tone map) is a toggle: Settings cycles Off / High (Alta) / Fast (Rápida); the in-game CRT screen has "Fast CRT" / "CRT rápido". Saved as `<system>.crtgeom_fast`. Applied in NSO, Mednafen (`tools/mednafen-nsocrt.patch`) and the hooked ports (SoH, Lighthouse, SpaghettiKart, Perfect Dark).
+
 ### Games
 - To Game Selection keeps the game paused in the background (embedded modules, Mednafen and external ports); starting it again resumes it instantly.
 - Starting another game asks "Close <game>?" (Yes / No) before closing the paused one. Only one game stays alive.

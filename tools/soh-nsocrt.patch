@@ -1,5 +1,4 @@
 diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dGui.cpp
-index 237a502a..f24de460 100644
 --- a/libultraship/src/fast/Fast3dGui.cpp
 +++ b/libultraship/src/fast/Fast3dGui.cpp
 @@ -1,3 +1,8 @@
@@ -28,7 +27,7 @@ index 237a502a..f24de460 100644
  #ifdef ENABLE_OPENGL
  #include <imgui_impl_opengl3.h>
  #include <imgui_impl_sdl2.h>
-@@ -37,6 +52,167 @@
+@@ -37,6 +52,334 @@
  IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
  #endif
  
@@ -37,8 +36,8 @@ index 237a502a..f24de460 100644
 + * that shader (its NSO_RAYLIB variant, GLSL 3.30; the attribute slots of ImGui's own program are bound to
 + * its names) through draw-list callbacks around ImGui::Image. interpreter.cpp then always renders the game
 + * into its own framebuffer (NsoCrtRenderToFb), since the default framebuffer cannot go through ImGui.
-+ * The fine settings come from the file named by NSO_CRTGEOM_PARAMS (13 numbers: twelve values, then
-+ * "angle set"), re-read whenever it changes, so NSO's End menu can adjust them while the game is paused.
++ * The fine settings come from the file named by NSO_CRTGEOM_PARAMS (12 values, "angle set", then an optional
++ * 14th "fast" flag), re-read whenever it changes, so NSO's End menu can adjust them while the game is paused.
 + * NSO captures a frame for its menu and filters that frozen picture itself, so the capture must be plain:
 + * either the port says so (NsoGameMenuFrameCaptured) or NSO's menu launcher creates the file named by
 + * NSO_CRTGEOM_PLAIN, and the port writes "<file>.ack" once two plain frames are on screen. */
@@ -47,16 +46,19 @@ index 237a502a..f24de460 100644
 +namespace {
 +struct NsoCrtState {
 +    bool tried = false, failed = false;
-+    GLuint prog = 0;
++    GLuint prog = 0, blitProg = 0, crtFbo = 0, crtTex = 0, vao = 0, vbo = 0;
 +    GLint locProj = -1, locTex = -1, locTexSize = -1, locOrigin = -1, locSize = -1, locAspect = -1, locScan = -1,
-+          locAngleSet = -1, locP[12] = {};
++          locAngleSet = -1, locFast = -1, locDotMask = -1, locP[12] = {};
++    GLint locBlitProj = -1, locBlitTex = -1, locBlitDot = -1;
++    int crtW = 0, crtH = 0, attribPos = 0, attribUV = 1, attribCol = 2;
 +    std::string source, paramsPath, plainPath;
 +    int plainFrames = 0;
-+    float scan = 1.0f;
++    float scan = 1.0f, fast = 0.0f;
 +    float p[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
 +    long long stamp = -1;
 +    unsigned poll = 0;
 +    float w = 640.0f, h = 480.0f, outAspect = 0.75f;   // the virtual source (480 lines) and the picture's h / w
++    float destW = 0.0f, destH = 0.0f;
 +} gNsoCrt;
 +
 +const char* const kNsoCrtUniform[12] = { "CRTgamma", "monitorgamma", "overscanK", "saturationAmt", "curvR", "curvD",
@@ -70,12 +72,13 @@ index 237a502a..f24de460 100644
 +    if (stamp == c.stamp) return;
 +    FILE* f = std::fopen(c.paramsPath.c_str(), "r");
 +    if (!f) return;
-+    float v[13];
++    float v[14];
 +    int n = 0;
-+    while (n < 13 && std::fscanf(f, "%f", &v[n]) == 1) n++;
++    while (n < 14 && std::fscanf(f, "%f", &v[n]) == 1) n++;
 +    std::fclose(f);
-+    if (n != 13) return;
-+    std::memcpy(c.p, v, sizeof(v));
++    if (n < 13) return;
++    std::memcpy(c.p, v, sizeof(c.p));
++    if (n >= 14) c.fast = v[13] > 0.5f ? 1.0f : 0.0f;
 +    c.stamp = stamp;
 +}
 +
@@ -91,6 +94,8 @@ index 237a502a..f24de460 100644
 +    c.scan = (scan && *scan == '0') ? 0.0f : 1.0f;
 +    const char* params = std::getenv("NSO_CRTGEOM_PARAMS");
 +    if (params && params[0]) c.paramsPath = params;
++    const char* fast = std::getenv("NSO_CRTGEOM_FAST");
++    c.fast = (fast && *fast == '1') ? 1.0f : 0.0f;
 +    const char* plain = std::getenv("NSO_CRTGEOM_PLAIN");
 +    if (plain && plain[0]) c.plainPath = plain;
 +    return true;
@@ -157,7 +162,151 @@ index 237a502a..f24de460 100644
 +    c.locAspect = glGetUniformLocation(prog, "OutAspect");
 +    c.locScan = glGetUniformLocation(prog, "ScanAmt");
 +    c.locAngleSet = glGetUniformLocation(prog, "angleSet");
++    c.locFast = glGetUniformLocation(prog, "CrtFast");
++    c.locDotMask = glGetUniformLocation(prog, "DotMask");
 +    for (int i = 0; i < 12; i++) c.locP[i] = glGetUniformLocation(prog, kNsoCrtUniform[i]);
++    c.attribPos = aPos;
++    c.attribUV = aUV;
++    c.attribCol = aCol;
++    static const char* blitVs =
++        "#version 330\n"
++        "in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;\n"
++        "out vec2 fragUV; uniform mat4 mvp;\n"
++        "void main(){ fragUV = vertexTexCoord; gl_Position = mvp * vec4(vertexPosition, 1.0); }\n";
++    static const char* blitFs =
++        "#version 330\n"
++        "in vec2 fragUV; uniform sampler2D Tex0; uniform float DotMask; out vec4 finalColor;\n"
++        "void main(){ vec3 col = texture(Tex0, fragUV).rgb;\n"
++        " if (DotMask > 0.5) { vec3 m = mix(vec3(1.0, 0.7, 1.0), vec3(0.7, 1.0, 0.7), floor(mod(gl_FragCoord.x, 2.0)));\n"
++        "  col *= m * 1.05; } finalColor = vec4(col, 1.0); }\n";
++    GLuint bvs = NsoCrtCompile(GL_VERTEX_SHADER, blitVs), bfs = NsoCrtCompile(GL_FRAGMENT_SHADER, blitFs);
++    if (bvs && bfs) {
++        GLuint bp = glCreateProgram();
++        glAttachShader(bp, bvs);
++        glAttachShader(bp, bfs);
++        glBindAttribLocation(bp, (GLuint)aPos, "vertexPosition");
++        glBindAttribLocation(bp, (GLuint)aUV, "vertexTexCoord");
++        glBindAttribLocation(bp, (GLuint)aCol, "vertexColor");
++        glLinkProgram(bp);
++        GLint bok = 0;
++        glGetProgramiv(bp, GL_LINK_STATUS, &bok);
++        if (bok) {
++            c.blitProg = bp;
++            c.locBlitProj = glGetUniformLocation(bp, "mvp");
++            c.locBlitTex = glGetUniformLocation(bp, "Tex0");
++            c.locBlitDot = glGetUniformLocation(bp, "DotMask");
++        } else {
++            glDeleteProgram(bp);
++        }
++    }
++    if (bvs) glDeleteShader(bvs);
++    if (bfs) glDeleteShader(bfs);
++}
++
++void NsoCrtEnsureQuad(NsoCrtState& c) {
++    if (c.vao) return;
++    /* ImGui-style UVs for a GL framebuffer: top-left is (0, 1). */
++    static const float quad[4][9] = {
++        { -1.f, 1.f, 0.f, 0.f, 1.f, 1.f, 1.f, 1.f, 1.f }, { 1.f, 1.f, 0.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f },
++        { -1.f, -1.f, 0.f, 0.f, 0.f, 1.f, 1.f, 1.f, 1.f }, { 1.f, -1.f, 0.f, 1.f, 0.f, 1.f, 1.f, 1.f, 1.f },
++    };
++    GLint prevVao = 0, prevArray = 0;
++    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArray);
++    glGenVertexArrays(1, &c.vao);
++    glGenBuffers(1, &c.vbo);
++    glBindVertexArray(c.vao);
++    glBindBuffer(GL_ARRAY_BUFFER, c.vbo);
++    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
++    glEnableVertexAttribArray((GLuint)c.attribPos);
++    glVertexAttribPointer((GLuint)c.attribPos, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0);
++    glEnableVertexAttribArray((GLuint)c.attribUV);
++    glVertexAttribPointer((GLuint)c.attribUV, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float)));
++    glEnableVertexAttribArray((GLuint)c.attribCol);
++    glVertexAttribPointer((GLuint)c.attribCol, 4, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(5 * sizeof(float)));
++    glBindVertexArray((GLuint)prevVao);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArray);
++}
++
++void NsoCrtEnsureTarget(NsoCrtState& c, int w, int h) {
++    if (w < 2) w = 2;
++    if (h < 2) h = 2;
++    w &= ~1;
++    h &= ~1;
++    if (c.crtTex && c.crtW == w && c.crtH == h) return;
++    if (!c.crtTex) {
++        glGenTextures(1, &c.crtTex);
++        glGenFramebuffers(1, &c.crtFbo);
++    }
++    glBindTexture(GL_TEXTURE_2D, c.crtTex);
++    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    glBindFramebuffer(GL_FRAMEBUFFER, c.crtFbo);
++    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c.crtTex, 0);
++    c.crtW = w;
++    c.crtH = h;
++}
++
++/* Game framebuffer -> low-res CRT target (non-MSAA, ~960x720). The phosphor mask is applied later at final res. */
++bool NsoCrtPrepass(GLuint gameTex, float destW, float destH) {
++    NsoCrtState& c = gNsoCrt;
++    if (!c.prog || destW <= 0.0f || destH <= 0.0f) return false;
++    int dh = (int)(destH + 0.5f), dw = (int)(destW + 0.5f);
++    int ih = dh > 720 ? 720 : dh;
++    int iw = dh > 0 ? (int)((float)ih * (float)dw / (float)dh + 0.5f) : dw;
++    NsoCrtEnsureTarget(c, iw, ih);
++    NsoCrtEnsureQuad(c);
++    if (!c.crtFbo || !c.vao) return false;
++
++    GLint prevProg, prevVao, prevArray, prevTex, prevActive, prevDraw, prevRead, prevView[4];
++    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
++    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArray);
++    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
++    glActiveTexture(GL_TEXTURE0);
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDraw);
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
++    glGetIntegerv(GL_VIEWPORT, prevView);
++    const GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), bl = glIsEnabled(GL_BLEND), dt = glIsEnabled(GL_DEPTH_TEST);
++
++    glBindFramebuffer(GL_FRAMEBUFFER, c.crtFbo);
++    glViewport(0, 0, c.crtW, c.crtH);
++    glDisable(GL_SCISSOR_TEST);
++    glDisable(GL_BLEND);
++    glDisable(GL_DEPTH_TEST);
++    glUseProgram(c.prog);
++    static const float ident[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
++    glUniformMatrix4fv(c.locProj, 1, GL_FALSE, ident);
++    glBindTexture(GL_TEXTURE_2D, gameTex);
++    glUniform1i(c.locTex, 0);
++    glUniform2f(c.locTexSize, c.w, c.h);
++    glUniform2f(c.locOrigin, 0.0f, 0.0f);
++    glUniform2f(c.locSize, c.w, c.h);
++    glUniform1f(c.locAspect, c.outAspect);
++    glUniform1f(c.locScan, c.scan);
++    for (int i = 0; i < 12; i++) glUniform1f(c.locP[i], c.p[i]);
++    glUniform1f(c.locAngleSet, c.p[12]);
++    glUniform1f(c.locFast, c.fast);
++    glUniform1f(c.locDotMask, 0.0f);
++    glBindVertexArray(c.vao);
++    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++
++    glBindVertexArray((GLuint)prevVao);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArray);
++    glUseProgram((GLuint)prevProg);
++    glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
++    glActiveTexture((GLenum)prevActive);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prevDraw);
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevRead);
++    glViewport(prevView[0], prevView[1], prevView[2], prevView[3]);
++    if (sc) glEnable(GL_SCISSOR_TEST);
++    if (bl) glEnable(GL_BLEND);
++    if (dt) glEnable(GL_DEPTH_TEST);
++    return true;
 +}
 +
 +void NsoCrtBegin(const ImDrawList*, const ImDrawCmd*) {
@@ -182,6 +331,23 @@ index 237a502a..f24de460 100644
 +    glUniform1f(c.locScan, c.scan);
 +    for (int i = 0; i < 12; i++) glUniform1f(c.locP[i], c.p[i]);
 +    glUniform1f(c.locAngleSet, c.p[12]);
++    glUniform1f(c.locFast, c.fast);
++    glUniform1f(c.locDotMask, 1.0f);
++}
++
++void NsoCrtBlitBegin(const ImDrawList*, const ImDrawCmd*) {
++    NsoCrtState& c = gNsoCrt;
++    GLint cur = 0;
++    glGetIntegerv(GL_CURRENT_PROGRAM, &cur);
++    if (cur == 0 || !c.blitProg) return;
++    const GLint proj = glGetUniformLocation((GLuint)cur, "ProjMtx");
++    if (proj < 0 || c.locBlitProj < 0) return;
++    float m[16];
++    glGetUniformfv((GLuint)cur, proj, m);
++    glUseProgram(c.blitProg);
++    glUniformMatrix4fv(c.locBlitProj, 1, GL_FALSE, m);
++    glUniform1i(c.locBlitTex, 0);
++    glUniform1f(c.locBlitDot, 1.0f);
 +}
 +} // namespace
 +
@@ -196,22 +362,32 @@ index 237a502a..f24de460 100644
  namespace Fast {
  
  Fast3dGui::Fast3dGui() : Ship::Gui() {
-@@ -417,7 +593,21 @@ void Fast3dGui::DrawGame() {
+@@ -417,7 +760,30 @@
      uintptr_t fb = Ship::Context::GetRawInstance()->GetWindow()->GetGfxFrameBuffer();
      if (fb) {
          ImGui::SetCursorPos(pos);
+-        ImGui::Image(reinterpret_cast<ImTextureID>(fb), size);
++        uintptr_t imageFb = fb;
 +#if defined(ENABLE_OPENGL) && defined(__linux__)
 +        const bool nsoCrt = mImpl.Backend == WindowBackend::FAST3D_SDL_OPENGL && size.x > 0.0f && size.y > 0.0f &&
 +                            NsoCrtWanted(gNsoCrt) && !gNsoCrt.failed &&
 +                            !NsoCrtPlainNow(gNsoCrt);
++        bool nsoCrtBlit = false;
 +        if (nsoCrt) {
 +            gNsoCrt.h = 480.0f;
 +            gNsoCrt.w = 480.0f * size.x / size.y;
 +            gNsoCrt.outAspect = size.y / size.x;
-+            ImGui::GetWindowDrawList()->AddCallback(NsoCrtBegin, nullptr);
++            gNsoCrt.destW = size.x;
++            gNsoCrt.destH = size.y;
++            if (!(gNsoCrt.poll++ & 15u)) NsoCrtLoadParams(gNsoCrt);
++            if (gNsoCrt.prog && NsoCrtPrepass((GLuint)fb, size.x, size.y)) {
++                imageFb = (uintptr_t)gNsoCrt.crtTex;
++                nsoCrtBlit = true;
++            }
++            ImGui::GetWindowDrawList()->AddCallback(nsoCrtBlit ? NsoCrtBlitBegin : NsoCrtBegin, nullptr);
 +        }
 +#endif
-         ImGui::Image(reinterpret_cast<ImTextureID>(fb), size);
++        ImGui::Image(reinterpret_cast<ImTextureID>(imageFb), size);
 +#if defined(ENABLE_OPENGL) && defined(__linux__)
 +        if (nsoCrt) ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
 +#endif

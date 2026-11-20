@@ -17,6 +17,7 @@ void CrtGeom_Unload(void);
 void CrtGeom_SetVirtualHeight(float h);
 /* The fine settings of the next CrtGeom_Draw calls (crtparams.h values; angleSet: use the angle value). */
 void CrtGeom_SetParams(const float val[CRTP_COUNT], bool angleSet);
+void CrtGeom_SetFast(bool fast);   /* cheaper shader path (Settings / CRT sub-screen) */
 bool CrtGeom_Ready(void);
 /* Draw the sub-rectangle src (texels) of tex into dst with the CRT look; beamScan
  * false = smooth between lines. tint fades like DrawTexturePro's. */
@@ -30,12 +31,17 @@ void CrtGeom_Draw(Texture2D tex, Rectangle src, Rectangle dst, bool beamScan, Co
 
 static struct {
     Shader sh;
+    Shader blit;           /* upscale + 2-px phosphor at the final resolution */
+    RenderTexture rt;      /* non-MSAA, ~960x720 for a 4:3 1080p dest */
+    int rtW, rtH;
     bool tried;
     int locTex, locTexSize, locOrigin, locSize, locAspect, locScan;
-    int locP[CRTP_COUNT], locAngleSet;
+    int locP[CRTP_COUNT], locAngleSet, locFast, locMask;
+    int locBlitMask;
     float val[CRTP_COUNT];
     float angleSet;
     float virtualH;
+    float fast;
 } crtGeom;
 
 /* the uniform each CRTP_* parameter feeds (crtgeom.glsl) */
@@ -54,11 +60,15 @@ void CrtGeom_SetParams(const float val[CRTP_COUNT], bool angleSet)
     crtGeom.angleSet = angleSet ? 1.0f : 0.0f;
 }
 
+void CrtGeom_SetFast(bool fast) { crtGeom.fast = fast ? 1.0f : 0.0f; }
+
 bool CrtGeom_Ready(void) { return crtGeom.sh.id > 0; }
 
 void CrtGeom_Unload(void)
 {
     if (crtGeom.sh.id) UnloadShader(crtGeom.sh);
+    if (crtGeom.blit.id) UnloadShader(crtGeom.blit);
+    if (crtGeom.rt.id) UnloadRenderTexture(crtGeom.rt);
     memset(&crtGeom, 0, sizeof(crtGeom));
 }
 
@@ -93,6 +103,25 @@ bool CrtGeom_Load(const char *glslPath)
         for (int i = 0; i < CRTP_COUNT; i++) crtGeom.val[i] = crtParamInfo[i].def;
     for (int i = 0; i < CRTP_COUNT; i++) crtGeom.locP[i] = GetShaderLocation(crtGeom.sh, crtGeomUniform[i]);
     crtGeom.locAngleSet = GetShaderLocation(crtGeom.sh, "angleSet");
+    crtGeom.locFast = GetShaderLocation(crtGeom.sh, "CrtFast");
+    crtGeom.locMask = GetShaderLocation(crtGeom.sh, "DotMask");
+    static const char blitFs[] =
+        "#version 330\n"
+        "in vec2 fragTexCoord;\n"
+        "in vec4 fragColor;\n"
+        "uniform sampler2D texture0;\n"
+        "uniform float DotMask;\n"
+        "out vec4 finalColor;\n"
+        "void main(){\n"
+        "  vec3 c = texture(texture0, fragTexCoord).rgb;\n"
+        "  if (DotMask > 0.5) {\n"
+        "    vec3 m = mix(vec3(1.0, 0.7, 1.0), vec3(0.7, 1.0, 0.7), floor(mod(gl_FragCoord.x, 2.0)));\n"
+        "    c *= m * 1.05;\n"
+        "  }\n"
+        "  finalColor = vec4(c, 1.0) * fragColor;\n"
+        "}\n";
+    crtGeom.blit = LoadShaderFromMemory(NULL, blitFs);
+    crtGeom.locBlitMask = crtGeom.blit.id ? GetShaderLocation(crtGeom.blit, "DotMask") : -1;
     return true;
 }
 
@@ -102,6 +131,56 @@ void CrtGeom_Draw(Texture2D tex, Rectangle src, Rectangle dst, bool beamScan, Co
         DrawTexturePro(tex, src, dst, (Vector2){ 0 }, 0.0f, tint);
         return;
     }
+    /* Internal pass: about 960x720 for a 4:3 1080p dest, never larger than the dest. */
+    int iw = (int)(dst.width + 0.5f), ih = (int)(dst.height + 0.5f);
+    if (ih > 720) {
+        ih = 720;
+        iw = (int)((720.0f * dst.width / dst.height) + 0.5f);
+        if (iw < 1) iw = 1;
+        iw &= ~1; ih &= ~1;
+    }
+    if (iw < 1) iw = 1;
+    if (ih < 1) ih = 1;
+
+    if (crtGeom.rt.id && (crtGeom.rtW != iw || crtGeom.rtH != ih)) {
+        UnloadRenderTexture(crtGeom.rt);
+        crtGeom.rt = (RenderTexture){ 0 };
+    }
+    if (!crtGeom.rt.id) {
+        crtGeom.rt = LoadRenderTexture(iw, ih);
+        crtGeom.rtW = iw;
+        crtGeom.rtH = ih;
+        if (crtGeom.rt.id) SetTextureFilter(crtGeom.rt.texture, TEXTURE_FILTER_BILINEAR);
+    }
+    if (!crtGeom.rt.id) {
+        /* Fallback: run the CRT shader straight to the dest (mask included). */
+        float one = 1.0f;
+        float texSize[2] = { (float)tex.width, (float)tex.height };
+        float origin[2] = { src.x, src.y }, size[2] = { src.width, src.height };
+        if (crtGeom.virtualH > 0.0f && src.height > 0.0f) {
+            float f = crtGeom.virtualH / src.height;
+            texSize[0] *= f; texSize[1] *= f;
+            origin[0] *= f; origin[1] *= f;
+            size[0] *= f; size[1] *= f;
+        }
+        float aspect = dst.height / dst.width, scan = beamScan ? 1.0f : 0.0f;
+        int unit = 0;
+        BeginShaderMode(crtGeom.sh);
+        SetShaderValue(crtGeom.sh, crtGeom.locTex, &unit, SHADER_UNIFORM_INT);
+        SetShaderValue(crtGeom.sh, crtGeom.locTexSize, texSize, SHADER_UNIFORM_VEC2);
+        SetShaderValue(crtGeom.sh, crtGeom.locOrigin, origin, SHADER_UNIFORM_VEC2);
+        SetShaderValue(crtGeom.sh, crtGeom.locSize, size, SHADER_UNIFORM_VEC2);
+        SetShaderValue(crtGeom.sh, crtGeom.locAspect, &aspect, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(crtGeom.sh, crtGeom.locScan, &scan, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(crtGeom.sh, crtGeom.locFast, &crtGeom.fast, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(crtGeom.sh, crtGeom.locMask, &one, SHADER_UNIFORM_FLOAT);
+        for (int i = 0; i < CRTP_COUNT; i++) SetShaderValue(crtGeom.sh, crtGeom.locP[i], &crtGeom.val[i], SHADER_UNIFORM_FLOAT);
+        SetShaderValue(crtGeom.sh, crtGeom.locAngleSet, &crtGeom.angleSet, SHADER_UNIFORM_FLOAT);
+        DrawTexturePro(tex, src, dst, (Vector2){ 0 }, 0.0f, tint);
+        EndShaderMode();
+        return;
+    }
+
     float texSize[2] = { (float)tex.width, (float)tex.height };
     float origin[2] = { src.x, src.y }, size[2] = { src.width, src.height };
     if (crtGeom.virtualH > 0.0f && src.height > 0.0f) {
@@ -110,8 +189,10 @@ void CrtGeom_Draw(Texture2D tex, Rectangle src, Rectangle dst, bool beamScan, Co
         origin[0] *= f; origin[1] *= f;
         size[0] *= f; size[1] *= f;
     }
-    float aspect = dst.height / dst.width, scan = beamScan ? 1.0f : 0.0f;
+    float aspect = dst.height / dst.width, scan = beamScan ? 1.0f : 0.0f, maskOff = 0.0f, maskOn = 1.0f;
     int unit = 0;
+    BeginTextureMode(crtGeom.rt);
+    ClearBackground(BLACK);
     BeginShaderMode(crtGeom.sh);
     SetShaderValue(crtGeom.sh, crtGeom.locTex, &unit, SHADER_UNIFORM_INT);
     SetShaderValue(crtGeom.sh, crtGeom.locTexSize, texSize, SHADER_UNIFORM_VEC2);
@@ -119,10 +200,24 @@ void CrtGeom_Draw(Texture2D tex, Rectangle src, Rectangle dst, bool beamScan, Co
     SetShaderValue(crtGeom.sh, crtGeom.locSize, size, SHADER_UNIFORM_VEC2);
     SetShaderValue(crtGeom.sh, crtGeom.locAspect, &aspect, SHADER_UNIFORM_FLOAT);
     SetShaderValue(crtGeom.sh, crtGeom.locScan, &scan, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(crtGeom.sh, crtGeom.locFast, &crtGeom.fast, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(crtGeom.sh, crtGeom.locMask, &maskOff, SHADER_UNIFORM_FLOAT);
     for (int i = 0; i < CRTP_COUNT; i++) SetShaderValue(crtGeom.sh, crtGeom.locP[i], &crtGeom.val[i], SHADER_UNIFORM_FLOAT);
     SetShaderValue(crtGeom.sh, crtGeom.locAngleSet, &crtGeom.angleSet, SHADER_UNIFORM_FLOAT);
-    DrawTexturePro(tex, src, dst, (Vector2){ 0 }, 0.0f, tint);
+    DrawTexturePro(tex, src, (Rectangle){ 0, 0, (float)iw, (float)ih }, (Vector2){ 0 }, 0.0f, WHITE);
     EndShaderMode();
+    EndTextureMode();
+
+    /* Upscale and apply the 2-px phosphor at the output resolution (keeps the mask sharp). */
+    Rectangle blitSrc = { 0, 0, (float)iw, -(float)ih };
+    if (crtGeom.blit.id) {
+        BeginShaderMode(crtGeom.blit);
+        SetShaderValue(crtGeom.blit, crtGeom.locBlitMask, &maskOn, SHADER_UNIFORM_FLOAT);
+        DrawTexturePro(crtGeom.rt.texture, blitSrc, dst, (Vector2){ 0 }, 0.0f, tint);
+        EndShaderMode();
+    } else {
+        DrawTexturePro(crtGeom.rt.texture, blitSrc, dst, (Vector2){ 0 }, 0.0f, tint);
+    }
 }
 #endif
 #endif

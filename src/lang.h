@@ -36,7 +36,7 @@ typedef enum {
     /* in-system sidebar (grid B/O menu) and its Settings panel */
     S_SB_SINGLE, S_SB_TOGETHER, S_SB_ONLINE, S_SB_SETTINGS,
     S_SET_VERSIONS, S_SET_VER_NA, S_SET_VER_NA_EU, S_SET_RUMBLE, S_SET_ENABLED,
-    S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_SCANLINES, S_SET_CRTGEOM, S_SET_CTRL_DISPLAY,
+    S_SET_CONTROLS, S_SET_SHOW, S_SET_SCREEN, S_SET_43, S_SET_PIXEL, S_SET_CRT, S_SET_SCANLINES, S_SET_CRTGEOM, S_SET_CRTHIGH, S_SET_CRTFAST, S_SET_CTRL_DISPLAY,
     /* sort panel (grid T) */ S_SORT_HEAD, S_SORT_CUSTOM, S_SORT_TITLE, S_SORT_RELEASE, S_SORT_PLAYED, S_SORT_TIME,
     /* "Select games" (Settings > Image scraping, gamesel_ui.h) */
     S_GS_SELECT, S_GS_START, S_GS_NO_ROMS, S_GS_HINT, S_GS_HINT_RUN, S_GS_INSTALLER, S_GS_INSTALLED,
@@ -58,7 +58,7 @@ typedef enum {
     S_EMB_CRT,
     S_CRT_GAMMA, S_CRT_MGAMMA, S_CRT_OVERSCAN, S_CRT_SAT, S_CRT_CURV, S_CRT_DIST, S_CRT_ANGLE, S_CRT_ASPECT,
     S_CRT_CORNER, S_CRT_CSMOOTH, S_CRT_HALATION, S_CRT_FILMIC,
-    S_CRT_RESET, S_EMB_CRT_INFO,
+    S_CRT_RESET, S_CRT_FAST, S_EMB_CRT_INFO,
     /* game rewind caption bar (rewind.h) */
     S_RW_HOLD, S_RW_SUSPEND, S_RW_BACK, S_RW_OK,
     /* N64 controller connect pop-up */
@@ -199,6 +199,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "CRT Filter",
         [S_SET_SCANLINES] = "Scanlines",
         [S_SET_CRTGEOM] = "CRT Geometry",
+        [S_SET_CRTHIGH] = "High",
+        [S_SET_CRTFAST] = "Fast",
         [S_SET_CTRL_DISPLAY] = "Control Display",
         [S_SORT_HEAD] = "Change order of titles",
         [S_SORT_CUSTOM] = "By custom order",
@@ -283,6 +285,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_CRT_HALATION] = "Halation",
         [S_CRT_FILMIC] = "Filmic",
         [S_CRT_RESET] = "Reset to defaults",
+        [S_CRT_FAST] = "Fast CRT",
         [S_EMB_CRT_INFO] = "    🅑 Back      Hold 🅐: Reset   ",
         [S_RW_HOLD] = "Suspend Menu (Press and hold to rewind)",
         [S_RW_SUSPEND] = "Suspend Menu",
@@ -375,6 +378,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_SET_CRT] = "Filtro CRT",
         [S_SET_SCANLINES] = "Scanlines",
         [S_SET_CRTGEOM] = "Geometria CRT",
+        [S_SET_CRTHIGH] = "Alta",
+        [S_SET_CRTFAST] = "Rápida",
         [S_SET_CTRL_DISPLAY] = "Exibição de controles",
         [S_SORT_HEAD] = "Alterar ordem dos títulos",
         [S_SORT_CUSTOM] = "Ordem personalizada",
@@ -459,6 +464,7 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_CRT_HALATION] = "Halation",
         [S_CRT_FILMIC] = "Fílmico",
         [S_CRT_RESET] = "Restaurar padrões",
+        [S_CRT_FAST] = "CRT rápido",
         [S_EMB_CRT_INFO] = "    🅑 Voltar      Segure 🅐: Restaurar   ",
         [S_RW_HOLD] = "Menu de suspensão (Mantenha pressionado para voltar)",
         [S_RW_SUSPEND] = "Menu de suspensão",
