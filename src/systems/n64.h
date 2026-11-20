@@ -133,6 +133,7 @@ GameEntry n64_games[] = {
         .appDir = "saves/n64/mk64",   /* config, saves and mk64.o2r */
         .env = "SHIP_HOME=@saves/n64/mk64",   /* libultraship app dir */
         .orient = SLOT_ORIENT_INHERIT,
+        .crtHook = true,
     },
     {
         .title = "Mario Party 3",

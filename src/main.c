@@ -4035,6 +4035,7 @@ NsoProc LaunchGame(const GameEntry *game) {
     NsoSetEnv("NSO_CRTGEOM_SHADER", NULL);
     NsoSetEnv("NSO_CRTGEOM_PARAMS", NULL);
     NsoSetEnv("NSO_CRTGEOM_SCAN", NULL);
+    NsoSetEnv("NSO_CRTGEOM_PLAIN", NULL);
     char mednafenHome[1200] = { 0 }, mednafenStates[1240];
     char mednafenArgs[4608], mednafenRom[1200];
     char *mednafenArgv[72];
@@ -4095,8 +4096,17 @@ NsoProc LaunchGame(const GameEntry *game) {
         char hookShader[1200], hookBin[2400], hookRun[1260];
         snprintf(hookShader, sizeof(hookShader), "%s", GetDataPath("shaders/crtgeom.glsl"));
         snprintf(hookBin, sizeof(hookBin), "%s/%s", gameDir, game->binary);
-        snprintf(hookRun, sizeof(hookRun), "%s/nso-crtgeom.params", GetDataPath(game->stateDir));
-        if (FileExists(hookShader) && CrtHookBuilt(hookBin)) {
+        snprintf(hookRun, sizeof(hookRun), "%s/nso-crtgeom.params", menuDir);
+        if (menuDir[0] && FileExists(hookShader) && CrtHookBuilt(hookBin)) {
+            if (GameUsesMenuLauncher(game)) {
+                /* no bridge of its own: NSO's menu launcher asks the game for plain frames before stopping it */
+                char plainFlag[1260], plainAck[1270];
+                snprintf(plainFlag, sizeof(plainFlag), "%s/nso-crt-plain", menuDir);
+                snprintf(plainAck, sizeof(plainAck), "%s.ack", plainFlag);
+                remove(plainFlag);
+                remove(plainAck);
+                NsoSetEnv("NSO_CRTGEOM_PLAIN", plainFlag);
+            }
             NsoSetEnv("NSO_CRTGEOM_SHADER", hookShader);
             NsoSetEnv("NSO_CRTGEOM_SCAN", "1");   /* N64: always with its beam lines (no Scanlines toggle) */
             NsoSetEnv("NSO_CRTGEOM_PARAMS", hookRun);

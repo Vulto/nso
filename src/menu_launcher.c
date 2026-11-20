@@ -356,6 +356,34 @@ static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, in
     return false;
 }
 
+/* A game with the CRT Geometry hook (the tools nsocrt patches) draws its live picture through the shader, but
+ * NSO filters the frozen frame it captures itself: before the game is stopped it is asked (a flag file,
+ * NSO_CRTGEOM_PLAIN) to show plain frames, and answers with "<flag>.ack" once two are on screen. */
+static void nso_menu_plain_request(void)
+{
+    const char *flag = getenv("NSO_CRTGEOM_PLAIN");
+    char ack[1300];
+    if (!flag || !*flag || snprintf(ack, sizeof(ack), "%s.ack", flag) >= (int)sizeof(ack)) return;
+    remove(ack);
+    FILE *f = fopen(flag, "w");
+    if (!f) return;
+    fclose(f);
+    for (int i = 0; i < 100; ++i) {   /* up to ~2 s: a game that never answers is stopped anyway */
+        struct stat st;
+        if (stat(ack, &st) == 0) break;
+        nso_menu_short_sleep();
+    }
+}
+
+static void nso_menu_plain_release(void)
+{
+    const char *flag = getenv("NSO_CRTGEOM_PLAIN");
+    char ack[1300];
+    if (!flag || !*flag || snprintf(ack, sizeof(ack), "%s.ack", flag) >= (int)sizeof(ack)) return;
+    remove(flag);
+    remove(ack);
+}
+
 static bool nso_menu_process_group_alive(pid_t group)
 {
     if (kill(-group, 0) == 0) return true;
@@ -468,6 +496,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
 
         if (nso_menu_requested && !paused) {
             nso_menu_requested = 0;
+            nso_menu_plain_request();
             if (kill(-game, SIGSTOP) != 0) continue;
             do ended = waitpid(game, &status, WUNTRACED); while (ended < 0 && errno == EINTR);
             if ((ended == game && !WIFSTOPPED(status))
@@ -485,6 +514,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
                                            emu_dir, state_dir))
                         paused = false;
                 } else if (strcmp(action, "resume") == 0) {
+                    nso_menu_plain_release();
                     kill(-game, SIGCONT);
                     paused = false;
                     if (dpy && game_window != None) {
