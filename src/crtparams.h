@@ -71,6 +71,7 @@ typedef struct {
     signed char game[CRTP_COUNT], def[CRTP_COUNT];
     float val[CRTP_COUNT];
     bool angleSet;
+    bool rawFrames;   /* a hosted game whose captured frames are unfiltered (the port draws them plain): NSO applies the CRT look itself */
 } CrtSession;
 extern CrtSession crtSession;
 

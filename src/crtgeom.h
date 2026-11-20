@@ -12,6 +12,9 @@
 /* Compile shaders/crtgeom.glsl (path to the file) once, after the window exists. */
 bool CrtGeom_Load(const char *glslPath);
 void CrtGeom_Unload(void);
+/* h > 0: the shader sees the source as h lines tall (its beam lines, glow and dot mask then work on h rows,
+ * however sharp the texture is): a frame captured at window size looks like the console's. 0: the texture's own. */
+void CrtGeom_SetVirtualHeight(float h);
 /* The fine settings of the next CrtGeom_Draw calls (crtparams.h values; angleSet: use the angle value). */
 void CrtGeom_SetParams(const float val[CRTP_COUNT], bool angleSet);
 bool CrtGeom_Ready(void);
@@ -32,6 +35,7 @@ static struct {
     int locP[CRTP_COUNT], locAngleSet;
     float val[CRTP_COUNT];
     float angleSet;
+    float virtualH;
 } crtGeom;
 
 /* the uniform each CRTP_* parameter feeds (crtgeom.glsl) */
@@ -41,6 +45,8 @@ static const char *const crtGeomUniform[CRTP_COUNT] = {
     [CRTP_ASPECT] = "aspectK", [CRTP_CORNER] = "cornersize", [CRTP_CSMOOTH] = "cornersmooth",
     [CRTP_HALATION] = "halation", [CRTP_FILMIC] = "filmicReinhardAmt",
 };
+
+void CrtGeom_SetVirtualHeight(float h) { crtGeom.virtualH = h > 0.0f ? h : 0.0f; }
 
 void CrtGeom_SetParams(const float val[CRTP_COUNT], bool angleSet)
 {
@@ -98,6 +104,12 @@ void CrtGeom_Draw(Texture2D tex, Rectangle src, Rectangle dst, bool beamScan, Co
     }
     float texSize[2] = { (float)tex.width, (float)tex.height };
     float origin[2] = { src.x, src.y }, size[2] = { src.width, src.height };
+    if (crtGeom.virtualH > 0.0f && src.height > 0.0f) {
+        float f = crtGeom.virtualH / src.height;
+        texSize[0] *= f; texSize[1] *= f;
+        origin[0] *= f; origin[1] *= f;
+        size[0] *= f; size[1] *= f;
+    }
     float aspect = dst.height / dst.width, scan = beamScan ? 1.0f : 0.0f;
     int unit = 0;
     BeginShaderMode(crtGeom.sh);

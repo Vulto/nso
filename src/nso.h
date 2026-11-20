@@ -53,6 +53,8 @@ typedef struct {
     const char *rom;      /* NULL = none; NSO-relative ROM file, appended as the last argument */
     bool externalMenu; /* child supplies its own external-menu bridge */
     bool externalSlots; /* child implements the external save/load slot protocol */
+    bool crtHook;       /* the port's renderer is built with tools/soh-nsocrt.patch: it runs shaders/crtgeom.glsl itself
+                           (NSO_CRTGEOM_SHADER / _PARAMS) and draws the frame NSO captures for its menu plain */
 } GameEntry;
 
 void Nso_PlatformInit(PlatformEntry *p);

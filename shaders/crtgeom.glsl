@@ -20,7 +20,8 @@
  *   NSO_VERT   vertex stage  (Mednafen's ARB GLSL path, GLSL 1.10/1.20)
  *   (nothing)  fragment stage of the same
  *   NSO_RAYLIB both stages for raylib (#version 330); the host sets it (with
- *              NSO_VERT for the vertex stage). The fragment colour is tinted by
+ *              NSO_VERT for the vertex stage). Also used by Ship of Harkinian's ImGui draw-list
+ *              hook (tools/soh-nsocrt.patch), which binds ImGui's vertex slots to these names. The fragment colour is tinted by
  *              raylib's vertex colour (fades) like a normal DrawTexturePro.
  */
 

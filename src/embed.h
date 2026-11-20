@@ -700,7 +700,7 @@ bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool s
     SetExitKey(KEY_NULL);
     embed.tex = LoadTextureFromImage(img);
     UnloadImage(img);
-    SetTextureFilter(embed.tex, TEXTURE_FILTER_POINT);
+    SetTextureFilter(embed.tex, crtSession.rawFrames ? TEXTURE_FILTER_BILINEAR : TEXTURE_FILTER_POINT);   /* rawFrames: the CRT shader sees 480 lines */
     if (!embed.tex.id) {
         XCloseDisplay(display);
         embed.externalDisplay = NULL;
@@ -1184,7 +1184,7 @@ static void Embed_BuildBlur(Shader sh, int loc)
     DrawTexturePro(embed.tex, (Rectangle){ 0, 0, (float)embed.fbw, (float)embed.fbh },
                    (Rectangle){ EMBED_BLUR_PAD, EMBED_BLUR_PAD, EMBED_BLUR_W, EMBED_BLUR_H }, (Vector2){ 0 }, 0.0f, WHITE);
     EndTextureMode();
-    SetTextureFilter(embed.tex, TEXTURE_FILTER_POINT);
+    SetTextureFilter(embed.tex, embed.external && crtSession.rawFrames ? TEXTURE_FILTER_BILINEAR : TEXTURE_FILTER_POINT);
     if (sh.id > 0 && loc >= 0)
         for (int k = 1; k <= 3; k++) {
             Embed_BlurPass(embed.blurB, embed.blurA, sh, loc, (float)k, 0.0f);
@@ -1239,7 +1239,7 @@ static void Embed_DrawSlots(Font font, const char *const text[EMBED_TXT_COUNT], 
 static bool Embed_UseCrt(EmbedScreen sc)
 {
     /* a hosted Mednafen game's picture already comes out of Mednafen's own CRT shader */
-    return sc.crtgeom && CrtGeom_Ready() && !embed.external;
+    return sc.crtgeom && CrtGeom_Ready() && (!embed.external || crtSession.rawFrames);
 }
 static bool Embed_CrtScan(EmbedScreen sc) { return sc.scanlines; }
 
@@ -1287,9 +1287,15 @@ static void Embed_DrawCrt(Font font, EmbedScreen screen, const char *const text[
     Rectangle area = { roundf(1040.0f * k) + ox, roundf(240.0f * k), roundf(800.0f * k), roundf(600.0f * k) };
     Texture2D tex = embed.tex;
     Rectangle src = { 0, 0, (float)embed.fbw, (float)embed.fbh };
-    bool raw = !embed.external;
-    if (embed.external && Rewind_LiveFrame(&tex, &src)) raw = true;
+    bool raw = !embed.external || crtSession.rawFrames;   /* the capture of a rawFrames port is unfiltered */
+    if (!raw && Rewind_LiveFrame(&tex, &src)) raw = true;
     Rectangle fit = Embed_DestForScreen(screen, area.width, area.height, (int)src.width, (int)src.height);
+    if (fit.width > area.width || fit.height > area.height) {   /* a window-sized capture: shrink it into the box */
+        float sc = fminf(area.width / src.width, area.height / src.height);
+        fit = (Rectangle){ 0, 0, floorf(src.width * sc), floorf(src.height * sc) };
+        fit.x = floorf((area.width - fit.width) * 0.5f);
+        fit.y = floorf((area.height - fit.height) * 0.5f);
+    }
     Rectangle dst = { area.x + fit.x, area.y + fit.y, fit.width, fit.height };
     DrawRectangleRec(area, Fade(BLACK, a));
     if (raw && CrtGeom_Ready()) {

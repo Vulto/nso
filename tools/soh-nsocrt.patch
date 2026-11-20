@@ -1,0 +1,241 @@
+diff --git a/libultraship/src/fast/Fast3dGui.cpp b/libultraship/src/fast/Fast3dGui.cpp
+index 237a502a..11880552 100644
+--- a/libultraship/src/fast/Fast3dGui.cpp
++++ b/libultraship/src/fast/Fast3dGui.cpp
+@@ -1,3 +1,8 @@
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++#include <SDL2/SDL.h>
++#define GL_GLEXT_PROTOTYPES 1
++#include <SDL2/SDL_opengl.h>
++#endif
+ #include "fast/Fast3dGui.h"
+ 
+ #include "fast/Fast3dWindow.h"
+@@ -24,6 +29,16 @@
+ #include "ship/port/mobile/MobileImpl.h"
+ #endif
+ 
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++#include <sys/stat.h>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <iterator>
++#include <string>
++#endif
++
+ #ifdef ENABLE_OPENGL
+ #include <imgui_impl_opengl3.h>
+ #include <imgui_impl_sdl2.h>
+@@ -37,6 +52,142 @@
+ IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+ #endif
+ 
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++/* NSO "CRT Geometry": when NSO_CRTGEOM_SHADER names shaders/crtgeom.glsl, the game picture is drawn with
++ * that shader (its NSO_RAYLIB variant, GLSL 3.30; the attribute slots of ImGui's own program are bound to
++ * its names) through draw-list callbacks around ImGui::Image. interpreter.cpp then always renders the game
++ * into its own framebuffer (NsoCrtRenderToFb), since the default framebuffer cannot go through ImGui. The fine settings come from the file named by NSO_CRTGEOM_PARAMS (13 numbers:
++ * twelve values, then "angle set"), re-read whenever it changes, so NSO's End menu can adjust them while
++ * the game is paused. The frame NSO captures for its menu is drawn plain (NsoGameMenuFrameCaptured). */
++extern "C" bool NsoGameMenuFrameCaptured() __attribute__((weak));
++
++namespace {
++struct NsoCrtState {
++    bool tried = false, failed = false;
++    GLuint prog = 0;
++    GLint locProj = -1, locTex = -1, locTexSize = -1, locOrigin = -1, locSize = -1, locAspect = -1, locScan = -1,
++          locAngleSet = -1, locP[12] = {};
++    std::string source, paramsPath;
++    float scan = 1.0f;
++    float p[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
++    long long stamp = -1;
++    unsigned poll = 0;
++    float w = 640.0f, h = 480.0f, outAspect = 0.75f;   // the virtual source (480 lines) and the picture's h / w
++} gNsoCrt;
++
++const char* const kNsoCrtUniform[12] = { "CRTgamma", "monitorgamma", "overscanK", "saturationAmt", "curvR", "curvD",
++                                         "angleY", "aspectK", "cornersize", "cornersmooth", "halation",
++                                         "filmicReinhardAmt" };
++
++void NsoCrtLoadParams(NsoCrtState& c) {
++    struct stat st;
++    if (c.paramsPath.empty() || stat(c.paramsPath.c_str(), &st) != 0) return;
++    const long long stamp = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec + (long long)st.st_size;
++    if (stamp == c.stamp) return;
++    FILE* f = std::fopen(c.paramsPath.c_str(), "r");
++    if (!f) return;
++    float v[13];
++    int n = 0;
++    while (n < 13 && std::fscanf(f, "%f", &v[n]) == 1) n++;
++    std::fclose(f);
++    if (n != 13) return;
++    std::memcpy(c.p, v, sizeof(v));
++    c.stamp = stamp;
++}
++
++bool NsoCrtWanted(NsoCrtState& c) {
++    if (c.tried) return !c.failed;
++    c.tried = true;
++    const char* path = std::getenv("NSO_CRTGEOM_SHADER");
++    if (!path || !path[0]) { c.failed = true; return false; }
++    std::ifstream in(path, std::ios::binary);
++    if (!in) { c.failed = true; return false; }
++    c.source.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
++    const char* scan = std::getenv("NSO_CRTGEOM_SCAN");
++    c.scan = (scan && *scan == '0') ? 0.0f : 1.0f;
++    const char* params = std::getenv("NSO_CRTGEOM_PARAMS");
++    if (params && params[0]) c.paramsPath = params;
++    return true;
++}
++
++GLuint NsoCrtCompile(GLenum type, const std::string& text) {
++    GLuint sh = glCreateShader(type);
++    const char* src = text.c_str();
++    glShaderSource(sh, 1, &src, nullptr);
++    glCompileShader(sh);
++    GLint ok = 0;
++    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
++    if (!ok) { glDeleteShader(sh); return 0; }
++    return sh;
++}
++
++/* Built on the first draw, from ImGui's own program: same attribute slots. */
++void NsoCrtBuild(NsoCrtState& c, GLuint imguiProg) {
++    const GLint aPos = glGetAttribLocation(imguiProg, "Position"), aUV = glGetAttribLocation(imguiProg, "UV"),
++                aCol = glGetAttribLocation(imguiProg, "Color");
++    if (aPos < 0 || aUV < 0 || aCol < 0) { c.failed = true; return; }
++    GLuint vs = NsoCrtCompile(GL_VERTEX_SHADER, "#version 330\n#define NSO_RAYLIB 1\n#define NSO_VERT 1\n" + c.source);
++    GLuint fs = NsoCrtCompile(GL_FRAGMENT_SHADER, "#version 330\n#define NSO_RAYLIB 1\n" + c.source);
++    if (!vs || !fs) {
++        if (vs) glDeleteShader(vs);
++        if (fs) glDeleteShader(fs);
++        c.failed = true;
++        return;
++    }
++    GLuint prog = glCreateProgram();
++    glAttachShader(prog, vs);
++    glAttachShader(prog, fs);
++    glBindAttribLocation(prog, (GLuint)aPos, "vertexPosition");
++    glBindAttribLocation(prog, (GLuint)aUV, "vertexTexCoord");
++    glBindAttribLocation(prog, (GLuint)aCol, "vertexColor");
++    glLinkProgram(prog);
++    glDeleteShader(vs);
++    glDeleteShader(fs);
++    GLint ok = 0;
++    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
++    if (!ok) { glDeleteProgram(prog); c.failed = true; return; }
++    c.prog = prog;
++    c.locProj = glGetUniformLocation(prog, "mvp");
++    c.locTex = glGetUniformLocation(prog, "Tex0");
++    c.locTexSize = glGetUniformLocation(prog, "TexSize");
++    c.locOrigin = glGetUniformLocation(prog, "VidOrigin");
++    c.locSize = glGetUniformLocation(prog, "VidSize");
++    c.locAspect = glGetUniformLocation(prog, "OutAspect");
++    c.locScan = glGetUniformLocation(prog, "ScanAmt");
++    c.locAngleSet = glGetUniformLocation(prog, "angleSet");
++    for (int i = 0; i < 12; i++) c.locP[i] = glGetUniformLocation(prog, kNsoCrtUniform[i]);
++}
++
++void NsoCrtBegin(const ImDrawList*, const ImDrawCmd*) {
++    NsoCrtState& c = gNsoCrt;
++    GLint cur = 0;
++    glGetIntegerv(GL_CURRENT_PROGRAM, &cur);
++    if (cur == 0) return;
++    if (!c.prog && !c.failed) NsoCrtBuild(c, (GLuint)cur);
++    if (!c.prog) return;
++    const GLint proj = glGetUniformLocation((GLuint)cur, "ProjMtx");
++    if (proj < 0 || c.locProj < 0) return;
++    float m[16];
++    glGetUniformfv((GLuint)cur, proj, m);
++    if (!(c.poll++ & 15u)) NsoCrtLoadParams(c);
++    glUseProgram(c.prog);
++    glUniformMatrix4fv(c.locProj, 1, GL_FALSE, m);
++    glUniform1i(c.locTex, 0);
++    glUniform2f(c.locTexSize, c.w, c.h);
++    glUniform2f(c.locOrigin, 0.0f, 0.0f);
++    glUniform2f(c.locSize, c.w, c.h);
++    glUniform1f(c.locAspect, c.outAspect);
++    glUniform1f(c.locScan, c.scan);
++    for (int i = 0; i < 12; i++) glUniform1f(c.locP[i], c.p[i]);
++    glUniform1f(c.locAngleSet, c.p[12]);
++}
++} // namespace
++
++bool NsoCrtRenderToFb() {
++    return NsoCrtWanted(gNsoCrt) && !gNsoCrt.failed;
++}
++#endif
++
+ namespace Fast {
+ 
+ Fast3dGui::Fast3dGui() : Ship::Gui() {
+@@ -417,7 +568,21 @@ void Fast3dGui::DrawGame() {
+     uintptr_t fb = Ship::Context::GetRawInstance()->GetWindow()->GetGfxFrameBuffer();
+     if (fb) {
+         ImGui::SetCursorPos(pos);
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++        const bool nsoCrt = mImpl.Backend == WindowBackend::FAST3D_SDL_OPENGL && size.x > 0.0f && size.y > 0.0f &&
++                            NsoCrtWanted(gNsoCrt) && !gNsoCrt.failed &&
++                            !(NsoGameMenuFrameCaptured && NsoGameMenuFrameCaptured());
++        if (nsoCrt) {
++            gNsoCrt.h = 480.0f;
++            gNsoCrt.w = 480.0f * size.x / size.y;
++            gNsoCrt.outAspect = size.y / size.x;
++            ImGui::GetWindowDrawList()->AddCallback(NsoCrtBegin, nullptr);
++        }
++#endif
+         ImGui::Image(reinterpret_cast<ImTextureID>(fb), size);
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++        if (nsoCrt) ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
++#endif
+     }
+ 
+     ImGui::End();
+diff --git a/libultraship/src/fast/interpreter.cpp b/libultraship/src/fast/interpreter.cpp
+index 730b6f25..970a71dd 100644
+--- a/libultraship/src/fast/interpreter.cpp
++++ b/libultraship/src/fast/interpreter.cpp
+@@ -71,6 +71,10 @@ std::stack<std::string> currentDir;
+ 
+ #define TEXTURE_CACHE_MAX_SIZE 1024
+ 
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++bool NsoCrtRenderToFb(); // Fast3dGui.cpp: true when NSO asked for the CRT Geometry shader
++#endif
++
+ namespace Fast {
+ 
+ static UcodeHandlers ucode_handler_index = ucode_f3dex2;
+@@ -5039,6 +5043,12 @@ bool Interpreter::IsFrameReady() {
+ }
+ 
+ bool Interpreter::ViewportMatchesRendererResolution() {
++#if defined(ENABLE_OPENGL) && defined(__linux__)
++    // NSO "CRT Geometry": the game picture must go through ImGui (Fast3dGui.cpp) so its shader can filter it.
++    if (NsoCrtRenderToFb()) {
++        return false;
++    }
++#endif
+ #ifdef __APPLE__
+     // Always treat the viewport as not matching the render resolution on mac
+     // to avoid issues with retina scaling.
+--- a/soh/soh/SohGui/SohModals.cpp
++++ b/soh/soh/SohGui/SohModals.cpp
+@@ -78,6 +78,15 @@
+ #endif
+ }
+ 
++/* Marker NSO looks for in soh.elf to know the CRT Geometry hook (tools/soh-nsocrt.patch) is built in. */
++extern "C" const char nsoCrtGeomHookMarker[] = "nso-crtgeom-hook-v1";
++
++/* The frame drawn now is the one NSO captures for its menu: Fast3dGui leaves the CRT shader off for it, NSO
++ * filters the frozen picture itself (crtparams.h, tools/soh-nsocrt.patch). */
++extern "C" bool NsoGameMenuFrameCaptured() {
++    return nsoMenuSignalPending.load(std::memory_order_acquire);
++}
++
+ void NsoGameMenuBeforeFrame() {
+     if (resumeAfterLoad) {
+         if (gPlayState != nullptr) gPlayState->frameAdvCtx.enabled = restoreFrameAdvance;

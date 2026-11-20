@@ -39,6 +39,7 @@ GameEntry n64_games[] = {
         .stateDir = "saves/n64/oot",
         .externalMenu = true,
         .externalSlots = true,
+        .crtHook = true,
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

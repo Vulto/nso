@@ -139,11 +139,23 @@ switches system (NES, SNES, Nintendo 64, GameCube).
     patch, `tools/mednafen-nsocrt.patch` (apply to the `mednafen/` tree; an unpatched
     Mednafen fails to start with the toggle on). The rewind overlay uses the same shader,
     so holding rewind does not change the look.
+  - **Zelda: Ocarina of Time (Ship of Harkinian):** `tools/soh-nsocrt.patch` (apply with
+    `patch -p1` in `repos/n64/soh-src`, then rebuild `soh.elf`) draws the game picture through
+    the same shader: ImGui draw-list callbacks around the game image switch to the
+    `NSO_RAYLIB` variant of `shaders/crtgeom.glsl`, the game is always rendered into its own
+    framebuffer for that, and the picture is sampled as a 480-line source (like the N64
+    consoles), so the beam lines look the same at any window size. NSO sets
+    `NSO_CRTGEOM_SHADER`, `NSO_CRTGEOM_SCAN` and `NSO_CRTGEOM_PARAMS` for it and the patched
+    port re-reads the params file when it changes. The frame NSO captures for its End menu is
+    drawn plain by the port, and NSO filters that frozen frame and the preview itself with the
+    same 480-line source, so nothing is filtered twice. `nso` looks for the marker
+    `nso-crtgeom-hook-v1` in `soh.elf`: an unpatched build keeps the CRT Geometry items hidden
+    for Ocarina of Time (the game runs as before).
   - **Not covered** (separate programs with their own window and renderer, NSO cannot
     filter them): NES OpenMadoola, OpenDana (Fire 'n Ice), Dr. Mario, Faxanadu, Zelda,
     Metroid; SNES zelda3, Super Metroid, F-Zero, Go Go Ackman, Kirby Super Star, Super
     Mario All-Stars, Super Mario RPG, Mega Man X2/X3; every other N64 port or recomp
-    (Ocarina of Time, Perfect Dark, ...); all GameCube ports (the toggle shows there but
+    (Perfect Dark, ...); all GameCube ports (the toggle shows there but
     has no effect until one is embedded).
   - **Fine settings (End menu > "CRT Geometry"):** with the toggle on, the pause menu of every
     covered game has a "CRT Geometry" item that opens a screen with sliders only (Back returns

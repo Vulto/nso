@@ -3797,9 +3797,11 @@ static void CrtSessionEnd(void) {
     for (int i = 0; i < CRTP_COUNT; i++) stock[i] = crtParamInfo[i].def;
     CrtSession_End();
     CrtGeom_SetParams(stock, false);
+    CrtGeom_SetVirtualHeight(0.0f);
 }
 
-static void CrtSessionBegin(const GameEntry *game, const char *runPath) {
+/* rawFrames: the hosted port draws the frame NSO captures unfiltered, so NSO applies the look to its frozen frame */
+static void CrtSessionBegin(const GameEntry *game, const char *runPath, bool rawFrames) {
     char slug[128], gamePath[1200], defPath[1200];
     const char *sys = systems[currentSystem].platform->id;
     size_t n = 0;
@@ -3813,7 +3815,36 @@ static void CrtSessionBegin(const GameEntry *game, const char *runPath) {
     snprintf(gamePath, sizeof(gamePath), "%s", GetDataPath(TextFormat("config/crtgeom/%s/%s.cfg", sys, n ? slug : "game")));
     snprintf(defPath, sizeof(defPath), "%s", GetDataPath(TextFormat("config/crtgeom/%s/_default.cfg", sys)));
     CrtSession_Begin(gamePath, defPath, runPath);
+    crtSession.rawFrames = rawFrames;
     CrtGeom_SetParams(crtSession.val, crtSession.angleSet);
+    CrtGeom_SetVirtualHeight(rawFrames ? 480.0f : 0.0f);
+}
+
+/* Is the port's binary built with tools/soh-nsocrt.patch? It carries a marker string. */
+static bool CrtHookBuilt(const char *binary) {
+    static const char marker[] = "nso-crtgeom-hook-v1";
+    const size_t mlen = sizeof(marker) - 1;
+    FILE *f = fopen(binary, "rb");
+    if (!f) return false;
+    static unsigned char buf[1 << 16];
+    size_t keep = 0;
+    bool found = false;
+    for (;;) {
+        size_t n = fread(buf + keep, 1, sizeof(buf) - keep, f);
+        if (n == 0) break;
+        size_t total = keep + n;
+        for (size_t i = 0; i + mlen <= total && !found; i++) {
+            const unsigned char *at = memchr(buf + i, marker[0], total - mlen - i + 1);
+            if (!at) break;
+            i = (size_t)(at - buf);
+            found = memcmp(at, marker, mlen) == 0;
+        }
+        if (found) break;
+        keep = total >= mlen ? mlen - 1 : total;
+        memmove(buf, buf + total - keep, keep);
+    }
+    fclose(f);
+    return found;
 }
 
 /* GameEntry.env: set each NAME=VALUE for the next spawn ('@' = NSO-relative
@@ -4000,7 +4031,10 @@ NsoProc LaunchGame(const GameEntry *game) {
         if (!DirectoryExists(appDir)) MakeDirectory(appDir);
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
-    CrtSessionEnd();   /* only a Mednafen game below can have one (the other ports have no CRT Geometry) */
+    CrtSessionEnd();   /* only a Mednafen game or a hooked port below can have one */
+    NsoSetEnv("NSO_CRTGEOM_SHADER", NULL);
+    NsoSetEnv("NSO_CRTGEOM_PARAMS", NULL);
+    NsoSetEnv("NSO_CRTGEOM_SCAN", NULL);
     char mednafenHome[1200] = { 0 }, mednafenStates[1240];
     char mednafenArgs[4608], mednafenRom[1200];
     char *mednafenArgv[72];
@@ -4032,7 +4066,7 @@ NsoProc LaunchGame(const GameEntry *game) {
          * CRT Geometry screen rewrites it while the game is paused) */
         char crtRun[1260];
         snprintf(crtRun, sizeof(crtRun), "%s/nso-crtgeom.params", mednafenHome);
-        if (crt) CrtSessionBegin(game, crtRun);
+        if (crt) CrtSessionBegin(game, crtRun, false);
         else CrtSessionEnd();
         NsoSetEnv("NSO_CRTGEOM_PARAMS", crt ? crtRun : NULL);
         NsoSetEnv("NSO_CRTGEOM_SCAN", sysSettings[currentSystem].scanlines ? "1" : "0");
@@ -4054,6 +4088,20 @@ NsoProc LaunchGame(const GameEntry *game) {
                      sysSettings[currentSystem].scanlines, crt, showBar);
 #endif
         NsoSetEnv("NSO_REWIND_SHM", rewindShm);
+    }
+    if (game->crtHook && !game->mednafen && sysSettings[currentSystem].crtgeom) {
+        /* A port built with tools/soh-nsocrt.patch runs the shader in its own renderer; its frame for the
+         * End menu is plain and NSO filters that one (CrtSession.rawFrames). */
+        char hookShader[1200], hookBin[2400], hookRun[1260];
+        snprintf(hookShader, sizeof(hookShader), "%s", GetDataPath("shaders/crtgeom.glsl"));
+        snprintf(hookBin, sizeof(hookBin), "%s/%s", gameDir, game->binary);
+        snprintf(hookRun, sizeof(hookRun), "%s/nso-crtgeom.params", GetDataPath(game->stateDir));
+        if (FileExists(hookShader) && CrtHookBuilt(hookBin)) {
+            NsoSetEnv("NSO_CRTGEOM_SHADER", hookShader);
+            NsoSetEnv("NSO_CRTGEOM_SCAN", "1");   /* N64: always with its beam lines (no Scanlines toggle) */
+            NsoSetEnv("NSO_CRTGEOM_PARAMS", hookRun);
+            CrtSessionBegin(game, hookRun, true);
+        }
     }
     GameEnvSet(game);
 #if !defined(_WIN32)
@@ -4147,7 +4195,7 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
-    if (sysSettings[currentSystem].crtgeom && CrtGeom_Ready()) CrtSessionBegin(game, NULL);
+    if (sysSettings[currentSystem].crtgeom && CrtGeom_Ready()) CrtSessionBegin(game, NULL, false);
     else CrtSessionEnd();
     Embed_SetPadMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : SysIsSnes(currentSystem) && snesPad.custom ? &snesPad
                     : SysIsN64(currentSystem) && n64Pad.custom ? &n64Pad : NULL,
