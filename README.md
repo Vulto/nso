@@ -117,8 +117,15 @@ grid. Quitting NSO closes the paused game too.
 While a Mednafen game or a reparented port owns the screen, NSO stops
 redrawing the 1920×1080 4×-MSAA grid and waits on input (End still opens
 the menu, and the enter/leave animations still play). Embedded modules
-keep the game loop and only skip that extra frontend drawing. Covers stay
-loaded, so coming back to the grid has no loading screen.
+keep the game loop and only skip that extra frontend drawing. While a
+game is running, interface images (covers, platform art, and other large
+frontend textures) are unloaded to free RAM; the current cover is kept
+for the launch and return animations. On the way back, the visible
+screen around the cursor is loaded first (during the exit animation),
+then the first and last screens of the list, then the middle, without
+blocking the menu. The grid is shown only once that visible screen is
+complete (the previous frame is held; there is no loading screen). The
+same happens at startup, after the existing enter animation.
 
 ### Settings screen (gear icon)
 

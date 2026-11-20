@@ -4,7 +4,7 @@ SRC := src/main.c src/menu_launcher.c src/n64pad.c src/jspad.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
 	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
 	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h
-HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h
+HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h src/covers.h
 HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/crtgeom.h src/crtparams.h src/n64pad.h
 HDRS += src/padmap.h src/padui.h src/jspad.h
 
@@ -88,6 +88,8 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./gamesel_test
 	$(CC) $(CFLAGS) -o hide_test src/hide_test.c
 	./hide_test
+	$(CC) $(CFLAGS) -o covers_test src/covers_test.c
+	./covers_test
 	$(CC) $(CFLAGS) -o status_test src/status_test.c
 	./status_test
 	$(CC) $(CFLAGS) -o enteranim_test src/enteranim_test.c -lm
@@ -105,7 +107,7 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	$(CC) $(CFLAGS) -o crtparams_test src/crtparams_test.c -lm
 	./crtparams_test
 
-check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/hide_test.c src/hide.h
+check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/hide_test.c src/hide.h src/covers_test.c src/covers.h
 check: src/crtparams_test.c src/crtparams.h src/status_test.c src/status.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h
 
 # Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
@@ -116,6 +118,6 @@ test: check nso nso-norumble.so
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test status_test enteranim_test rewindanim_test padmap_test crtparams_test
+	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test
 
 .PHONY: embed soh-nso windows test clean

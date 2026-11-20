@@ -35,6 +35,8 @@
 #include "sort.h"
 #define HIDE_IMPLEMENTATION
 #include "hide.h"
+#define COVERS_IMPLEMENTATION
+#include "covers.h"
 #include <time.h>
 
 #define NSO_IMPLEMENTATION
@@ -89,6 +91,18 @@ static void Hide_Toggle(void);
 static void Hide_Resync(bool live);
 
 static Texture2D gameBoxarts[MAX_GAMES];
+/* Cached even after the GPU texture is unloaded, so the mosaic does not jump. */
+static float boxartMetaW[MAX_GAMES];
+static float boxartMetaH[MAX_GAMES];
+
+static void BoxartMetaRemember(int index, int w, int h)
+{
+    if (index < 0 || index >= MAX_GAMES) return;
+    if (w > 0 && h > 0) {
+        boxartMetaW[index] = (float)w;
+        boxartMetaH[index] = (float)h;
+    }
+}
 
 static const int ASSET_MAX_BOXART_W = 512;
 static const int ASSET_MAX_BOXART_H = 384;
@@ -193,6 +207,10 @@ static void FitAspectInCell(float cellW, float cellH, float aspect,
 
 static float GridItemAspect(int index) {
     if (index >= 0 && index < MAX_GAMES
+        && boxartMetaW[index] > 0.0f && boxartMetaH[index] > 0.0f) {
+        return boxartMetaW[index] / boxartMetaH[index];
+    }
+    if (index >= 0 && index < MAX_GAMES
         && gameBoxarts[index].id != 0
         && gameBoxarts[index].width > 0
         && gameBoxarts[index].height > 0) {
@@ -211,6 +229,9 @@ static float GridUSAAspect(void) {
 }
 
 static float GridItemNativeHeight(int index) {
+    if (index >= 0 && index < MAX_GAMES && boxartMetaH[index] > 0.0f) {
+        return boxartMetaH[index];
+    }
     if (index >= 0 && index < MAX_GAMES
         && gameBoxarts[index].id != 0
         && gameBoxarts[index].height > 0) {
@@ -225,8 +246,12 @@ static float GridNativeHeight(void) {
     float total = 0.0f;
     int loaded = 0;
     for (int i = 0; i < count; i++) {
-        if (gameBoxarts[i].id != 0 && gameBoxarts[i].height > 0) {
-            total += (float)gameBoxarts[i].height;
+        float h = 0.0f;
+        if (boxartMetaH[i] > 0.0f) h = boxartMetaH[i];
+        else if (gameBoxarts[i].id != 0 && gameBoxarts[i].height > 0)
+            h = (float)gameBoxarts[i].height;
+        if (h > 0.0f) {
+            total += h;
             loaded++;
         }
     }
@@ -466,6 +491,9 @@ static Color GameTint(int gameIdx) {
 
 /* gameIdx is local to the active system */
 static Image LoadBoxartImage(const char *path);
+static bool CoverLoader_Owns(int gameIdx);
+static bool coverLoaderHasWork(void);
+static void CoverReload_Stamp(const char *ev);
 
 Texture2D GetBoxart(int gameIdx) {
     int count = ActiveGameCount();
@@ -477,12 +505,18 @@ Texture2D GetBoxart(int gameIdx) {
         return gameBoxarts[gameIdx];
     }
 
+    /* The background loader owns this slot; wait for CoverLoader_Poll. */
+    if (CoverLoader_Owns(gameIdx)) {
+        return (Texture2D){0};
+    }
+
     Image img = LoadBoxartImage(GetDataPath(ActiveGames()[gameIdx].boxartPath));
     if (!img.data) {
         return (Texture2D){0};
     }
 
     gameBoxarts[gameIdx] = LoadTextureFromImage(img);
+    BoxartMetaRemember(gameIdx, img.width, img.height);
     UnloadImage(img);
 
     return gameBoxarts[gameIdx];
@@ -532,25 +566,49 @@ void UnloadAllBoxarts(void) {
     }
 }
 
-/* Ensure boxarts exist; do not unload while browsing (full preload on enter). */
+/* Safety net for the visible screen only. While the reload worker is running
+ * it owns the queue; Poll uploads in priority order without blocking input. */
 void ManageVisibleBoxarts(int gameCount, float viewportY) {
-    (void)viewportY;
     if (gameCount <= 0) return;
+    if (coverLoaderHasWork()) return;
 
-    int budget = 6;   /* a few per frame: no stall when many covers come back at once */
-    for (int i = 0; i < gameCount && i < MAX_GAMES && budget > 0; i++) {
+    GridLayout g = GetGridLayout();
+    CoversRect slots[MAX_GAMES];
+    int n = gameCount;
+    if (n > MAX_GAMES) n = MAX_GAMES;
+    for (int i = 0; i < n; i++) {
+        slots[i].x = g.slots[i].x;
+        slots[i].y = g.slots[i].y;
+        slots[i].width = g.slots[i].width;
+        slots[i].height = g.slots[i].height;
+    }
+    int vis[MAX_GAMES];
+    int vn = Covers_Screen(slots, n, viewportY, (float)g.screenH, vis, MAX_GAMES);
+    int budget = 4;
+    for (int k = 0; k < vn && budget > 0; k++) {
+        int i = vis[k];
         if (gameBoxarts[i].id == 0 && GetBoxart(i).id != 0) budget--;
     }
 }
 
-/* ---- Background cover loader (used by the loading splash) ----
+/* ---- Background cover loader (splash, and reload after a game) ----
  * A worker thread decodes/resizes cover images (LoadImage, CPU only); the
  * main thread uploads finished ones with LoadTextureFromImage, since GL
- * textures must be created on the main thread. */
+ * textures must be created on the main thread.
+ *
+ * Decode and upload follow Covers_ReloadOrder: the visible screen first
+ * (what the user will see on return), then the first and last screens of
+ * the list, then the remaining middle. Visible covers are uploaded as soon
+ * as they are ready; later blocks use a per-frame budget so input and
+ * frames stay unblocked. */
 static struct {
     pthread_t thread;
     bool running;              /* thread started and not yet joined */
     int count;
+    int order[MAX_GAMES];
+    int orderN;
+    int visibleN;              /* prefix of order[] that is the visible screen */
+    int prefetchN;             /* prefix that is visible + first + last */
     char *paths[MAX_GAMES];
     Image images[MAX_GAMES];
     atomic_int ready[MAX_GAMES];  /* 1 = images[i] decoded (maybe empty) */
@@ -558,10 +616,88 @@ static struct {
     atomic_bool cancel;
 } coverLoader;
 
+static bool coverLoaderHasWork(void)
+{
+    return coverLoader.running || coverLoader.count > 0;
+}
+
+static bool CoverLoader_Owns(int gameIdx)
+{
+    if (gameIdx < 0 || gameIdx >= coverLoader.count) return false;
+    if (coverLoader.uploaded[gameIdx]) return false;
+    return coverLoader.running || coverLoader.count > 0;
+}
+
+/* Declared here so the cover loader can aim at the cursor's screen; the
+ * later block only comments and related mosaic state. */
+static int GameIdx = 0;
+static int launchingGameIdx = 0;
+static bool isLaunching = false;
+static float viewportY = 0.0f;
+static float targetViewportY = 0.0f;
+
+static void CoverLoader_BuildOrder(int count)
+{
+    GridLayout g = GetGridLayout();
+    CoversRect slots[MAX_GAMES];
+    int n = count;
+    if (n > MAX_GAMES) n = MAX_GAMES;
+    for (int i = 0; i < n; i++) {
+        slots[i].x = g.slots[i].x;
+        slots[i].y = g.slots[i].y;
+        slots[i].width = g.slots[i].width;
+        slots[i].height = g.slots[i].height;
+    }
+    float viewH = (float)g.screenH;
+    if (viewH < 1.0f) viewH = 1.0f;
+    float totalH = g.totalH;
+    int cursor = GameIdx;
+    if (isLaunching && launchingGameIdx >= 0 && launchingGameIdx < n) {
+        cursor = launchingGameIdx;
+    }
+    if (cursor < 0) cursor = 0;
+    if (n > 0 && cursor >= n) cursor = n - 1;
+    float curY = GridTargetViewportY(&g, cursor, n, viewportY);
+    curY = GridClampViewportY(&g, curY, n);
+
+    coverLoader.orderN = Covers_ReloadOrder(slots, n, viewH, totalH, curY,
+                                            coverLoader.order, MAX_GAMES);
+    int vis[MAX_GAMES], first[MAX_GAMES], lastv[MAX_GAMES];
+    int vn = Covers_Screen(slots, n, curY, viewH, vis, MAX_GAMES);
+    float lastY = totalH > viewH ? totalH - viewH : 0.0f;
+    int fn = Covers_Screen(slots, n, 0.0f, viewH, first, MAX_GAMES);
+    int ln = Covers_Screen(slots, n, lastY, viewH, lastv, MAX_GAMES);
+    unsigned char seen[MAX_GAMES];
+    memset(seen, 0, sizeof seen);
+    int pref = 0;
+    for (int k = 0; k < vn; k++) {
+        int i = vis[k];
+        if (i >= 0 && i < n && !seen[i]) { seen[i] = 1; pref++; }
+    }
+    for (int k = 0; k < fn; k++) {
+        int i = first[k];
+        if (i >= 0 && i < n && !seen[i]) { seen[i] = 1; pref++; }
+    }
+    for (int k = 0; k < ln; k++) {
+        int i = lastv[k];
+        if (i >= 0 && i < n && !seen[i]) { seen[i] = 1; pref++; }
+    }
+    coverLoader.visibleN = vn;
+    coverLoader.prefetchN = pref;
+}
+
 static void *CoverLoaderThread(void *arg) {
     (void)arg;
-    for (int i = 0; i < coverLoader.count; i++) {
+    int walkN = coverLoader.orderN > 0 ? coverLoader.orderN : coverLoader.count;
+    for (int k = 0; k < walkN; k++) {
         if (atomic_load(&coverLoader.cancel)) break;
+        int i = (coverLoader.orderN > 0) ? coverLoader.order[k] : k;
+        if (i < 0 || i >= coverLoader.count) continue;
+        if (coverLoader.uploaded[i] || atomic_load(&coverLoader.ready[i])) continue;
+        if (!coverLoader.paths[i]) {
+            atomic_store(&coverLoader.ready[i], 1);
+            continue;
+        }
         coverLoader.images[i] = LoadBoxartImage(coverLoader.paths[i]);
         atomic_store(&coverLoader.ready[i], 1);
     }
@@ -583,17 +719,29 @@ static void CoverLoader_Stop(void) {
         coverLoader.paths[i] = NULL;
     }
     coverLoader.count = 0;
+    coverLoader.orderN = 0;
+    coverLoader.visibleN = 0;
+    coverLoader.prefetchN = 0;
 }
 
 static void CoverLoader_Start(void) {
     CoverLoader_Stop();
     int count = ActiveGameCount();
     if (count > MAX_GAMES) count = MAX_GAMES;
+    if (count <= 0) return;
+    CoverLoader_BuildOrder(count);
     for (int i = 0; i < count; i++) {
-        coverLoader.paths[i] = strdup(GetDataPath(ActiveGames()[i].boxartPath));
         coverLoader.images[i] = (Image){0};
-        atomic_store(&coverLoader.ready[i], 0);
-        coverLoader.uploaded[i] = false;
+        if (gameBoxarts[i].id != 0) {
+            /* Already on the GPU (kept through a game, or still loaded). */
+            coverLoader.paths[i] = NULL;
+            atomic_store(&coverLoader.ready[i], 1);
+            coverLoader.uploaded[i] = true;
+        } else {
+            coverLoader.paths[i] = strdup(GetDataPath(ActiveGames()[i].boxartPath));
+            atomic_store(&coverLoader.ready[i], 0);
+            coverLoader.uploaded[i] = false;
+        }
     }
     coverLoader.count = count;
     atomic_store(&coverLoader.cancel, false);
@@ -601,24 +749,117 @@ static void CoverLoader_Start(void) {
                                          CoverLoaderThread, NULL) == 0;
     if (!coverLoader.running) {
         coverLoader.count = 0; /* fall back: grid loads covers itself */
+        coverLoader.orderN = 0;
         for (int i = 0; i < count; i++) { free(coverLoader.paths[i]); coverLoader.paths[i] = NULL; }
     }
 }
 
-/* Upload decoded covers; returns true when every cover is on the GPU. */
+/* Test harness only: NSO_COVER_RELOAD_LOG=path appends monotonic-ms stamps.
+ * No stdout. Absent env = no file I/O. */
+static bool coverReloadVisibleLogged = false;
+
+static void CoverReload_Stamp(const char *ev)
+{
+    const char *path = getenv("NSO_COVER_RELOAD_LOG");
+    if (!path || !path[0] || !ev) return;
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    struct timespec ts;
+    long long ms = 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+        ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+    fprintf(f, "%lld %s\n", ms, ev);
+    fclose(f);
+}
+
+/* Upload decoded covers; returns true when every cover is on the GPU.
+ * The visible screen has no per-frame cap; first/last then the middle do,
+ * so the menu stays usable while the rest fills in. */
+/* Set when a grid is about to be shown (splash, or return from a game);
+ * cleared once the visible screen's covers are on the GPU. */
+static bool mosaicRevealWait = false;
+
+/* True once every cover of the screen the user will see is on the GPU (or
+ * has no file). The grid is not revealed before this: the exit animation /
+ * splash holds its frame instead, so no empty slot is ever shown. */
+static bool CoverLoader_VisibleReady(void)
+{
+    if (coverLoader.count > 0) {
+        if (coverLoader.visibleN <= 0) return true;
+        for (int k = 0; k < coverLoader.visibleN && k < coverLoader.orderN; k++) {
+            int i = coverLoader.order[k];
+            if (i >= 0 && i < coverLoader.count && !coverLoader.uploaded[i]) return false;
+        }
+        return true;
+    }
+    int count = ActiveGameCount();
+    if (count <= 0) return true;
+    if (count > MAX_GAMES) count = MAX_GAMES;
+    GridLayout g = GetGridLayout();
+    CoversRect slots[MAX_GAMES];
+    for (int i = 0; i < count; i++) {
+        slots[i].x = g.slots[i].x;
+        slots[i].y = g.slots[i].y;
+        slots[i].width = g.slots[i].width;
+        slots[i].height = g.slots[i].height;
+    }
+    int cursor = GameIdx;
+    if (isLaunching && launchingGameIdx >= 0 && launchingGameIdx < count)
+        cursor = launchingGameIdx;
+    float curY = GridTargetViewportY(&g, cursor, count, viewportY);
+    curY = GridClampViewportY(&g, curY, count);
+    int vis[MAX_GAMES];
+    int vn = Covers_Screen(slots, count, curY, (float)g.screenH, vis, MAX_GAMES);
+    for (int k = 0; k < vn; k++) {
+        int i = vis[k];
+        if (i < 0 || i >= count) continue;
+        if (gameBoxarts[i].id != 0) continue;
+        const char *path = GetDataPath(ActiveGames()[i].boxartPath);
+        if (path && path[0] && FileExists(path)) return false;
+    }
+    return true;
+}
+
 static bool CoverLoader_Poll(void) {
+    if (coverLoader.count <= 0) return true;
+    int visLeft = 0, prefLeft = 0;
+    int walkN = coverLoader.orderN > 0 ? coverLoader.orderN : coverLoader.count;
+    for (int k = 0; k < walkN; k++) {
+        int i = (coverLoader.orderN > 0) ? coverLoader.order[k] : k;
+        if (i < 0 || i >= coverLoader.count || coverLoader.uploaded[i]) continue;
+        if (k < coverLoader.visibleN) visLeft++;
+        else if (k < coverLoader.prefetchN) prefLeft++;
+    }
+    if (visLeft == 0 && !coverReloadVisibleLogged && coverLoader.visibleN > 0) {
+        coverReloadVisibleLogged = true;
+        CoverReload_Stamp("reload-visible");
+    }
+    int budget;
+    if (visLeft > 0) budget = visLeft;          /* finish the on-screen block now */
+    else if (prefLeft > 0) budget = 12;         /* first and last screens next */
+    else budget = 6;                            /* middle, progressively */
+
     bool done = true;
-    for (int i = 0; i < coverLoader.count; i++) {
+    for (int k = 0; k < walkN; k++) {
+        int i = (coverLoader.orderN > 0) ? coverLoader.order[k] : k;
+        if (i < 0 || i >= coverLoader.count) continue;
         if (coverLoader.uploaded[i]) continue;
         if (!atomic_load(&coverLoader.ready[i])) { done = false; continue; }
+        if (budget <= 0) { done = false; break; }
         if (coverLoader.images[i].data) {
+            if (gameBoxarts[i].id != 0) UnloadTexture(gameBoxarts[i]);
             gameBoxarts[i] = LoadTextureFromImage(coverLoader.images[i]);
+            BoxartMetaRemember(i, coverLoader.images[i].width, coverLoader.images[i].height);
             UnloadImage(coverLoader.images[i]);
         }
         coverLoader.images[i] = (Image){0};
         coverLoader.uploaded[i] = true;
+        budget--;
     }
-    if (done) CoverLoader_Stop();
+    if (done) {
+        CoverReload_Stamp("reload-done");
+        CoverLoader_Stop();
+    }
     return done;
 }
 
@@ -688,7 +929,7 @@ typedef enum State {
 
 static State currentState = SYSTEMS;
 
-static int GameIdx = 0;
+/* GameIdx, launchingGameIdx, isLaunching, viewportY: declared with the cover loader. */
 
 /* Y Move (hold): selected game follows the arrows; saved on release. */
 static bool gridLifted = false;
@@ -713,11 +954,7 @@ static float detailsT = 0.0f;
 static bool statusOpen = false;
 static float statusT = 0.0f;
 
-static float viewportY = 0.0f;
-static float targetViewportY = 0.0f;
-
-static bool isLaunching = false;
-static int launchingGameIdx = 0;
+/* viewportY / isLaunching / launchingGameIdx: declared with the cover loader. */
 
 static NsoProc gamePid;
 static bool waitingForGame = false;
@@ -4480,7 +4717,48 @@ static void SelectSystem(int direction) {
     if (next >= 0 && next < SYSTEM_COUNT) currentSystem = next;
 }
 
+/* Unload large frontend images once a game is running, keeping the current
+ * cover so the return-card animation still has art. Reload starts the moment
+ * the user presses the button to leave, during the exit animation: the
+ * visible screen first, then the first and last screens, then the middle. */
+static bool frontendArtsParked = false;
+static int frontendKeepCover = -1;
+
+static void FrontendArts_Unload(int keepIdx)
+{
+    CoverLoader_Stop();
+    for (int i = 0; i < MAX_GAMES; i++) {
+        if (i != keepIdx) UnloadBoxart(i);
+    }
+    UnloadSystems();
+    PadNotice_Unload();
+    RetroShots_Unload();
+    SortPanel_Unload();
+    SidebarIcons_Unload();
+    UnloadBlurResources();
+    frontendArtsParked = true;
+    frontendKeepCover = keepIdx;
+    CoverReload_Stamp("unload");
+}
+
+static void FrontendArts_Reload(void)
+{
+    if (!frontendArtsParked) return;
+    InitSystems();
+    coverReloadVisibleLogged = false;
+    mosaicRevealWait = true;
+    CoverReload_Stamp("reveal-wait");
+    CoverLoader_Start();
+    frontendArtsParked = false;
+    frontendKeepCover = -1;
+    CoverReload_Stamp("reload-start");
+}
+
 static void BeginMosaicEnterIntro(void) {
+    /* Leave-game / process-exit / park all come through here: start the
+     * visible-screen reload during the exit animation, so the menu is
+     * usable at once. No-op if arts were never parked (splash path). */
+    FrontendArts_Reload();
     for (int i = 0; i < MAX_GAMES; i++) {
         animScales[i] = 1.0f;
     }
@@ -4501,6 +4779,8 @@ static void StartEnterMosaic(void) {
 
     /* Covers load during the splash (UpdateSplash); start from a clean set. */
     UnloadAllBoxarts();
+    mosaicRevealWait = true;
+    CoverReload_Stamp("reveal-wait");
     CoverLoader_Start();
 
     /* Rail visible under system art as the mosaic is revealed. */
@@ -4637,7 +4917,8 @@ static void DrawEnterTransition(void) {
 static void UpdateSplash(float dt) {
     if (currentState != SPLASH) return;
 
-    bool loaded = CoverLoader_Poll();
+    CoverLoader_Poll();
+    bool loaded = CoverLoader_VisibleReady();
 
     float step = dt > 0.1f ? 0.1f : dt;   /* a hitch must not skip the sequence */
     const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step in seconds per frame (frame capture) */
@@ -4972,8 +5253,16 @@ int main(int argc, char **argv) {
         padCRight = gpReady && eRX > 0;
 
         bool overlayConsumedConfirm = false;
+        /* Returning to the grid: hold the previous (game / splash) frame until
+         * the visible screen's covers are uploaded (no empty slots, no loading
+         * screen). Only while mosaicRevealWait: browsing must not blank the grid. */
+        if (mosaicRevealWait && CoverLoader_VisibleReady()) {
+            mosaicRevealWait = false;
+            CoverReload_Stamp("reveal-ready");
+        }
+        bool gridHold = mosaicRevealWait && !CoverLoader_VisibleReady();
         bool canNavigate = !OverlayActive() && !isLaunching && !Live_Busy()
-            && !screenSliding;
+            && !screenSliding && !gridHold;
 
         if (introFrames < FPS) {
             introOpacity = 1.0f - ((float)introFrames / (float)FPS);
@@ -5111,7 +5400,7 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < gameCount; i++) {
                     animScales[i] = 1.0f;
                 }
-                mosaicIntroTimer -= dt;
+                if (!gridHold) mosaicIntroTimer -= dt;
                 if (mosaicIntroTimer <= 0.0f) {
                     mosaicIntroTimer = 0.0f;
                     mosaicIntroPhase = MOSAIC_INTRO_GROW;
@@ -5153,8 +5442,10 @@ int main(int argc, char **argv) {
 
             targetViewportY = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
             targetViewportY = GridClampViewportY(&grid, targetViewportY, gameCount);
-            /* Keep preloaded art; only ensure visible set is present */
+            CoverLoader_Poll();
             ManageVisibleBoxarts(gameCount, viewportY);
+        } else {
+            CoverLoader_Poll();
         }
 
         viewportY += (targetViewportY - viewportY) * 0.18f;
@@ -5170,12 +5461,14 @@ int main(int argc, char **argv) {
                 if (Live_IsSame(currentSystem, launchingGameIdx)) {
                     isLaunching = false;
                     Live_Resume();
+                    FrontendArts_Unload(launchingGameIdx);
                 } else {
                     if (live.parked) Live_Close();
                     if (launched->embedRomKey) {
                         isLaunching = false;
                         if (StartEmbeddedGame(launched)) {
                             currentState = EMBED;
+                            FrontendArts_Unload(launchingGameIdx);
                         } else {
                             currentState = MOSAIC;
                             BeginMosaicEnterIntro();
@@ -5185,6 +5478,7 @@ int main(int argc, char **argv) {
                         externalQuitting = false;
                         isLaunching = false;
                         if (!GameHasExternalMenu(launched)) MinimizeWindow();
+                        FrontendArts_Unload(launchingGameIdx);
                     } else {
                         isLaunching = false;
                         currentState = MOSAIC;
@@ -5196,7 +5490,7 @@ int main(int argc, char **argv) {
         }
 
         if (embedBackT >= 0.0f) {
-            embedBackT += dt / EMBED_BACK_SEC;
+            if (!gridHold) embedBackT += dt / EMBED_BACK_SEC;
             if (embedBackT >= 1.0f) {
                 if (liveParking) Live_FinishPark();
                 else Embed_Stop();
@@ -5494,7 +5788,9 @@ int main(int argc, char **argv) {
             /* A child already owns the screen: skip the grid (the black cover
              * plus Rewind_Draw are enough). Enter/leave still draw it when
              * gameOwnsScreen is false. */
-            if (!gameOwnsScreen) {
+            if (gridHold) {
+                ClearBackground(BLACK);   /* the held frame: game / black, never empty slots */
+            } else if (!gameOwnsScreen) {
                 DrawMosaic(Mosaicbg, font);
                 Details_Draw(font);
                 Status_Draw(font);
