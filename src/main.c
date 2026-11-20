@@ -51,6 +51,8 @@
 #include "sfx.h"
 #define ENTERANIM_IMPLEMENTATION
 #include "enteranim.h"
+#define CRTPARAMS_IMPLEMENTATION
+#include "crtparams.h"
 #define CRTGEOM_IMPLEMENTATION
 #include "crtgeom.h"
 #define EMBED_IMPLEMENTATION
@@ -3787,6 +3789,33 @@ static void EnsureDirectoryTree(const char *path)
     if (!DirectoryExists(current)) MakeDirectory(current);
 }
 
+/* CRT Geometry fine settings (crtparams.h): a game that runs with the CRT Geometry toggle on gets a session
+ * with its own steps (config/crtgeom/<system>/<title slug>.cfg) over the system defaults
+ * (config/crtgeom/<system>/_default.cfg). runPath: Mednafen's params file, NULL for in-process games. */
+static void CrtSessionEnd(void) {
+    float stock[CRTP_COUNT];
+    for (int i = 0; i < CRTP_COUNT; i++) stock[i] = crtParamInfo[i].def;
+    CrtSession_End();
+    CrtGeom_SetParams(stock, false);
+}
+
+static void CrtSessionBegin(const GameEntry *game, const char *runPath) {
+    char slug[128], gamePath[1200], defPath[1200];
+    const char *sys = systems[currentSystem].platform->id;
+    size_t n = 0;
+    for (const char *t = game->title; *t && n + 1 < sizeof(slug); t++) {
+        unsigned char c = (unsigned char)*t;
+        if (isalnum(c)) slug[n++] = (char)tolower(c);
+        else if (n && slug[n - 1] != '-') slug[n++] = '-';
+    }
+    while (n && slug[n - 1] == '-') n--;
+    slug[n] = '\0';
+    snprintf(gamePath, sizeof(gamePath), "%s", GetDataPath(TextFormat("config/crtgeom/%s/%s.cfg", sys, n ? slug : "game")));
+    snprintf(defPath, sizeof(defPath), "%s", GetDataPath(TextFormat("config/crtgeom/%s/_default.cfg", sys)));
+    CrtSession_Begin(gamePath, defPath, runPath);
+    CrtGeom_SetParams(crtSession.val, crtSession.angleSet);
+}
+
 /* GameEntry.env: set each NAME=VALUE for the next spawn ('@' = NSO-relative
  * path), then put NSO's own values back once the child has its copy. */
 #define GAME_ENV_MAX 8
@@ -3933,6 +3962,7 @@ NsoProc LaunchGame(const GameEntry *game) {
         if (!DirectoryExists(appDir)) MakeDirectory(appDir);
         NsoSetEnv("APP_FOLDER_PATH", appDir);
     }
+    CrtSessionEnd();   /* only a Mednafen game below can have one (the other ports have no CRT Geometry) */
     char mednafenHome[1200] = { 0 }, mednafenStates[1240];
     char mednafenArgs[4608], mednafenRom[1200];
     char *mednafenArgv[72];
@@ -3960,6 +3990,13 @@ NsoProc LaunchGame(const GameEntry *game) {
         snprintf(crtShader, sizeof(crtShader), "%s", GetDataPath("shaders/crtgeom.glsl"));
         if (crt && !FileExists(crtShader)) crt = false;
         NsoSetEnv("NSO_CRTGEOM_SHADER", crt ? crtShader : NULL);
+        /* the fine settings: a file the patched Mednafen re-reads whenever it changes (the End menu's
+         * CRT Geometry screen rewrites it while the game is paused) */
+        char crtRun[1260];
+        snprintf(crtRun, sizeof(crtRun), "%s/nso-crtgeom.params", mednafenHome);
+        if (crt) CrtSessionBegin(game, crtRun);
+        else CrtSessionEnd();
+        NsoSetEnv("NSO_CRTGEOM_PARAMS", crt ? crtRun : NULL);
         NsoSetEnv("NSO_CRTGEOM_SCAN", sysSettings[currentSystem].scanlines ? "1" : "0");
         mednafenArgc = NsoMednafenArgvEx(game->mednafen, sysSettings[currentSystem].pixel,
                                          sysSettings[currentSystem].scanlines, crt, mednafenRom,
@@ -4072,6 +4109,8 @@ static bool StartEmbeddedGame(const GameEntry *game) {
     snprintf(module, sizeof(module), "%s/%s", GetDataPath(game->dir), game->binary);
     Embed_Stop();   /* relaunched before the back transition ended */
     embedBackT = -1.0f;
+    if (sysSettings[currentSystem].crtgeom && CrtGeom_Ready()) CrtSessionBegin(game, NULL);
+    else CrtSessionEnd();
     Embed_SetPadMap(SysIsNes(currentSystem) && nesPad.custom ? &nesPad : SysIsSnes(currentSystem) && snesPad.custom ? &snesPad
                     : SysIsN64(currentSystem) && n64Pad.custom ? &n64Pad : NULL,
                     SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
@@ -5033,11 +5072,14 @@ int main(int argc, char **argv) {
             }
         } else if (currentState == EMBED) {
             const char *const text[EMBED_TXT_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_LOAD), T(S_EMB_SAVE),
-                T(S_EMB_RESTART), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE),
-                T(S_EMB_LOADING) };
+                T(S_EMB_RESTART), T(S_EMB_CRT), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE),
+                T(S_EMB_LOADING),
+                T(S_CRT_GAMMA), T(S_CRT_MGAMMA), T(S_CRT_OVERSCAN), T(S_CRT_SAT), T(S_CRT_CURV), T(S_CRT_DIST),
+                T(S_CRT_ANGLE), T(S_CRT_ASPECT), T(S_CRT_CORNER), T(S_CRT_CSMOOTH), T(S_CRT_HALATION),
+                T(S_CRT_FILMIC), T(S_CRT_RESET) };
             if (Embed_MenuOpacity() > 0.0f) EnsureBlurResources(GetScreenWidth(), GetScreenHeight());
             Embed_Draw(font, ActiveEmbedScreen(), text, blurShaderOk ? blurShader : (Shader){ 0 }, blurDirLoc);
-            DrawInfoBarEx(font, T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
+            DrawInfoBarEx(font, Embed_CrtOpen() ? T(S_EMB_CRT_INFO) : T(S_SIDEBAR_INFO), Embed_MenuOpacity(), 0.0f);
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
             DrawMosaic(Mosaicbg, font);
             Details_Draw(font);

@@ -1,8 +1,16 @@
 diff --git a/src/drivers/shader.cpp b/src/drivers/shader.cpp
-index f9a2f35..50f0b1c 100644
+index f9a2f35..58ed9dd 100644
 --- a/src/drivers/shader.cpp
 +++ b/src/drivers/shader.cpp
-@@ -267,6 +267,26 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
+@@ -21,6 +21,7 @@
+ 
+ #include <mednafen/FileStream.h>
+ #include <mednafen/MemoryStream.h>
++#include <sys/stat.h>
+ 
+ #define MDFN_GL_TRY(x, ...)								\
+ 	{										\
+@@ -267,6 +268,36 @@ OpenGL_Blitter_Shader::OpenGL_Blitter_Shader(OpenGL_Blitter *in_oblt, ShaderType
  		CompileShader(CSP[0], vertSABR, fragSABR);
  		break;
  
@@ -22,6 +30,16 @@ index f9a2f35..50f0b1c 100644
 +		  NsoCrtSource.append(fb, rn);
 +		 fclose(fp);
 +		 NsoCrtScan = (scan && *scan == '0') ? 0.0f : 1.0f;
++		 {	// stock values (MAME-PSGS.vsh); NSO's file, when there is one, changes them while the game runs
++		  static const float stock[13] = { 2.4f, 2.2f, 1.0f, 0.7f, 1.75f, 2.0f, -0.01f, 1.0f, 0.021f, 25.0f, 0.3f, 1.0f, 0.0f };
++		  const char *pp = getenv("NSO_CRTGEOM_PARAMS");
++		  for(unsigned i = 0; i < 13; i++)
++		   NsoCrtP[i] = stock[i];
++		  NsoCrtParamsPath = (pp && *pp) ? pp : "";
++		  NsoCrtParamsStamp = -1;
++		  NsoCrtPollCount = 0;
++		  NsoCrtPollParams();
++		 }
 +		 CompileShader(CSP[0], (std::string("#define NSO_VERT 1\n") + NsoCrtSource).c_str(), NsoCrtSource.c_str());
 +		}
 +		break;
@@ -29,13 +47,50 @@ index f9a2f35..50f0b1c 100644
  	  case SHADER_GOAT:
  		{
  #if 0
-@@ -446,6 +466,17 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -424,6 +455,29 @@ void OpenGL_Blitter_Shader::UpdateGoatMask(const unsigned rotated)
+  GoatMaskLastRot = rotated;
+ }
+ 
++void OpenGL_Blitter_Shader::NsoCrtPollParams(void)
++{
++ struct stat st;
++ if(NsoCrtParamsPath.empty() || stat(NsoCrtParamsPath.c_str(), &st))
++  return;
++ const long long stamp = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec + (long long)st.st_size;
++ if(stamp == NsoCrtParamsStamp)
++  return;
++ FILE *fp = fopen(NsoCrtParamsPath.c_str(), "r");
++ if(!fp)
++  return;
++ float v[13];
++ unsigned n = 0;
++ while(n < 13 && fscanf(fp, "%f", &v[n]) == 1)
++  n++;
++ fclose(fp);
++ if(n != 13)
++  return;
++ for(unsigned i = 0; i < 13; i++)
++  NsoCrtP[i] = v[i];
++ NsoCrtParamsStamp = stamp;
++}
++
+ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_screen_h, const MDFN_Rect *rect, const MDFN_Rect *dest_rect, int tw, int th, int orig_tw, int orig_th, unsigned rotated)
+ {
+         oblt->p_glEnable(GL_FRAGMENT_PROGRAM_ARB);
+@@ -446,6 +500,24 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
           oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTexture"), 0);
           oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTextureSize"), tw, th);
  	}
 +	else if(OurType == SHADER_NSOCRT)
 +	{
++	 static const char* const pn[12] = { "CRTgamma", "monitorgamma", "overscanK", "saturationAmt", "curvR", "curvD", "angleY",
++					     "aspectK", "cornersize", "cornersmooth", "halation", "filmicReinhardAmt" };
++	 if(!(NsoCrtPollCount++ & 15))
++	  NsoCrtPollParams();
 + 	 oblt->p_glUseProgramObjectARB(CSP[0].p);
++	 for(unsigned i = 0; i < 12; i++)
++	  oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, pn[i]), NsoCrtP[i]);
++	 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "angleSet"), NsoCrtP[12]);
 +
 +         oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "Tex0"), 0);
 +         oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "TexSize"), tw, th);
@@ -48,7 +103,7 @@ index f9a2f35..50f0b1c 100644
  	{
   	 oblt->p_glUseProgramObjectARB(CSP[0].p);
 diff --git a/src/drivers/shader.h b/src/drivers/shader.h
-index 38499e7..a496fe1 100644
+index 38499e7..9715a0a 100644
 --- a/src/drivers/shader.h
 +++ b/src/drivers/shader.h
 @@ -17,6 +17,7 @@ enum ShaderType
@@ -59,12 +114,18 @@ index 38499e7..a496fe1 100644
  };
  
  struct ShaderParams
-@@ -69,6 +70,8 @@ class OpenGL_Blitter_Shader
+@@ -69,6 +70,14 @@ class OpenGL_Blitter_Shader
  
   const ShaderParams params;
  
 + std::string NsoCrtSource;
 + float NsoCrtScan;
++ // NSO: the fine settings (12 values + "angle set"), re-read when the file named by NSO_CRTGEOM_PARAMS changes
++ float NsoCrtP[13];
++ std::string NsoCrtParamsPath;
++ long long NsoCrtParamsStamp;
++ unsigned NsoCrtPollCount;
++ void NsoCrtPollParams(void);
   void UpdateGoatMask(const unsigned rotated);
   unsigned GoatMaskLastRot;
  };

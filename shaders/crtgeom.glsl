@@ -12,7 +12,9 @@
  * works on a sub-rectangle of the emulator's texture (VidOrigin / VidSize);
  * the aspect follows the destination rectangle (OutAspect); the scanline beam
  * can be switched off (ScanAmt = 0) so that NSO's own Scanlines toggle still
- * means something; taps are clamped to the picture.
+ * means something; taps are clamped to the picture; the MAME-PSGS.vsh parameters
+ * are uniforms (End menu > CRT Geometry, crtparams.h) whose stock values are
+ * upstream's, and `const vec2 angle` stays upstream's until the user sets one.
  *
  * One source, three users (selected by the macro the host prepends):
  *   NSO_VERT   vertex stage  (Mednafen's ARB GLSL path, GLSL 1.10/1.20)
@@ -40,16 +42,24 @@ uniform vec2 VidSize;     /* picture size, texels */
 uniform float OutAspect;  /* destination height / width */
 uniform float ScanAmt;    /* 1 = beam scanlines, 0 = smooth between lines */
 
-#define CRTgamma 2.4
-#define monitorgamma 2.2
-#define overscan vec2(1.0, 1.0)
-#define cornersize 0.021
-#define cornersmooth 25.0
-#define halation 0.3
-#define filmicReinhardAmt 1.0
-#define saturationAmt 0.7
-#define curvD 2.0
-#define curvR 1.75
+/* MAME-PSGS.vsh lines 86-97, as uniforms so NSO can adjust them (crtparams.h). The host always sets
+ * them; the stock values are CRTgamma 2.4, monitorgamma 2.2, overscan vec2(1,1), d 2.0, R 1.75,
+ * cornersize 0.021, cornersmooth 25.0, halation 0.3, filmicReinhard 1.0, saturation 0.7. */
+uniform float CRTgamma;
+uniform float monitorgamma;
+uniform float overscanK;       /* overscan = vec2(overscanK): one scale for both axes */
+uniform float cornersize;
+uniform float cornersmooth;
+uniform float halation;
+uniform float filmicReinhardAmt;
+uniform float saturationAmt;
+uniform float curvD;
+uniform float curvR;
+uniform float aspectK;         /* factor on the y of aspect vec2(1, 0.75); the aspect follows OutAspect */
+uniform float angleSet;        /* 0: the const angle below, as upstream; 1: the user's AngleY */
+uniform float angleY;
+#define overscan vec2(overscanK)
+#define SCREEN_ASPECT vec2(1.0, OutAspect * aspectK)
 #define PI 3.141592653589
 
 const float W = 1.2;
@@ -74,7 +84,7 @@ float intersectV(vec2 xy, vec2 sa, vec2 ca) {
     float A = dot(xy, xy) + curvD * curvD;
     float B = 2.0 * (curvR * (dot(xy, sa) - curvD * ca.x * ca.y) - curvD * curvD);
     float C = curvD * curvD + 2.0 * curvR * curvD * ca.x * ca.y;
-    return (-B - sqrt(B * B - 4.0 * A * C)) / (2.0 * A);
+    return (-B - sqrt(max(B * B - 4.0 * A * C, 0.0))) / (2.0 * A);
 }
 
 vec2 bkwtransV(vec2 xy, vec2 sa, vec2 ca) {
@@ -87,10 +97,10 @@ vec2 bkwtransV(vec2 xy, vec2 sa, vec2 ca) {
     float A = dot(tang, tang) + 1.0;
     float B = -2.0 * dot(poc, tang);
     float C = dot(poc, poc) - 1.0;
-    float a = (-B + sqrt(B * B - 4.0 * A * C)) / (2.0 * A);
+    float a = (-B + sqrt(max(B * B - 4.0 * A * C, 0.0))) / (2.0 * A);
     vec2 uv = (point - a * sa) / ca;
-    float r = curvR * acos(a);
-    return uv * r / sin(r / curvR);
+    float r = curvR * acos(clamp(a, -1.0, 1.0));
+    return uv * r / max(sin(r / curvR), 1e-5);
 }
 
 vec2 fwtransV(vec2 uv, vec2 sa, vec2 ca) {
@@ -110,7 +120,8 @@ vec3 maxscale(vec2 sa, vec2 ca, vec2 aspect) {
 }
 
 void main() {
-    const vec2 angle = vec2(0.0, -0.01);   /* tilt, radians */
+    const vec2 angle = vec2(0.0, -0.01);   /* tilt, radians: upstream's, kept unless the user set one */
+    vec2 tilt = angleSet > 0.5 ? vec2(0.0, angleY) : angle;
 #ifdef NSO_RAYLIB
     gl_Position = mvp * vec4(vertexPosition, 1.0);
     vColor = vertexColor;
@@ -119,9 +130,9 @@ void main() {
     gl_Position = ftransform();
     vec2 tc = gl_MultiTexCoord0.xy;
 #endif
-    vSin = sin(angle);
-    vCos = cos(angle);
-    vStretch = maxscale(vSin, vCos, vec2(1.0, OutAspect));
+    vSin = sin(tilt);
+    vCos = cos(tilt);
+    vStretch = maxscale(vSin, vCos, SCREEN_ASPECT);
     /* 0..1 over the picture */
     vUV = (tc * TexSize - VidOrigin) / VidSize;
 }
@@ -184,13 +195,13 @@ vec2 bkwtransF(vec2 xy) {
 
 /* 0..1 over the picture -> 0..1 over the curved picture (may leave 0..1) */
 vec2 transform(vec2 coord) {
-    vec2 aspect = vec2(1.0, OutAspect);
+    vec2 aspect = SCREEN_ASPECT;
     coord = (coord - vec2(0.5)) * aspect * vStretch.z + vStretch.xy;
     return bkwtransF(coord) / overscan / aspect + vec2(0.5);
 }
 
 float corner(vec2 coord) {
-    vec2 aspect = vec2(1.0, OutAspect);
+    vec2 aspect = SCREEN_ASPECT;
     coord = (coord - vec2(0.5)) * overscan + vec2(0.5);
     coord = min(coord, vec2(1.0) - coord) * aspect;
     vec2 cdist = vec2(cornersize);

@@ -145,6 +145,24 @@ switches system (NES, SNES, Nintendo 64, GameCube).
     Mario All-Stars, Super Mario RPG, Mega Man X2/X3; every other N64 port or recomp
     (Ocarina of Time, Perfect Dark, ...); all GameCube ports (the toggle shows there but
     has no effect until one is embedded).
+  - **Fine settings (End menu > "CRT Geometry"):** with the toggle on, the pause menu of every
+    covered game has a "CRT Geometry" item that opens a screen with sliders only (Back returns
+    to the list; the toggle on the games screen stays the master on/off): CRT Gamma, Monitor
+    Gamma, Overscan, Saturation, Curvature, Distance, Angle, Aspect, Corner Size, Corner
+    Smooth, Halation, Filmic (the MAME-PSGS.vsh parameters). Left / Right move a slider (held:
+    auto-repeat), the middle of each bar is the stock value (CRT Gamma 2.4, Monitor Gamma 2.2,
+    ...). Overscan is one scale for both axes; Aspect scales the y of the shader's aspect
+    (middle = the picture's own shape); Angle is the y tilt only and the upstream `const vec2
+    angle` stays untouched until you move it; Curvature runs backwards (right = rounder, a
+    smaller R). Hold A 0.9 s: this slider returns to the default; on the last row, all of them.
+    A live preview of the paused picture sits on the right; Back / End saves and the game
+    uses the values when it resumes. Per game in `config/crtgeom/<system>/<title>.cfg`
+    (`key=step`, steps 0-40, 20 = stock; an unset key inherits `config/crtgeom/<system>/_default.cfg`,
+    a hand-edited file of the same format, then the stock value). Mednafen is a separate
+    process: NSO writes the resolved values to `saves/<system>/mednafen/nso-crtgeom.params`
+    (`NSO_CRTGEOM_PARAMS`) and the patched Mednafen re-reads it whenever it changes. The
+    preview of a Mednafen game uses its raw frame from the rewind shared memory (the End
+    menu's screenshot already carries Mednafen's shader).
 - **NES / SNES / N64 controller (below the scrape/Hide rows of each):** shows the pad and
   lights each button you press in white. Holding A for 0.9 s starts the mapping (a ring
   fills on the hint bar's A glyph; the holds' controls light only the button they are bound to): it asks for one button at a time (Up, Down, Left,

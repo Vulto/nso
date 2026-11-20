@@ -27,11 +27,12 @@
  * NES/SNES use EmbedScreen (Pixel Perfect + Scanlines toggles) instead. */
 enum { EMBED_SCREEN_43 = 0, EMBED_SCREEN_PIXEL = 1, EMBED_SCREEN_CRT = 2 };
 typedef struct { bool pixel; bool scanlines; bool fill43; bool crtgeom; } EmbedScreen;   /* crtgeom: shaders/crtgeom.glsl */
-enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_QUIT,
-       EMBED_MENU_COUNT };
-/* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime). */
+enum { EMBED_MENU_CONTINUE = 0, EMBED_MENU_LOAD, EMBED_MENU_SAVE, EMBED_MENU_RESTART, EMBED_MENU_CRT,
+       EMBED_MENU_QUIT, EMBED_MENU_COUNT };
+/* Embed_Draw texts: the items, then the slot label ("%d"), empty slot, date (strftime), loading, and the
+ * CRT Geometry sub-screen's twelve slider labels (crtparams.h order) and its reset row. */
 enum { EMBED_TXT_SLOT = EMBED_MENU_COUNT, EMBED_TXT_NODATA, EMBED_TXT_DATE,
-       EMBED_TXT_LOADING, EMBED_TXT_COUNT };
+       EMBED_TXT_LOADING, EMBED_TXT_CRT0, EMBED_TXT_CRT_RESET = EMBED_TXT_CRT0 + CRTP_COUNT, EMBED_TXT_COUNT };
 #define EMBED_SLOTS 4
 enum { EMBED_EXTERNAL_NONE, EMBED_EXTERNAL_RESUME, EMBED_EXTERNAL_QUIT, EMBED_EXTERNAL_RESTART };
 
@@ -148,6 +149,8 @@ void Embed_DrawZoom(Texture2D tex, Rectangle game, Rectangle card, float p, floa
 /* The same, the game frame drawn with CRT Geometry (crt) and its beam scanlines (scan). */
 void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim, bool crt, bool scan);
 float Embed_MenuOpacity(void);
+/* The CRT Geometry sub-screen of the pause menu is open (main.c switches the info bar). */
+bool Embed_CrtOpen(void);
 void Embed_Stop(void);
 bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots);
 void Embed_ExternalSetChildVisible(bool visible);
@@ -167,6 +170,8 @@ int Embed_ExternalResult(void);
 #include "savestate.h"
 #include "sfx.h"
 #include "n64pad.h"
+
+bool Rewind_LiveFrame(Texture2D *tex, Rectangle *src);   /* rewind.h */
 
 /* Screen dimmed by dim, then tex (id 0: a black panel) at p of the way from card to game. */
 void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, float alpha, float dim, bool crt, bool scan)
@@ -204,6 +209,7 @@ void Embed_DrawZoomCrt(Texture2D tex, Rectangle game, Rectangle card, float p, f
 { (void)tex; (void)game; (void)card; (void)p; (void)alpha; (void)dim; (void)crt; (void)scan; }
 void Embed_DrawExternalResumeFrame(EmbedScreen screen) { (void)screen; }
 float Embed_MenuOpacity(void) { return 0.0f; }
+bool Embed_CrtOpen(void) { return false; }
 void Embed_Stop(void) {}
 #else
 #include <dlfcn.h>
@@ -257,6 +263,11 @@ static struct {
     bool menuOpen;
     int menuSel;
     float menuT;
+    bool crtOpen, crtWait;                 /* CRT Geometry sub-screen; crtWait: a held key must be let go first */
+    float crtT, crtRepT, crtHold;          /* its slide (0..1), the Left/Right repeat clock, the A hold (s) */
+    int crtSel, crtRepDir;
+    bool crtHoldDone;
+    signed char crtSteps[CRTP_COUNT];      /* the game's steps being edited (-1 = unset: inherits) */
     RenderTexture2D blurA, blurB;
     bool blurReady;
     bool quitting;   /* To Game Selection: false once the menu exit ends */
@@ -873,6 +884,8 @@ static void Embed_SetMenu(bool open)
     embed.menuOpen = open;
     if (!open) return;
     embed.menuSel = EMBED_MENU_CONTINUE;
+    embed.crtOpen = false;
+    embed.crtT = 0.0f;
     embed.slotsFocus = false;
     embed.blurReady = false;
     if (!embed.external || embed.externalSlots)
@@ -883,6 +896,7 @@ static void Embed_SetMenu(bool open)
 
 static bool Embed_MenuItemAvailable(int item)
 {
+    if (item == EMBED_MENU_CRT) return crtSession.active;   /* CRT Geometry on for this game and adjustable */
     return !embed.external || embed.externalSlots
         || (item != EMBED_MENU_LOAD && item != EMBED_MENU_SAVE);
 }
@@ -933,6 +947,91 @@ static void Embed_SlotsInput(bool gp)
     else if (embed.slotTime[embed.slotSel]) { embed.loadSlot = embed.slotSel + 1; Embed_SetMenu(false); }
 }
 
+/* ---- CRT Geometry sub-screen: sliders only. Back / End commit: the steps are saved per game and (Mednafen)
+ * written to the run file the emulator re-reads when it resumes. ---- */
+#define EMBED_CRT_ROWS (CRTP_COUNT + 1)   /* the sliders, then "reset to defaults" */
+#define EMBED_CRT_HOLD_SEC 0.9f           /* the 0.9 s hold convention (padui.h) */
+#define EMBED_CRT_REPEAT_DELAY 0.35f
+#define EMBED_CRT_REPEAT_SEC 0.04f
+
+static void Embed_CrtOpenScreen(void)
+{
+    memcpy(embed.crtSteps, crtSession.game, sizeof(embed.crtSteps));
+    embed.crtOpen = true;
+    embed.crtWait = true;
+    embed.crtSel = 0;
+    embed.crtRepDir = 0;
+    embed.crtRepT = 0.0f;
+    embed.crtHold = 0.0f;
+    embed.crtHoldDone = true;   /* until the key that opened it is let go */
+    Sfx_Play(SFX_CLICK);
+}
+
+static void Embed_CrtLeave(void)
+{
+    if (memcmp(embed.crtSteps, crtSession.game, sizeof(embed.crtSteps)) != 0) {
+        CrtSession_Commit(embed.crtSteps);
+        CrtGeom_SetParams(crtSession.val, crtSession.angleSet);
+    }
+    embed.crtOpen = false;
+}
+
+static void Embed_CrtStep(int dir)
+{
+    if (embed.crtSel >= CRTP_COUNT) return;
+    int cur = CrtSteps_Shown(embed.crtSteps, crtSession.def, embed.crtSel);
+    int next = CrtStep_Clamp(cur + dir);
+    if (next == cur) return;
+    embed.crtSteps[embed.crtSel] = (signed char)next;
+    Sfx_Play(SFX_NAVIGATE);
+}
+
+static void Embed_CrtInput(float dt, bool gp, bool end)
+{
+    if (IsKeyPressed(KEY_B) || Nso_PadBackPressed(0) || end) { Embed_CrtLeave(); return; }
+    if (IsKeyPressed(KEY_UP) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)) || embed.navY < 0) {
+        embed.crtSel = (embed.crtSel + EMBED_CRT_ROWS - 1) % EMBED_CRT_ROWS;
+        Sfx_Play(SFX_NAVIGATE);
+        embed.crtHold = 0.0f;
+    }
+    if (IsKeyPressed(KEY_DOWN) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) || embed.navY > 0) {
+        embed.crtSel = (embed.crtSel + 1) % EMBED_CRT_ROWS;
+        Sfx_Play(SFX_NAVIGATE);
+        embed.crtHold = 0.0f;
+    }
+    /* Left / Right: one step per press, then auto-repeat while held */
+    float lx = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X) : 0.0f;
+    bool l = IsKeyDown(KEY_LEFT) || (gp && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) || lx < -NSO_PAD_DEADZONE;
+    bool r = IsKeyDown(KEY_RIGHT) || (gp && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) || lx > NSO_PAD_DEADZONE;
+    int dir = (r ? 1 : 0) - (l ? 1 : 0);
+    if (dir == 0) { embed.crtWait = false; embed.crtRepDir = 0; }
+    else if (!embed.crtWait) {
+        if (dir != embed.crtRepDir) {
+            embed.crtRepDir = dir;
+            embed.crtRepT = EMBED_CRT_REPEAT_DELAY;
+            Embed_CrtStep(dir);
+        } else {
+            embed.crtRepT -= dt;
+            while (embed.crtRepT <= 0.0f) { Embed_CrtStep(dir); embed.crtRepT += EMBED_CRT_REPEAT_SEC; }
+        }
+    }
+    /* Hold A / Enter: this slider back to inherit its default; on the last row, all of them */
+    bool down = IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_A) || (gp && IsGamepadButtonDown(0, NSO_BTN_A));
+    if (!down) { embed.crtHold = 0.0f; embed.crtHoldDone = false; }
+    else if (!embed.crtHoldDone) {
+        embed.crtHold += dt;
+        if (embed.crtHold >= EMBED_CRT_HOLD_SEC) {
+            if (embed.crtSel >= CRTP_COUNT) memset(embed.crtSteps, -1, sizeof(embed.crtSteps));
+            else embed.crtSteps[embed.crtSel] = -1;
+            embed.crtHoldDone = true;
+            embed.crtHold = 0.0f;
+            Sfx_Play(SFX_CLICK);
+        }
+    }
+}
+
+bool Embed_CrtOpen(void) { return embed.active && embed.crtOpen; }
+
 bool Embed_Update(float dt)
 {
     if (!embed.active) return false;
@@ -958,6 +1057,7 @@ bool Embed_Update(float dt)
         && (IsKeyPressed(KEY_END) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE)));
 
     float st = dt / EMBED_MENU_ANIM_SEC;
+    embed.crtT = embed.crtOpen ? fminf(1.0f, embed.crtT + st) : fmaxf(0.0f, embed.crtT - st);
     if (embed.menuOpen) embed.menuT = fminf(1.0f, embed.menuT + st);
     else if (embed.menuT > 0.0f) {   /* exit animation: still paused */
         embed.menuT = fmaxf(0.0f, embed.menuT - st);
@@ -994,6 +1094,7 @@ bool Embed_Update(float dt)
 
     if (embed.menuOpen) {   /* paused: no game frames */
         embed.acc = 0.0;
+        if (embed.crtOpen) { Embed_CrtInput(dt, gp, toggle); return true; }
         if (toggle) {
             if (embed.external) embed.externalResumeRequested = true;
             Embed_SetMenu(false);
@@ -1016,7 +1117,9 @@ bool Embed_Update(float dt)
         bool slots = embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE;
         bool right = IsKeyPressed(KEY_RIGHT) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) || embed.navX > 0;
         bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || Nso_PadConfirmPressed(0);
-        if (slots && Embed_MenuItemAvailable(embed.menuSel) && (ok || right)) {
+        if (embed.menuSel == EMBED_MENU_CRT && (ok || right)) {
+            Embed_CrtOpenScreen();
+        } else if (slots && Embed_MenuItemAvailable(embed.menuSel) && (ok || right)) {
             if (embed.stateDir[0]) { embed.slotsFocus = true; embed.slotSel = 0; Sfx_Play(SFX_CLICK); }
         } else if (ok) {
             Sfx_Play(SFX_CLICK);
@@ -1133,7 +1236,11 @@ static void Embed_DrawSlots(Font font, const char *const text[EMBED_TXT_COUNT], 
 /* CRT Geometry applies when the toggle is on and the shader built. Its beam scanlines follow
  * EmbedScreen.scanlines (NES/SNES: the Scanlines toggle; N64/GameCube: main.c sets it with
  * CRT Geometry, they have no Scanlines toggle). The plain overlay lines are replaced by it. */
-static bool Embed_UseCrt(EmbedScreen sc) { return sc.crtgeom && CrtGeom_Ready(); }
+static bool Embed_UseCrt(EmbedScreen sc)
+{
+    /* a hosted Mednafen game's picture already comes out of Mednafen's own CRT shader */
+    return sc.crtgeom && CrtGeom_Ready() && !embed.external;
+}
 static bool Embed_CrtScan(EmbedScreen sc) { return sc.scanlines; }
 
 static void DrawTexturePro_OrCrt(bool crt, EmbedScreen sc, Rectangle dst)
@@ -1141,6 +1248,61 @@ static void DrawTexturePro_OrCrt(bool crt, EmbedScreen sc, Rectangle dst)
     Rectangle src = { 0, 0, (float)embed.fbw, (float)embed.fbh };
     if (crt) CrtGeom_Draw(embed.tex, src, dst, Embed_CrtScan(sc), WHITE);
     else DrawTexturePro(embed.tex, src, dst, (Vector2){ 0 }, 0.0f, WHITE);
+}
+
+/* The CRT Geometry sub-screen at 1080p, scaled by height: the sliders on the left (the menu's white bar and
+ * coral ink on the selected row, fill bars with a tick at the middle = the stock value), a live preview of
+ * the paused picture on the right. a: the sub-screen's opacity. */
+static void Embed_DrawCrt(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], float k, float divX,
+                          float a, Color panel, Color selInk)
+{
+    float ox = roundf(-28.0f * k * (1.0f - a));
+    float fs = roundf(36.0f * k), pitch = roundf(68.0f * k), barH = roundf(60.0f * k);
+    float bx = roundf(150.0f * k) + ox, top = roundf(540.0f * k) - 6.0f * pitch;
+    for (int i = 0; i < EMBED_CRT_ROWS; i++) {
+        float cy = top + pitch * (float)i;
+        bool sel = (i == embed.crtSel);
+        Color ink = sel ? selInk : WHITE;
+        if (sel) DrawRectangleRec((Rectangle){ bx, cy - barH * 0.5f, divX - bx, barH }, Fade(panel, a));
+        const char *label = text[i < CRTP_COUNT ? EMBED_TXT_CRT0 + i : EMBED_TXT_CRT_RESET];
+        Vector2 m = MeasureTextEx(font, label, fs, 0.0f);
+        DrawTextEx(font, label, (Vector2){ bx + roundf(34.0f * k), roundf(cy - m.y * 0.5f) }, fs, 0.0f, Fade(ink, a));
+        if (i < CRTP_COUNT) {
+            int step = CrtSteps_Shown(embed.crtSteps, crtSession.def, i);
+            float x0 = roundf(640.0f * k) + ox, w = roundf(300.0f * k), h = roundf(16.0f * k), bw = fmaxf(1.0f, roundf(2.0f * k));
+            Rectangle box = { x0, roundf(cy - h * 0.5f), w, h };
+            DrawRectangleLinesEx(box, bw, Fade(ink, a));
+            float inner = w - 4.0f * bw;
+            DrawRectangleRec((Rectangle){ x0 + 2.0f * bw, box.y + 2.0f * bw, inner * (float)step / (float)CRTP_STEPS, h - 4.0f * bw },
+                             Fade(ink, a));
+            float mid = roundf(x0 + w * 0.5f);   /* the stock value: a notch above and below the bar */
+            DrawRectangleRec((Rectangle){ mid - bw * 0.5f, box.y - roundf(7.0f * k), bw, roundf(7.0f * k) }, Fade(ink, a * 0.8f));
+            DrawRectangleRec((Rectangle){ mid - bw * 0.5f, box.y + h, bw, roundf(7.0f * k) }, Fade(ink, a * 0.8f));
+        }
+        if (sel && embed.crtHold > 0.0f && !embed.crtHoldDone)
+            DrawRectangleRec((Rectangle){ bx, cy + barH * 0.5f - roundf(5.0f * k), (divX - bx) * (embed.crtHold / EMBED_CRT_HOLD_SEC),
+                             roundf(5.0f * k) }, Fade(selInk, a));
+    }
+    /* preview: the picture as it will look, CRT Geometry with the values being edited */
+    Rectangle area = { roundf(1040.0f * k) + ox, roundf(240.0f * k), roundf(800.0f * k), roundf(600.0f * k) };
+    Texture2D tex = embed.tex;
+    Rectangle src = { 0, 0, (float)embed.fbw, (float)embed.fbh };
+    bool raw = !embed.external;
+    if (embed.external && Rewind_LiveFrame(&tex, &src)) raw = true;
+    Rectangle fit = Embed_DestForScreen(screen, area.width, area.height, (int)src.width, (int)src.height);
+    Rectangle dst = { area.x + fit.x, area.y + fit.y, fit.width, fit.height };
+    DrawRectangleRec(area, Fade(BLACK, a));
+    if (raw && CrtGeom_Ready()) {
+        float v[CRTP_COUNT];
+        bool angleSet;
+        CrtSteps_Resolve(embed.crtSteps, crtSession.def, v, &angleSet);
+        CrtGeom_SetParams(v, angleSet);
+        CrtGeom_Draw(tex, src, dst, Embed_CrtScan(screen), Fade(WHITE, a));
+        CrtGeom_SetParams(crtSession.val, crtSession.angleSet);
+    } else {
+        DrawTexturePro(tex, src, dst, (Vector2){ 0 }, 0.0f, Fade(WHITE, a));
+    }
+    DrawRectangleLinesEx(area, fmaxf(1.0f, roundf(2.0f * k)), Fade(panel, a));
 }
 
 void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
@@ -1202,22 +1364,24 @@ void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_
     DrawRectangleRec((Rectangle){ divX, roundf(40.0f * k), fmaxf(1.0f, roundf(2.0f * k)), roundf(1000.0f * k) },
                      Fade(panel, a));
     int visibleRow = 0;
-    for (int i = 0; i < EMBED_MENU_COUNT; i++) {
+    const float ce = Embed_MenuEase(embed.crtT), aMain = a * (1.0f - ce);   /* the main list gives way to the sub-screen */
+    for (int i = 0; i < EMBED_MENU_COUNT && aMain > 0.0f; i++) {
         if (!Embed_MenuItemAvailable(i)) continue;
         float cy = roundf((300.0f + 92.0f * visibleRow++) * k);
         bool sel = (i == embed.menuSel);
         if (sel) {   /* grey with black text while the slots have the focus */
             float bx = roundf(240.0f * k) + ox;
             DrawRectangleRec((Rectangle){ bx, cy - roundf(36.0f * k), divX - bx, roundf(72.0f * k) },
-                             Fade(embed.slotsFocus ? (Color){ 192, 191, 200, 255 } : panel, a));
+                             Fade(embed.slotsFocus ? (Color){ 192, 191, 200, 255 } : panel, aMain));
         }
         Vector2 m = MeasureTextEx(font, text[i], fs, 0.0f);
         DrawTextEx(font, text[i], (Vector2){ roundf(889.0f * k) + ox - m.x, roundf(cy - m.y * 0.5f) },
-                   fs, 0.0f, Fade(!sel ? WHITE : embed.slotsFocus ? BLACK : selInk, a));
+                   fs, 0.0f, Fade(!sel ? WHITE : embed.slotsFocus ? BLACK : selInk, aMain));
     }
-    if (embed.stateDir[0] && (!embed.external || embed.externalSlots)
+    if (embed.stateDir[0] && (!embed.external || embed.externalSlots) && aMain > 0.0f
         && (embed.menuSel == EMBED_MENU_LOAD || embed.menuSel == EMBED_MENU_SAVE))
-        Embed_DrawSlots(font, text, k, ox, a, panel, selInk);
+        Embed_DrawSlots(font, text, k, ox, aMain, panel, selInk);
+    if (ce > 0.0f) Embed_DrawCrt(font, screen, text, k, divX, a * ce, panel, selInk);
     if (embed.statusTimer > 0.0f) {
         float statusFs = fmaxf(20.0f, 28.0f * k);
         Vector2 status = MeasureTextEx(font, embed.statusText, statusFs, 0.0f);

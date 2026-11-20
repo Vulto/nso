@@ -25,6 +25,10 @@ void Rewind_Frame(float dt, bool inGame, bool zlzrHeld);
 /* True once after a short tap of ZL+ZR: open the Suspend Menu. */
 bool Rewind_MenuTap(void);
 bool Rewind_Session(void);
+/* The game's latest raw frame (what Mednafen's own shader receives), uploaded to a texture: the CRT
+ * Geometry sub-screen previews on it, because the End menu's screenshot already carries the shader.
+ * false while no frame was published yet. */
+bool Rewind_LiveFrame(Texture2D *tex, Rectangle *src);
 void Rewind_Draw(Font font, const char *capHold, const char *capSuspend, const char *capBack, const char *capOk);
 
 #ifdef REWIND_IMPLEMENTATION
@@ -228,6 +232,21 @@ void Rewind_Frame(float dt, bool inGame, bool zlzrHeld)
     }
 }
 
+bool Rewind_LiveFrame(Texture2D *tex, Rectangle *src)
+{
+    if (!rw.session || !rw.shm || !rw.map || !rw.shm->w || !rw.shm->h) return false;
+    Rewind_Textures();
+    const uint8_t *base = (const uint8_t *)rw.map + RW_HEAD;
+    uint32_t seq = __atomic_load_n(&rw.shm->seq, __ATOMIC_ACQUIRE);
+    if (seq != rw.seenSeq) {
+        rw.seenSeq = seq;
+        UpdateTextureRec(rw.liveTex, (Rectangle){ 0, 0, (float)rw.shm->w, (float)rw.shm->h }, base);
+    }
+    *tex = rw.liveTex;
+    *src = (Rectangle){ 0, 0, (float)rw.shm->w, (float)rw.shm->h };
+    return true;
+}
+
 bool Rewind_MenuTap(void)
 {
     bool t = rw.menuTap;
@@ -374,6 +393,7 @@ void Rewind_End(void) {}
 void Rewind_Frame(float dt, bool a, bool b) { (void)dt; (void)a; (void)b; }
 bool Rewind_MenuTap(void) { return false; }
 bool Rewind_Session(void) { return false; }
+bool Rewind_LiveFrame(Texture2D *t, Rectangle *r) { (void)t; (void)r; return false; }
 void Rewind_Draw(Font f, const char *a, const char *b, const char *c, const char *d) { (void)f; (void)a; (void)b; (void)c; (void)d; }
 #endif
 #endif
