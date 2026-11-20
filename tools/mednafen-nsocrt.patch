@@ -199,7 +199,7 @@ index f9a2f35..a235dba 100644
  void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_screen_h, const MDFN_Rect *rect, const MDFN_Rect *dest_rect, int tw, int th, int orig_tw, int orig_th, unsigned rotated)
  {
          oblt->p_glEnable(GL_FRAGMENT_PROGRAM_ARB);
-@@ -446,6 +615,59 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -446,6 +615,62 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
           oblt->p_glUniform1iARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTexture"), 0);
           oblt->p_glUniform2fARB(oblt->p_glGetUniformLocationARB(CSP[0].p, "rubyTextureSize"), tw, th);
  	}
@@ -231,11 +231,14 @@ index f9a2f35..a235dba 100644
 +	  if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(GL_COLOR_ATTACHMENT0); }
 +	  oblt->p_glViewport(0, 0, NsoCrtIw, NsoCrtIh);
 +	  if(scissorOn) oblt->p_glDisable(GL_SCISSOR_TEST);
-+	  oblt->p_glMatrixMode(GL_PROJECTION);
++	  /* Mednafen puts its window ortho on MODELVIEW (projection stays identity).
++	   * Push that, and install an ortho in the same matrix so DrawQuad's dest
++	   * vertices fill the FBO. A previous PROJECTION ortho composed with the
++	   * leftover MODELVIEW transform and the CRT pass drew nothing (black). */
++	  oblt->p_glMatrixMode(GL_MODELVIEW);
 +	  oblt->p_glPushMatrix();
 +	  oblt->p_glLoadIdentity();
 +	  oblt->p_glOrtho(dest_rect->x, dest_rect->x + dw, dest_rect->y + dh, dest_rect->y, -1.0, 1.0);
-+	  oblt->p_glMatrixMode(GL_MODELVIEW);
 +	 }
 +#endif
 +	 /* Ensure and the FBO path bind our target texture; the caller then
@@ -259,36 +262,30 @@ index f9a2f35..a235dba 100644
  	else if(OurType == SHADER_GOAT)
  	{
   	 oblt->p_glUseProgramObjectARB(CSP[0].p);
-@@ -582,6 +804,44 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
+@@ -582,6 +807,49 @@ void OpenGL_Blitter_Shader::ShaderBegin(const int gl_screen_w, const int gl_scre
  
  void OpenGL_Blitter_Shader::ShaderEnd(void)
  {
 +#ifdef __linux__
 +	if(OurType == SHADER_NSOCRT && NsoCrtFbo && NsoCrtGL[1]) {
 +		typedef void (*BindFB)(GLenum, GLuint);
-+		oblt->p_glMatrixMode(GL_PROJECTION);
-+		oblt->p_glPopMatrix();
++		typedef void (*DrawBuf)(GLenum);
 +		oblt->p_glMatrixMode(GL_MODELVIEW);
++		oblt->p_glPopMatrix();
 +		int dx = NsoCrtDest[0], dy = NsoCrtDest[1], dw = NsoCrtDest[2], dh = NsoCrtDest[3];
-+		bool blitOk = false;
-+		if(NsoCrtGL[7]) {
-+		 typedef void (*BlitFB)(GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLbitfield,GLenum);
-+		 int gy0 = NsoCrtSh - (dy + dh);
-+		 int gy1 = NsoCrtSh - dy;
-+		 ((BindFB)NsoCrtGL[1])(0x8CA8, NsoCrtFbo);
-+		 ((BindFB)NsoCrtGL[1])(0x8CA9, 0);
-+		 ((BlitFB)NsoCrtGL[7])(0, 0, NsoCrtIw, NsoCrtIh, dx, gy0, dx + dw, gy1, 0x00004000, 0x2601);
-+		 ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
-+		 if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(0x0405); } /* GL_BACK */
-+		 blitOk = true;
-+		} else {
-+		 ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
-+		 if(NsoCrtGL[8]) { typedef void (*DrawBuf)(GLenum); ((DrawBuf)NsoCrtGL[8])(0x0405); }
-+		}
++		/* Present the low-res CRT FBO with the 2-px mask at final resolution.
++		 * Prefer the textured blit (the mask lives there). Restore GL_BACK
++		 * before drawing: ShaderBegin set COLOR_ATTACHMENT0 on the FBO. */
++		((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
++		if(NsoCrtGL[8]) ((DrawBuf)NsoCrtGL[8])(0x0405); /* GL_BACK */
 +		oblt->p_glViewport(0, 0, NsoCrtSw, NsoCrtSh);
-+		if(!blitOk && NsoCrtBlitP) {
++		if(NsoCrtScissor) oblt->p_glDisable(GL_SCISSOR_TEST);
++		bool presented = false;
++		if(NsoCrtBlitP) {
 +		 oblt->p_glUseProgramObjectARB((GLhandleARB)NsoCrtBlitP);
 +		 oblt->p_glBindTexture(GL_TEXTURE_2D, NsoCrtColor);
++		 GLint loc = oblt->p_glGetUniformLocationARB((GLhandleARB)NsoCrtBlitP, "Tex0");
++		 if(loc >= 0) oblt->p_glUniform1iARB(loc, 0);
 +		 oblt->p_glUniform1fARB(oblt->p_glGetUniformLocationARB((GLhandleARB)NsoCrtBlitP, "DotMask"), 1.0f);
 +		 oblt->p_glBegin(GL_QUADS);
 +		 oblt->p_glTexCoord2f(0.0f, 1.0f); oblt->p_glVertex2f((float)dx, (float)dy);
@@ -296,6 +293,17 @@ index f9a2f35..a235dba 100644
 +		 oblt->p_glTexCoord2f(1.0f, 0.0f); oblt->p_glVertex2f((float)(dx + dw), (float)(dy + dh));
 +		 oblt->p_glTexCoord2f(0.0f, 0.0f); oblt->p_glVertex2f((float)dx, (float)(dy + dh));
 +		 oblt->p_glEnd();
++		 presented = true;
++		}
++		if(!presented && NsoCrtGL[7]) {
++		 typedef void (*BlitFB)(GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLbitfield,GLenum);
++		 int gy0 = NsoCrtSh - (dy + dh);
++		 int gy1 = NsoCrtSh - dy;
++		 ((BindFB)NsoCrtGL[1])(0x8CA8, NsoCrtFbo);
++		 ((BindFB)NsoCrtGL[1])(0x8CA9, 0);
++		 if(NsoCrtGL[8]) ((DrawBuf)NsoCrtGL[8])(0x0405);
++		 ((BlitFB)NsoCrtGL[7])(0, 0, NsoCrtIw, NsoCrtIh, dx, gy0, dx + dw, gy1, 0x00004000, 0x2601);
++		 ((BindFB)NsoCrtGL[1])(GL_FRAMEBUFFER, 0);
 +		}
 +		if(NsoCrtPrevTex) oblt->p_glBindTexture(GL_TEXTURE_2D, (GLuint)NsoCrtPrevTex);
 +		if(NsoCrtScissor) oblt->p_glEnable(GL_SCISSOR_TEST);

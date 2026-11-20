@@ -5,6 +5,7 @@ All notable changes to NSO. Newest first. Versions follow the Git tags.
 ## [Unreleased]
 
 ### Performance
+- Mednafen CRT Geometry (two-pass): the 960×720 pass used a projection-matrix ortho, but Mednafen stores its window transform on MODELVIEW, so the CRT draw missed the FBO and the screen was black with CRT on. The pass now sets MODELVIEW, and the present uses the textured mask blit.
 - While a Mednafen game or a reparented port owns the screen, NSO no longer redraws the grid at 60 fps (it waits on input). End, the close prompt and park/resume still work; enter/leave animations still play; covers stay loaded.
 - CRT Geometry is rendered at about 960×720 (4:3) into a non-MSAA target and scaled up, with the 2-pixel phosphor mask applied at the output. An optional Fast path (cheaper scanline filter, glow and tone map) is a toggle: Settings cycles Off / High (Alta) / Fast (Rápida); the in-game CRT screen has "Fast CRT" / "CRT rápido". Saved as `<system>.crtgeom_fast`. Applied in NSO, Mednafen (`tools/mednafen-nsocrt.patch`) and the hooked ports (SoH, Lighthouse, SpaghettiKart, Perfect Dark).
 
