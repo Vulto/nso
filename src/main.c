@@ -811,6 +811,219 @@ static float embedBackT = -1.0f;   /* >= 0: embedded game shrinking into its car
  * animation plays and after it. No black cover and no second enter intro for that wait. */
 static bool externalQuitting = false;
 
+/* One game kept alive behind the grid (End → To Game Selection). Re-opening the
+ * same title resumes it; opening another asks to close this one first. */
+static struct {
+    bool parked;
+    bool embedded;           /* in-process module (embed.h) */
+    bool external;           /* child with the menu-action protocol */
+    int sys, game;
+    char title[96];
+    NsoProc pid;
+    char menuDir[1200];
+    unsigned long window;
+    bool slots;
+} live;
+static bool liveParking = false;   /* embedBackT is returning to the card, then park */
+static int liveConfirm = 0;        /* 0 off, 1 open */
+static int liveConfirmSel = 0;     /* 0 Yes, 1 No */
+static int liveConfirmGame = -1;   /* grid index to launch after Yes */
+static float liveConfirmT = 0.0f;
+
+static bool Live_Busy(void) { return waitingForGame && !live.parked; }
+
+static void Live_Clear(void)
+{
+    live.parked = false;
+    live.embedded = false;
+    live.external = false;
+    live.sys = live.game = -1;
+    live.title[0] = '\0';
+    live.pid = NsoProcNone();
+    live.menuDir[0] = '\0';
+    live.window = 0;
+    live.slots = false;
+    liveParking = false;
+}
+
+/* Capture identity while the overlay/module is still up; finish after the card anim. */
+static void Live_BeginPark(void)
+{
+    const GameEntry *g = (launchingGameIdx >= 0 && launchingGameIdx < ActiveGameCount())
+        ? &ActiveGames()[launchingGameIdx] : NULL;
+    live.sys = currentSystem;
+    live.game = launchingGameIdx;
+    snprintf(live.title, sizeof(live.title), "%s", g && g->title ? g->title : "?");
+    live.embedded = Embed_IsActive() && !Embed_IsExternal();
+    live.external = Embed_IsExternal();
+    if (live.external) {
+        live.window = Embed_ExternalWindow();
+        snprintf(live.menuDir, sizeof(live.menuDir), "%s", Embed_StateDir());
+        live.pid = gamePid;
+        live.slots = g && g->externalSlots;
+    } else {
+        live.window = 0;
+        live.menuDir[0] = '\0';
+        live.pid = NsoProcNone();
+        live.slots = false;
+    }
+    liveParking = true;
+}
+
+static void Live_FinishPark(void)
+{
+    if (live.embedded) {
+        Embed_Park();
+    } else if (live.external) {
+        /* Child stays paused (SIGSTOP / its own bridge). Drop the overlay only. */
+        Embed_Stop();
+    } else {
+        Embed_Park();
+    }
+    live.parked = true;
+    liveParking = false;
+    externalQuitting = false;
+    if (live.embedded) waitingForGame = false;
+    /* external: waitingForGame stays true so process-exit is still watched */
+}
+
+/* Close the parked (or still-running overlay) game for good. */
+static void Live_Close(void)
+{
+    liveConfirm = 0;
+    liveConfirmT = 0.0f;
+    if (live.parked && live.external && live.menuDir[0]) {
+        Embed_WriteMenuAction(live.menuDir, "quit", 0);
+        if (NsoProcOk(live.pid)) {
+            for (int i = 0; i < 40; i++) {
+                if (NsoSpawnExited(&live.pid, NULL)) break;
+                struct timespec ts = { 0, 50 * 1000 * 1000 };
+                nanosleep(&ts, NULL);
+            }
+            if (NsoProcOk(live.pid)) {
+                NsoSpawnKill(live.pid);
+                for (int i = 0; i < 20; i++) {
+                    if (NsoSpawnExited(&live.pid, NULL)) break;
+                    struct timespec ts = { 0, 50 * 1000 * 1000 };
+                    nanosleep(&ts, NULL);
+                }
+                if (NsoProcOk(live.pid)) {
+#if !defined(_WIN32)
+                    kill(live.pid, SIGKILL);
+#endif
+                    NsoSpawnExited(&live.pid, NULL);
+                }
+            }
+        }
+        if (live.pid == gamePid) { gamePid = NsoProcNone(); waitingForGame = false; }
+    }
+    Embed_Unload();
+    Live_Clear();
+}
+
+static bool Live_IsSame(int sys, int game)
+{
+    return live.parked && live.sys == sys && live.game == game;
+}
+
+static bool liveShowAfterFrame;
+static void Live_Resume(void)
+{
+    if (!live.parked) return;
+    if (live.embedded) {
+        Embed_Unpark();
+        live.parked = false;
+        currentState = EMBED;
+        return;
+    }
+    if (live.external && live.menuDir[0]) {
+        Embed_WriteMenuAction(live.menuDir, "resume", 0);
+        gamePid = live.pid;
+        waitingForGame = true;
+        live.parked = false;
+        currentState = MOSAIC;
+        /* Raise the hidden window after one clean host frame (as on Continue). */
+        liveShowAfterFrame = true;
+        return;
+    }
+    Live_Clear();
+}
+
+static void Live_ConfirmInput(bool gpUp, bool gpDown, bool gpConfirm, bool gpBack)
+{
+    if (liveConfirm == 0) return;
+    if (IsKeyPressed(KEY_UP) || gpUp || IsKeyPressed(KEY_DOWN) || gpDown) {
+        liveConfirmSel = 1 - liveConfirmSel;
+        Sfx_Play(SFX_NAVIGATE);
+    }
+    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_BACKSPACE) || gpBack) {
+        liveConfirm = 0;
+        Sfx_Play(SFX_CLICK);
+        return;
+    }
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) {
+        Sfx_Play(SFX_CLICK);
+        if (liveConfirmSel == 0) {
+            /* Yes: close the parked game, then launch the chosen one. */
+            int next = liveConfirmGame;
+            liveConfirm = 0;
+            liveConfirmT = 0.0f;
+            Live_Close();
+            /* CRT session of the closed game ends with Embed_Unload's host path; Mednafen's
+             * run file is cleared on the next LaunchGame. */
+            if (next >= 0 && next < ActiveGameCount() && GameIsLaunchable(&ActiveGames()[next])) {
+                isLaunching = true;
+                launchingGameIdx = next;
+                GameIdx = next;
+                currentState = LAUNCHING;
+                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
+            }
+        } else {
+            liveConfirm = 0;
+        }
+    }
+}
+
+/* The same fade rates as Details (DETAILS_FADE_*), once per frame. */
+static void Live_ConfirmStep(void)
+{
+    float st = GetFrameTime() * 1000.0f / DETAILS_FADE_DELTA_MS;
+    if (liveConfirm) liveConfirmT = fminf(1.0f, liveConfirmT + st * DETAILS_FADE_IN_STEP);
+    else liveConfirmT = fmaxf(0.0f, liveConfirmT - st * DETAILS_FADE_OUT_STEP);
+}
+
+static void Live_ConfirmDraw(Font font)
+{
+    float t = liveConfirmT;
+    if (t <= 0.0f) return;
+    float e = t * t * (3.0f - 2.0f * t);
+    int sw = GetScreenWidth(), sh = GetScreenHeight();
+    /* over the blurred grid: the pause menu's dark veil */
+    DrawRectangle(0, 0, sw, sh, Fade(BLACK, 0.45f * e));
+    const Color panel = { 240, 245, 244, 255 }, selInk = { 246, 80, 59, 255 };
+    float k = fminf((float)sw / 1920.0f, (float)sh / 1080.0f);
+    float fs = fmaxf(22.0f, roundf(36.0f * k));
+    float rowH = fmaxf(40.0f, roundf(56.0f * k));
+    float boxW = fminf((float)sw * 0.55f, 720.0f * k);
+    float boxH = rowH * 3.4f;
+    float bx = ((float)sw - boxW) * 0.5f;
+    float by = ((float)sh - boxH) * 0.5f;
+    char title[192];
+    snprintf(title, sizeof(title), T(S_LIVE_CLOSE), live.title[0] ? live.title : "?");
+    float tw = MeasureTextEx(font, title, fs, 0.0f).x;
+    DrawTextEx(font, title, (Vector2){ bx + (boxW - tw) * 0.5f, by }, fs, 0.0f, Fade(WHITE, e));
+    const char *labels[2] = { T(S_LIVE_YES), T(S_LIVE_NO) };
+    for (int i = 0; i < 2; i++) {
+        float ry = by + rowH * (1.2f + (float)i);
+        bool sel = (i == liveConfirmSel);
+        if (sel) DrawRectangleRec((Rectangle){ bx, ry, boxW, rowH }, Fade(panel, e));
+        Color ink = Fade(sel ? selInk : WHITE, e);
+        float lw = MeasureTextEx(font, labels[i], fs, 0.0f).x;
+        DrawTextEx(font, labels[i], (Vector2){ bx + (boxW - lw) * 0.5f, ry + (rowH - fs) * 0.5f },
+                   fs, 0.0f, ink);
+    }
+}
+
 /* Leave mosaic → systems: reverse of enter (info out → shrink → slide; no delay). */
 typedef enum {
     MOSAIC_EXIT_NONE = 0,
@@ -3144,6 +3357,16 @@ static void DrawMissingCover(Texture2D tex, Rectangle r, Color tint) {
                fs, 0.0f, ColorTint(LIGHTGRAY, tint));
 }
 
+
+static void Live_HintDraw(Rectangle r)
+{
+    if (!live.parked || live.sys != currentSystem) return;
+    /* small selInk bar at the bottom of the parked game's cover */
+    const Color selInk = { 246, 80, 59, 255 };
+    float h = fmaxf(4.0f, r.height * 0.035f);
+    DrawRectangleRec((Rectangle){ r.x, r.y + r.height - h, r.width, h }, selInk);
+}
+
 static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numImgs) {
     if (numImgs <= 0 || !layout) return;
 
@@ -3185,6 +3408,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
             DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, ColorTint(GameTint(i), othersTint));
             if (Repo_Offer(Game_Repo(&ActiveGames()[i])))
                 Repo_BadgeDraw(slotFont, (Rectangle){ox, oy, draw_w, draw_h});
+            if (Live_IsSame(currentSystem, i))
+                Live_HintDraw((Rectangle){ox, oy, draw_w, draw_h});
         }
     }
 
@@ -3244,6 +3469,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                          GameTint(GameIdx));
         if (Repo_Offer(Game_Repo(&ActiveGames()[GameIdx])))
             Repo_BadgeDraw(slotFont, (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
+        if (Live_IsSame(currentSystem, GameIdx))
+            Live_HintDraw((Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
 
         float pulse = sinf((float)GetTime() * 5.6f) * 0.5f + 0.5f;
         unsigned char r = (unsigned char)(255 * (1.0f - pulse));
@@ -3473,7 +3700,8 @@ static bool SortPanel_Active(void);
 static bool OverlayActive(void) {
     return SortPanel_Active() || sidebarOpen || sidebarExpandPending || sidebarClosing
         || sbWidthPhase != SB_WIDTH_IDLE
-        || mosaicExitPhase != MOSAIC_EXIT_NONE;
+        || mosaicExitPhase != MOSAIC_EXIT_NONE
+        || liveConfirm != 0;
 }
 
 /* Select-games pipeline (gamesel.h) of a catalog game, -1 = none. */
@@ -4443,7 +4671,8 @@ static void DrawMosaicSlots(Color background, Font font) {
 static void DrawMosaic(Color background, Font font) {
     Color SystemBG = GetColor(0xEE0010FF);
 
-    float overlayT = fmaxf(detailsT, statusT);
+    Live_ConfirmStep();
+    float overlayT = fmaxf(fmaxf(detailsT, statusT), liveConfirmT);
     if (SidebarWantsBlur() || overlayT > 0.0f) {
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
@@ -4471,6 +4700,12 @@ static void DrawMosaic(Color background, Font font) {
 
     SortPanel_Draw(font);
 
+    if (liveConfirmT > 0.0f) {
+        /* Close-the-running-game question: over the blur, with its own A / B hint. */
+        Live_ConfirmDraw(font);
+        DrawInfoBarEx(font, T(S_SIDEBAR_INFO), liveConfirmT, (1.0f - liveConfirmT) * INFO_BAR_SLIDE_PX);
+        return;
+    }
     /* Above blur / panel so accept/back help stays readable. */
     InfoBar_Draw(font);
 }
@@ -4710,7 +4945,7 @@ int main(int argc, char **argv) {
         padCRight = gpReady && eRX > 0;
 
         bool overlayConsumedConfirm = false;
-        bool canNavigate = !OverlayActive() && !isLaunching && !waitingForGame
+        bool canNavigate = !OverlayActive() && !isLaunching && !Live_Busy()
             && !screenSliding;
 
         if (introFrames < FPS) {
@@ -4735,6 +4970,8 @@ int main(int argc, char **argv) {
         if (waitingForGame && NsoProcOk(gamePid)) {
             if (NsoSpawnExited(&gamePid, NULL)) {
                 if (currentState == EMBED) Embed_Stop();
+                bool wasParked = live.parked && live.pid == gamePid;
+                if (wasParked) Live_Clear();
                 if (externalRestartOnExit && launchingGameIdx < ActiveGameCount()) {
                     externalRestartOnExit = false;
                     const GameEntry *restartGame = &ActiveGames()[launchingGameIdx];
@@ -4757,7 +4994,7 @@ int main(int argc, char **argv) {
                     currentState = MOSAIC;
                     /* Same enter intro as systems → mosaic (delay, grow, then info fade);
                      * after a Quit the card-return animation already started it. */
-                    if (embedBackT < 0.0f && !externalQuitting) BeginMosaicEnterIntro();
+                    if (embedBackT < 0.0f && !externalQuitting && !wasParked) BeginMosaicEnterIntro();
                     externalQuitting = false;
                 }
             }
@@ -4765,7 +5002,7 @@ int main(int argc, char **argv) {
 #ifndef _WIN32
         if (externalMenuSignal) {
             externalMenuSignal = 0;
-            if (waitingForGame && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
+            if (Live_Busy() && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
                 const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
                 if (GameHasExternalMenu(runningGame)) {
                     char menuDir[1200];
@@ -4792,7 +5029,7 @@ int main(int argc, char **argv) {
 #ifndef _WIN32
         /* Generic child launchers own the game process and translate the
          * Guide request into a pause plus a signal back to the host. */
-        if (waitingForGame && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
+        if (Live_Busy() && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
             const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
             bool menuPressed = IsKeyPressed(KEY_END)
                 || (IsGamepadAvailable(0)
@@ -4811,7 +5048,7 @@ int main(int argc, char **argv) {
                 Rewind_End();
             } else {
                 bool inGame = currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame
-                              && !externalQuitting && !isLaunching;
+                              && !externalQuitting && !isLaunching && !live.parked;
                 bool chord = IsGamepadAvailable(0) && IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_TRIGGER_2)
                              && IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
                 Rewind_Frame(dt, inGame, chord);
@@ -4831,7 +5068,7 @@ int main(int argc, char **argv) {
 
         bool layoutLocked = screenSliding;
 
-        if (currentState == MOSAIC && !waitingForGame && !layoutLocked) {
+        if (currentState == MOSAIC && !Live_Busy() && !layoutLocked) {
             if (mosaicExitPhase == MOSAIC_EXIT_INFO) {
                 /* Hold grown selection while info bar closes (reverse of grow→info). */
                 if (InfoBar_IsHidden()) {
@@ -4902,23 +5139,29 @@ int main(int argc, char **argv) {
             UpdateScreenFadeAnimation(&launchFadeAnim, GetFrameTime());
             if (IsScreenFadeAnimationFinished(&launchFadeAnim)) {
                 const GameEntry *launched = &ActiveGames()[launchingGameIdx];
-                if (launched->embedRomKey) {
+                if (Live_IsSame(currentSystem, launchingGameIdx)) {
                     isLaunching = false;
-                    if (StartEmbeddedGame(launched)) {
-                        currentState = EMBED;
+                    Live_Resume();
+                } else {
+                    if (live.parked) Live_Close();
+                    if (launched->embedRomKey) {
+                        isLaunching = false;
+                        if (StartEmbeddedGame(launched)) {
+                            currentState = EMBED;
+                        } else {
+                            currentState = MOSAIC;
+                            BeginMosaicEnterIntro();
+                        }
+                    } else if (NsoProcOk(gamePid = LaunchGame(launched))) {
+                        waitingForGame = true;
+                        externalQuitting = false;
+                        isLaunching = false;
+                        if (!GameHasExternalMenu(launched)) MinimizeWindow();
                     } else {
+                        isLaunching = false;
                         currentState = MOSAIC;
                         BeginMosaicEnterIntro();
                     }
-                } else if (NsoProcOk(gamePid = LaunchGame(launched))) {
-                    waitingForGame = true;
-                    externalQuitting = false;
-                    isLaunching = false;
-                    if (!GameHasExternalMenu(launched)) MinimizeWindow();
-                } else {
-                    isLaunching = false;
-                    currentState = MOSAIC;
-                    BeginMosaicEnterIntro();
                 }
                 InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
             }
@@ -4926,18 +5169,22 @@ int main(int argc, char **argv) {
 
         if (embedBackT >= 0.0f) {
             embedBackT += dt / EMBED_BACK_SEC;
-            if (embedBackT >= 1.0f) { Embed_Stop(); embedBackT = -1.0f; }
+            if (embedBackT >= 1.0f) {
+                if (liveParking) Live_FinishPark();
+                else Embed_Stop();
+                embedBackT = -1.0f;
+            }
         }
         if (currentState == EMBED && !Embed_Update(dt)) {
             const int externalResult = Embed_ExternalResult();
             if (externalResult != EMBED_EXTERNAL_NONE) {
                 if (externalResult == EMBED_EXTERNAL_QUIT) {
-                    /* Keep the captured frame alive for the shared card-return
-                     * animation while the child processes its quit command. */
+                    /* To Game Selection: park the child (stays paused) and play
+                     * the shared card-return animation into the grid. */
+                    Live_BeginPark();
                     Embed_ExternalSetChildVisible(false);
                     currentState = MOSAIC;
                     embedBackT = 0.0f;
-                    externalQuitting = waitingForGame;
                     BeginMosaicEnterIntro();
                 } else {
                     if (externalResult == EMBED_EXTERNAL_RESUME) {
@@ -4954,7 +5201,9 @@ int main(int argc, char **argv) {
                 }
                 overlayConsumedConfirm = true;
             } else {
-                embedBackT = 0.0f;   /* Embed_Stop once the frame reached its card */
+                /* In-process module: park it behind the grid. */
+                Live_BeginPark();
+                embedBackT = 0.0f;
                 currentState = MOSAIC;
                 BeginMosaicEnterIntro();
                 overlayConsumedConfirm = true;   /* the Quit press must not relaunch */
@@ -4982,7 +5231,7 @@ int main(int argc, char **argv) {
         /* A on an install notice builds that game (one press). Not while a
          * game, Details, a scrape or a slide owns input. */
         bool noticeTookInput = false;
-        if (Repo_NoticeActionable() && !screenSliding && !isLaunching && !waitingForGame
+        if (Repo_NoticeActionable() && !screenSliding && !isLaunching && !Live_Busy()
             && !detailsOpen && detailsT <= 0.0f && !scrapeBusy && !OverlayActive()
             && currentState != LAUNCHING && currentState != SPLASH && currentState != EMBED
             && (IsKeyPressed(KEY_A) || gpConfirm)) {
@@ -5016,7 +5265,11 @@ int main(int argc, char **argv) {
                     break;
 
                 case MOSAIC:
-                    if (waitingForGame) break;
+                    if (liveConfirm != 0) {
+                        Live_ConfirmInput(gpUp, gpDown, gpConfirm, gpBack);
+                        break;
+                    }
+                    if (Live_Busy()) break;
 
                     if (SortPanel_Active()) {
                         SortPanel_Input(gpUp, gpDown, gpConfirm, gpBack);
@@ -5112,14 +5365,22 @@ int main(int argc, char **argv) {
                         }
                     }
 
-                    if (!overlayConsumedConfirm && (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
+                    if (!overlayConsumedConfirm && liveConfirm == 0
+                        && (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
                         if (gameCount > 0 && GameIdx < gameCount) {
                             if (GameIsLaunchable(&ActiveGames()[GameIdx])) {
                                 Sfx_Play(SFX_CLICK);
-                                isLaunching = true;
-                                launchingGameIdx = GameIdx;
-                                currentState = LAUNCHING;
-                                InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
+                                if (live.parked && !Live_IsSame(currentSystem, GameIdx)) {
+                                    liveConfirm = 1;
+                                    liveConfirmSel = 0;
+                                    liveConfirmGame = GameIdx;
+                                    liveConfirmT = 0.0f;
+                                } else {
+                                    isLaunching = true;
+                                    launchingGameIdx = GameIdx;
+                                    currentState = LAUNCHING;
+                                    InitScreenFadeAnimation(&launchFadeAnim, EMBED_BACK_SEC, 0.65f, 0.0f, 1.0f, BLACK);
+                                }
                             }
                         }
                     }
@@ -5147,7 +5408,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        SortPanel_Play(waitingForGame || currentState == EMBED);
+        SortPanel_Play(Live_Busy() || currentState == EMBED);
 
         if (!screenSliding) UpdateSplash(dt);
 
@@ -5197,7 +5458,7 @@ int main(int argc, char **argv) {
                            p, 1.0f - (1.0f - t) * (1.0f - t), 0.35f * p + 0.65f * u * u * (3.0f - 2.0f * u));
         }
 
-        if (waitingForGame && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame && !externalQuitting) {
+        if (Live_Busy() && currentState != EMBED && embedBackT < 0.0f && !externalResumeAfterFrame && !externalQuitting) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), BLACK);
             if (Rewind_Session())
                 Rewind_Draw(font, T(S_RW_HOLD), T(S_RW_SUSPEND), T(S_RW_BACK), T(S_RW_OK));
@@ -5208,6 +5469,10 @@ int main(int argc, char **argv) {
 
         EndDrawing();
 
+        if (liveShowAfterFrame) {
+            Embed_ShowExternalWindow(live.window);
+            liveShowAfterFrame = false;
+        }
         if (externalResumeAfterFrame) {
             Embed_ExternalSetChildVisible(true);
             Embed_Stop();
@@ -5215,7 +5480,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    Embed_Stop();
+    if (live.parked || Embed_IsActive()) Live_Close();
+    else Embed_Stop();
     CoverLoader_Stop();
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
     if (GameSel_Busy()) GameSel_Cancel();
@@ -5238,5 +5504,7 @@ int main(int argc, char **argv) {
     Sfx_Shutdown();
     CloseWindow();
 
+    /* Skip static destructors of a persistent port engine (they wait on its threads). */
+    if (Embed_NeedsFastExit()) { fflush(NULL); _exit(EXIT_SUCCESS); }
     return EXIT_SUCCESS;
 }

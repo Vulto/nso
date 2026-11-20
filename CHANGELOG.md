@@ -2,6 +2,13 @@
 
 All notable changes to NSO. Newest first. Versions follow the Git tags.
 
+## [Unreleased]
+
+### Games
+- To Game Selection keeps the game paused in the background (embedded modules, Mednafen and external ports); starting it again resumes it instantly.
+- Starting another game asks "Close <game>?" (Yes / No) before closing the paused one. Only one game stays alive.
+- The paused game's cover has a red bar on the grid. Quitting NSO closes the paused game.
+
 ## [0.2.0] - 2026-11-19
 
 Everything since `v0.1.0`.

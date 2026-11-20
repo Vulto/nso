@@ -63,6 +63,10 @@ typedef enum {
     S_RW_HOLD, S_RW_SUSPEND, S_RW_BACK, S_RW_OK,
     /* N64 controller connect pop-up */
     S_PAD_N64_CONNECTED,
+    /* keep-alive: a game left running; confirm before closing it for another */
+    S_LIVE_CLOSE,   /* "Close %s?" / "Fechar %s?" */
+    S_LIVE_YES,
+    S_LIVE_NO,
     S_COUNT
 } StrId;
 
@@ -285,6 +289,9 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_RW_BACK] = "Back",
         [S_RW_OK] = "OK",
         [S_PAD_N64_CONNECTED] = "N64 controller connected",
+        [S_LIVE_CLOSE] = "Close %s?",
+        [S_LIVE_YES] = "Yes",
+        [S_LIVE_NO] = "No",
     },
     [LANG_PT] = {
         [S_RAW] = "%s",
@@ -458,6 +465,9 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_RW_BACK] = "Voltar",
         [S_RW_OK] = "OK",
         [S_PAD_N64_CONNECTED] = "Controle N64 conectado",
+        [S_LIVE_CLOSE] = "Fechar %s?",
+        [S_LIVE_YES] = "Sim",
+        [S_LIVE_NO] = "Não",
     },
 };
 

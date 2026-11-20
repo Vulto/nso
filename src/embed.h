@@ -152,10 +152,26 @@ float Embed_MenuOpacity(void);
 /* The CRT Geometry sub-screen of the pause menu is open (main.c switches the info bar). */
 bool Embed_CrtOpen(void);
 void Embed_Stop(void);
+/* Full teardown: Embed_Stop plus discarding a keep_loaded module (switch game / quit NSO). */
+void Embed_Unload(void);
 bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots);
 void Embed_ExternalSetChildVisible(bool visible);
-/* Result is 0 when no child-menu result is pending, otherwise resume/quit/restart. */
+/* Raise a parked external child's window again (the overlay is already gone). */
+void Embed_ShowExternalWindow(unsigned long window);
+/* Result is 0 when no child-menu result is pending, otherwise resume/quit/restart.
+ * EMBED_EXTERNAL_QUIT now means "To Game Selection": keep the child paused; main parks it. */
 int Embed_ExternalResult(void);
+bool Embed_IsActive(void);
+bool Embed_NeedsFastExit(void);
+bool Embed_IsParked(void);
+bool Embed_IsExternal(void);
+unsigned long Embed_ExternalWindow(void);
+const char *Embed_StateDir(void);
+/* Pause audio and stop ticking; keep the module/session for an instant resume. */
+void Embed_Park(void);
+void Embed_Unpark(void);
+/* Write an action for a parked external child (menuDir from Embed_StateDir before Stop). */
+bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot);
 
 #endif /* NSO_EMBED_H */
 
@@ -200,6 +216,7 @@ bool Embed_Start(const char *modulePath, const char *dataPath, const char *state
 bool Embed_StartExternal(const char *stateDir, unsigned long childWindow, bool stateSlots)
 { (void)stateDir; (void)childWindow; (void)stateSlots; return false; }
 void Embed_ExternalSetChildVisible(bool visible) { (void)visible; }
+void Embed_ShowExternalWindow(unsigned long window) { (void)window; }
 int Embed_ExternalResult(void) { return EMBED_EXTERNAL_NONE; }
 bool Embed_Update(float dt) { (void)dt; return false; }
 void Embed_Draw(Font font, EmbedScreen screen, const char *const text[EMBED_TXT_COUNT], Shader blur, int blurDirLoc)
@@ -211,6 +228,17 @@ void Embed_DrawExternalResumeFrame(EmbedScreen screen) { (void)screen; }
 float Embed_MenuOpacity(void) { return 0.0f; }
 bool Embed_CrtOpen(void) { return false; }
 void Embed_Stop(void) {}
+void Embed_Unload(void) {}
+bool Embed_IsActive(void) { return false; }
+bool Embed_NeedsFastExit(void) { return false; }
+bool Embed_IsParked(void) { return false; }
+bool Embed_IsExternal(void) { return false; }
+unsigned long Embed_ExternalWindow(void) { return 0; }
+const char *Embed_StateDir(void) { return ""; }
+void Embed_Park(void) {}
+void Embed_Unpark(void) {}
+bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot)
+{ (void)menuDir; (void)action; (void)slot; return false; }
 #else
 #include <dlfcn.h>
 #include <pthread.h>
@@ -271,6 +299,7 @@ static struct {
     RenderTexture2D blurA, blurB;
     bool blurReady;
     bool quitting;   /* To Game Selection: false once the menu exit ends */
+    bool parked;     /* left running behind the grid; audio paused, no ticks */
     char stateDir[1100];                   /* "" = no suspend points */
     const uint8_t *last;                   /* last frame (thumbnail), module-owned */
     bool slotsFocus;
@@ -286,6 +315,8 @@ static struct {
     char loadPath[1200];
 } embed;
 static void *embedRetainedSo;
+/* A keep_loaded engine leaves worker threads whose static destructors block at exit(). */
+static bool embedPersistentSeen;
 static char embedRetainedPath[2048];
 
 static bool Embed_BeginLoad(const char *path);
@@ -296,6 +327,7 @@ static void Embed_DiscardRetainedModule(void)
     if (!embedRetainedSo) return;
     nsomod_get_api_fn get = (nsomod_get_api_fn)dlsym(embedRetainedSo, NSOMOD_ENTRY);
     const NsomodApi *api = get ? get() : NULL;
+    if (api && api->keep_loaded) embedPersistentSeen = true;
     if (api && api->keep_loaded && api->shutdown) api->shutdown();
     dlclose(embedRetainedSo);
     embedRetainedSo = NULL;
@@ -391,6 +423,7 @@ void Embed_Stop(void)
             /* A persistent module may keep its live session while NSO is at
                Game Selection. Re-entry calls init() to resume that session. */
             embedRetainedSo = embed.so;
+            embedPersistentSeen = true;
             snprintf(embedRetainedPath, sizeof(embedRetainedPath), "%s", embed.module);
         } else {
             if (embed.moduleInitialized && embed.api) embed.api->shutdown();
@@ -413,6 +446,63 @@ void Embed_Stop(void)
     free(embed.externalFrameRGB);
     SetExitKey(KEY_ESCAPE);
     memset(&embed, 0, sizeof(embed));
+}
+
+void Embed_Unload(void)
+{
+    Embed_Stop();
+    Embed_DiscardRetainedModule();
+}
+
+bool Embed_IsActive(void) { return embed.active; }
+bool Embed_NeedsFastExit(void) { return embedPersistentSeen; }
+bool Embed_IsParked(void) { return embed.active && embed.parked; }
+bool Embed_IsExternal(void) { return embed.active && embed.external; }
+unsigned long Embed_ExternalWindow(void) { return embed.externalWindow; }
+const char *Embed_StateDir(void) { return embed.stateDir; }
+
+void Embed_Park(void)
+{
+    if (!embed.active || embed.parked) return;
+    N64Pad_Rumble(0.0f);
+    if (embed.audio) PauseAudioStream(embed.stream);
+    embed.menuOpen = false;
+    embed.menuT = 0.0f;
+    embed.crtOpen = false;
+    embed.crtT = 0.0f;
+    embed.quitting = false;
+    embed.externalResumeRequested = false;
+    embed.externalRestartRequested = false;
+    embed.acc = 0.0;
+    embed.parked = true;
+    SetExitKey(KEY_ESCAPE);   /* at Game Selection ESC quits NSO as usual (the game is closed first) */
+}
+
+void Embed_Unpark(void)
+{
+    if (!embed.active || !embed.parked) return;
+    embed.parked = false;
+    SetExitKey(KEY_NULL);
+    if (embed.audio && embed.blackT <= 0.0f && !embed.loadThreadStarted)
+        ResumeAudioStream(embed.stream);
+}
+
+bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot)
+{
+    char path[1200], tmp[1240];
+    int n;
+    if (!menuDir || !menuDir[0] || !action || !action[0]) return false;
+    n = snprintf(path, sizeof(path), "%s/nso-menu-action", menuDir);
+    if (n < 0 || (size_t)n >= sizeof(path)) return false;
+    n = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp)) return false;
+    FILE *f = fopen(tmp, "wb");
+    if (!f) return false;
+    bool ok = fprintf(f, "%s %d\n", action, slot) > 0;
+    if (fclose(f) != 0) ok = false;
+    if (ok && rename(tmp, path) != 0) ok = false;
+    if (!ok) remove(tmp);
+    return ok;
 }
 
 static bool Embed_BindDown(const PadBind *b)
@@ -764,6 +854,25 @@ void Embed_ExternalSetChildVisible(bool visible)
 #endif
 }
 
+void Embed_ShowExternalWindow(unsigned long window)
+{
+#if defined(__linux__)
+    if (!window) return;
+    Display *display = XOpenDisplay(NULL);
+    if (!display) return;
+    XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XMapRaised(display, (Window)window);
+    XSync(display, False);
+    if (embedXErrorCode == 0) XSetInputFocus(display, (Window)window, RevertToParent, CurrentTime);
+    XSync(display, False);
+    XSetErrorHandler(previousHandler);
+    XCloseDisplay(display);
+#else
+    (void)window;
+#endif
+}
+
 static void Embed_ScanSlot(int i)
 {
     char p[1200];
@@ -1065,7 +1174,7 @@ bool Embed_Update(float dt)
         if (embed.menuT <= 0.0f && embed.loadSlot) { Embed_LoadSlot(embed.loadSlot - 1); embed.loadSlot = 0; }
         if (embed.menuT <= 0.0f && embed.external) {
             if (embed.quitting) {
-                Embed_ExternalCommand("quit", 0);
+                /* Keep the child paused; main parks it and may quit later. */
                 embed.externalResult = EMBED_EXTERNAL_QUIT;
                 return false;
             }
