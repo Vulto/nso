@@ -3093,12 +3093,11 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
                 IconPerson(pos[k], s * (k == 2 ? 0.62f : 0.55f) * sc, th * 0.85f, col, fill, true);
             }
         } break;
-        case SB_ITEM_ONLINE: {   /* meridian turns half a revolution once, person in front */
+        case SB_ITEM_ONLINE: {   /* globe stays still; person hops like Single */
             Vector2 g = { c.x + s * 0.12f, c.y - s * 0.1f };
             float r = s * 0.36f;
-            float e = on ? sinf(p * PI * 0.5f) : 1.0f;             /* ease out */
-            float turn = on ? (float)dir * e * PI * amp : 0.0f;
             float ith = th * 0.8f;
+            float hop = on ? IconBump(p) * s * 0.10f * amp : 0.0f;
             IconArc(g, r, r, 0.0f, 360.0f, th, col);
             /* 3 latitudes (north, equator, south) as chords */
             DrawLineEx((Vector2){ g.x - r, g.y }, (Vector2){ g.x + r, g.y }, ith, col);
@@ -3106,9 +3105,9 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
             float hx = sqrtf(r * r - lat * lat);
             DrawLineEx((Vector2){ g.x - hx, g.y - lat }, (Vector2){ g.x + hx, g.y - lat }, ith, col);
             DrawLineEx((Vector2){ g.x - hx, g.y + lat }, (Vector2){ g.x + hx, g.y + lat }, ith, col);
-            /* 3 meridians, 30° apart; at rest one is the vertical diameter */
+            /* 3 meridians, 30° apart; one is the vertical diameter */
             for (int i = -1; i <= 1; i++) {
-                float lon = turn + (float)i * (PI / 6.0f);
+                float lon = (float)i * (PI / 6.0f);
                 float sl = sinf(lon);
                 float rx = r * fabsf(sl);
                 if (rx < 0.5f)
@@ -3118,7 +3117,7 @@ static void DrawSidebarIcon(int item, Vector2 c, float s, Color col, Color fill,
                     else            IconArc(g, rx, r,  90.0f, 270.0f, ith, col);
                 }
             }
-            IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f }, s * 0.55f, th * 0.85f, col, fill, true);
+            IconPerson((Vector2){ c.x - s * 0.22f, c.y + s * 0.22f - hop }, s * 0.55f, th * 0.85f, col, fill, true);
         } break;
         default: {   /* gear turns 80 degrees and holds its new position */
             float e = on ? 1.0f - (1.0f - p) * (1.0f - p) : 0.0f;  /* ease out */
