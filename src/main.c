@@ -635,6 +635,10 @@ static int launchingGameIdx = 0;
 static bool isLaunching = false;
 static float viewportY = 0.0f;
 static float targetViewportY = 0.0f;
+static float viewportSlideFromY = 0.0f;
+static float viewportSlideT = 1.0f;   /* 0..1; 1 = already at the target */
+/* Linear page slide. Duration matches the previous 0.18/frame ease-out (~20 frames at 60 fps). */
+static const float GRID_PAGE_SLIDE_SEC = 20.0f / 60.0f;
 
 static void CoverLoader_BuildOrder(int count)
 {
@@ -4741,6 +4745,8 @@ static void StartEnterMosaic(void) {
     GameIdx = 0;
     viewportY = 0.0f;
     targetViewportY = 0.0f;
+    viewportSlideFromY = 0.0f;
+    viewportSlideT = 1.0f;
 
     /* Covers load during the splash (UpdateSplash); start from a clean set. */
     UnloadAllBoxarts();
@@ -5405,15 +5411,29 @@ int main(int argc, char **argv) {
                 GameIdx = gameCount - 1;
             }
 
-            targetViewportY = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
-            targetViewportY = GridClampViewportY(&grid, targetViewportY, gameCount);
+            float nextTarget = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
+            nextTarget = GridClampViewportY(&grid, nextTarget, gameCount);
+            if (nextTarget != targetViewportY) {
+                viewportSlideFromY = viewportY;
+                viewportSlideT = 0.0f;
+                targetViewportY = nextTarget;
+            }
             CoverLoader_Poll();
             ManageVisibleBoxarts(gameCount, viewportY);
         } else {
             CoverLoader_Poll();
         }
 
-        viewportY += (targetViewportY - viewportY) * 0.18f;
+        if (viewportSlideT < 1.0f) {
+            viewportSlideT += dt / GRID_PAGE_SLIDE_SEC;
+            if (viewportSlideT >= 1.0f) {
+                viewportSlideT = 1.0f;
+                viewportY = targetViewportY;
+            } else {
+                viewportY = viewportSlideFromY
+                    + (targetViewportY - viewportSlideFromY) * viewportSlideT;
+            }
+        }
         if (currentState == MOSAIC && !layoutLocked) {
             viewportY = GridClampViewportY(&grid, viewportY, gameCount);
         }
