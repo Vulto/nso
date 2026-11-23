@@ -637,8 +637,8 @@ static float viewportY = 0.0f;
 static float targetViewportY = 0.0f;
 static float viewportSlideFromY = 0.0f;
 static float viewportSlideT = 1.0f;   /* 0..1; 1 = already at the target */
-/* Linear page slide. Duration matches the previous 0.18/frame ease-out (~20 frames at 60 fps). */
-static const float GRID_PAGE_SLIDE_SEC = 20.0f / 60.0f;
+/* Linear page slide (~15 frames at 60 fps). */
+static const float GRID_PAGE_SLIDE_SEC = 15.0f / 60.0f;
 
 static void CoverLoader_BuildOrder(int count)
 {
