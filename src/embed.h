@@ -892,6 +892,12 @@ static Display *exitOvDpy;
 static Window exitOvWin;
 static bool exitOvMapped;
 
+static Window Embed_HostWindow(void)
+{
+    void *hostHandle = GetWindowHandle();
+    return hostHandle ? (Window)*(unsigned long *)hostHandle : 0;
+}
+
 static bool Embed_CompositorActive(Display *dpy)
 {
     if (!dpy) return false;
@@ -910,13 +916,62 @@ static void Embed_ExitOverlaySetOpacity(Display *dpy, Window win, float opacity)
     XChangeProperty(dpy, win, atom, XA_CARDINAL, 32, PropModeReplace,
                     (unsigned char *)&val, 1);
 }
+
+static Atom Embed_ExitOverlayAtom(Display *dpy)
+{
+    return XInternAtom(dpy, "NSO_EXIT_OVERLAY", False);
+}
+
+static void Embed_ExitOverlayMark(Display *dpy, Window win)
+{
+    unsigned long one = 1;
+    Atom atom = Embed_ExitOverlayAtom(dpy);
+    XChangeProperty(dpy, win, atom, XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)&one, 1);
+}
+
+/* Keep (or return) keyboard focus on NSO so the overlay never steals it
+ * under a focus-follows-mouse WM, and so Destroy does not leave NSO unfocused. */
+static void Embed_ExitOverlayFocusHost(Display *dpy)
+{
+    Window parent = Embed_HostWindow();
+    if (!dpy || !parent) return;
+    XSetInputFocus(dpy, parent, RevertToParent, CurrentTime);
+}
+
+/* Destroy any leftover overlay from a previous exit (failed destroy, or a
+ * previous Display connection) so a second leave cannot stack another one. */
+static void Embed_ExitOverlaySweep(Display *dpy, Window parent)
+{
+    Window root = 0, p = 0, *children = NULL;
+    unsigned int n = 0;
+    Atom atom;
+    if (!dpy || !parent) return;
+    atom = Embed_ExitOverlayAtom(dpy);
+    if (!XQueryTree(dpy, parent, &root, &p, &children, &n) || !children) return;
+    for (unsigned int i = 0; i < n; i++) {
+        Atom actualType = None;
+        int actualFormat = 0;
+        unsigned long nitems = 0, bytes = 0;
+        unsigned char *data = NULL;
+        if (children[i] == exitOvWin) continue;
+        if (XGetWindowProperty(dpy, children[i], atom, 0, 1, False, XA_CARDINAL,
+                               &actualType, &actualFormat, &nitems, &bytes, &data) == Success
+            && actualType == XA_CARDINAL) {
+            Embed_ExitOverlaySetOpacity(dpy, children[i], 0.0f);
+            XUnmapWindow(dpy, children[i]);
+            XDestroyWindow(dpy, children[i]);
+        }
+        if (data) XFree(data);
+    }
+    XFree(children);
+}
 #endif
 
 void Embed_ExitOverlaySet(float opacity)
 {
 #if defined(__linux__)
-    void *hostHandle = GetWindowHandle();
-    Window parent = hostHandle ? (Window)*(unsigned long *)hostHandle : 0;
+    Window parent = Embed_HostWindow();
     int sw, sh;
     XErrorHandler previousHandler;
     bool compositor;
@@ -932,16 +987,24 @@ void Embed_ExitOverlaySet(float opacity)
     if (sh < 1) sh = 1;
     previousHandler = XSetErrorHandler(Embed_XErrorTrap);
     embedXErrorCode = 0;
+    Embed_ExitOverlaySweep(exitOvDpy, parent);
     if (!exitOvWin) {
         XSetWindowAttributes swa = { 0 };
         swa.override_redirect = True;
         swa.background_pixel = BlackPixel(exitOvDpy, DefaultScreen(exitOvDpy));
         swa.border_pixel = 0;
+        swa.event_mask = 0;
+        swa.do_not_propagate_mask = KeyPressMask | KeyReleaseMask | ButtonPressMask
+            | ButtonReleaseMask | PointerMotionMask;
         exitOvWin = XCreateWindow(exitOvDpy, parent, 0, 0,
                                   (unsigned)sw, (unsigned)sh, 0,
                                   CopyFromParent, InputOutput, CopyFromParent,
-                                  CWOverrideRedirect | CWBackPixel | CWBorderPixel, &swa);
-        if (exitOvWin) Embed_ExitOverlaySetOpacity(exitOvDpy, exitOvWin, 0.0f);
+                                  CWOverrideRedirect | CWBackPixel | CWBorderPixel
+                                  | CWEventMask | CWDontPropagate, &swa);
+        if (exitOvWin) {
+            Embed_ExitOverlayMark(exitOvDpy, exitOvWin);
+            Embed_ExitOverlaySetOpacity(exitOvDpy, exitOvWin, 0.0f);
+        }
     } else {
         XMoveResizeWindow(exitOvDpy, exitOvWin, 0, 0, (unsigned)sw, (unsigned)sh);
     }
@@ -964,6 +1027,7 @@ void Embed_ExitOverlaySet(float opacity)
     } else {
         XRaiseWindow(exitOvDpy, exitOvWin);
     }
+    Embed_ExitOverlayFocusHost(exitOvDpy);
     XSync(exitOvDpy, False);
     XSetErrorHandler(previousHandler);
 #else
@@ -974,19 +1038,42 @@ void Embed_ExitOverlaySet(float opacity)
 void Embed_ExitOverlayDestroy(void)
 {
 #if defined(__linux__)
-    if (exitOvDpy && exitOvWin) {
-        XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
-        embedXErrorCode = 0;
-        if (exitOvMapped) XUnmapWindow(exitOvDpy, exitOvWin);
-        XDestroyWindow(exitOvDpy, exitOvWin);
-        XSync(exitOvDpy, False);
-        XSetErrorHandler(previousHandler);
+    Window parent = Embed_HostWindow();
+    Display *dpy = exitOvDpy;
+    XErrorHandler previousHandler;
+    bool opened = false;
+    if (!dpy) {
+        dpy = XOpenDisplay(NULL);
+        opened = (dpy != NULL);
     }
-    exitOvWin = 0;
-    exitOvMapped = false;
-    if (exitOvDpy) {
-        XCloseDisplay(exitOvDpy);
-        exitOvDpy = NULL;
+    if (dpy) {
+        previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+        embedXErrorCode = 0;
+        /* Drop opacity to 0 and sync before unmap so picom's unmap fade has
+         * nothing visible to leave behind as a ghost rectangle. */
+        if (exitOvWin) {
+            Embed_ExitOverlaySetOpacity(dpy, exitOvWin, 0.0f);
+            XSync(dpy, False);
+            if (exitOvMapped) XUnmapWindow(dpy, exitOvWin);
+            XSync(dpy, False);
+            XDestroyWindow(dpy, exitOvWin);
+            XSync(dpy, False);
+        }
+        exitOvWin = 0;
+        exitOvMapped = false;
+        Embed_ExitOverlaySweep(dpy, parent);
+        Embed_ExitOverlayFocusHost(dpy);
+        XSync(dpy, False);
+        XSetErrorHandler(previousHandler);
+        if (exitOvDpy) {
+            XCloseDisplay(exitOvDpy);
+            exitOvDpy = NULL;
+        } else if (opened) {
+            XCloseDisplay(dpy);
+        }
+    } else {
+        exitOvWin = 0;
+        exitOvMapped = false;
     }
 #endif
 }
