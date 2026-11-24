@@ -1475,11 +1475,11 @@ bool Embed_Update(float dt)
         if (embed.loadThreadStarted) { embed.acc = 0.0; return true; }
     }
     bool gp = IsGamepadAvailable(0);
-    /* Hosted child games open this menu themselves. The opening End
+    /* Hosted child games open this menu themselves. The opening End/Guide
      * press may also reach Raylib after focus moves to NSO; don't consume that
-     * same press as an immediate close. Continue/Back remain the close actions.
-     * Guide/Home is the main-menu toggle (main.c), not this menu. */
-    bool toggle = !embed.external && IsKeyPressed(KEY_END);
+     * same press as an immediate close. Continue/Back remain the close actions. */
+    bool toggle = !embed.external
+        && (IsKeyPressed(KEY_END) || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE)));
 
     float st = dt / EMBED_MENU_ANIM_SEC;
     embed.crtT = embed.crtOpen ? fminf(1.0f, embed.crtT + st) : fmaxf(0.0f, embed.crtT - st);

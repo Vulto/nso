@@ -5357,10 +5357,9 @@ static bool Home_InGame(void)
     return Live_Busy();
 }
 
-static bool Home_KeyPressed(bool gpReady)
+static bool Home_KeyPressed(void)
 {
-    return IsKeyPressed(KEY_HOME)
-        || (gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+    return IsKeyPressed(KEY_HOME);
 }
 
 /* Clean games grid, no submenu or overlay. */
@@ -5498,9 +5497,9 @@ static void Home_Return(void)
     }
 }
 
-static void Home_Poll(bool gpReady)
+static void Home_Poll(void)
 {
-    if (!Home_KeyPressed(gpReady)) return;
+    if (!Home_KeyPressed()) return;
     if (GameExitActive() || GameEnterActive() || isLaunching || screenSliding) return;
     if (currentState == SPLASH) return;
     if (mosaicExitPhase != MOSAIC_EXIT_NONE) return;
@@ -5652,7 +5651,7 @@ int main(int argc, char **argv) {
 //        bool gpSelect = gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
         bool gpBack = gpReady && Nso_PadBackPressed(0);
 
-        Home_Poll(gpReady);
+        Home_Poll();
 
         padCUp = gpReady && eRY < 0;
         padCDown = gpReady && eRY > 0;
@@ -5764,7 +5763,9 @@ int main(int argc, char **argv) {
          * Guide request into a pause plus a signal back to the host. */
         if (Live_Busy() && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
             const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
-            bool menuPressed = IsKeyPressed(KEY_END);
+            bool menuPressed = IsKeyPressed(KEY_END)
+                || (IsGamepadAvailable(0)
+                    && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
             if (GameUsesMenuLauncher(runningGame) && menuPressed && NsoProcOk(gamePid))
                 kill(gamePid, SIGUSR1);
         }
