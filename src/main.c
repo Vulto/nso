@@ -926,6 +926,11 @@ static void NsoExternalMenuSignal(int signalNumber) {
     (void)signalNumber;
     externalMenuSignal = 1;
 }
+static volatile sig_atomic_t externalHomeSignal = 0;
+static void NsoExternalHomeSignal(int signalNumber) {
+    (void)signalNumber;
+    externalHomeSignal = 1;
+}
 #endif
 
 static bool sidebarOpen = false;
@@ -5359,6 +5364,12 @@ static bool Home_InGame(void)
 
 static bool Home_KeyPressed(void)
 {
+#ifndef _WIN32
+    if (externalHomeSignal) {
+        externalHomeSignal = 0;
+        return true;
+    }
+#endif
     return IsKeyPressed(KEY_HOME);
 }
 
@@ -5522,6 +5533,10 @@ int main(int argc, char **argv) {
     externalMenuAction.sa_handler = NsoExternalMenuSignal;
     sigemptyset(&externalMenuAction.sa_mask);
     sigaction(SIGUSR1, &externalMenuAction, NULL);
+    struct sigaction externalHomeAction = { 0 };
+    externalHomeAction.sa_handler = NsoExternalHomeSignal;
+    sigemptyset(&externalHomeAction.sa_mask);
+    sigaction(SIGUSR2, &externalHomeAction, NULL);
 #endif
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");

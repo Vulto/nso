@@ -19,6 +19,8 @@
 #include "menu_launcher.h"
 
 static volatile sig_atomic_t nso_menu_requested;
+static volatile sig_atomic_t nso_menu_home;
+static int nso_menu_home_held;
 
 static void nso_menu_request_signal(int sig)
 {
@@ -188,13 +190,13 @@ static void nso_menu_write_window(const char *dir, Window w)
     else remove(tmp);
 }
 
-static void nso_menu_send_host_signal(void)
+static void nso_menu_send_host_signal(int sig)
 {
     const char *s = getenv("NSO_MENU_PARENT_PID");
     if (!s || !*s) return;
     char *end = NULL;
     long pid = strtol(s, &end, 10);
-    if (end && !*end && pid > 1) kill((pid_t)pid, SIGUSR1);
+    if (end && !*end && pid > 1) kill((pid_t)pid, sig);
 }
 
 static bool nso_menu_read_action(const char *dir, char *action, size_t cap, int *slot)
@@ -436,6 +438,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
     setpgid(game, game);
 
     Window game_window = None;
+    KeyCode end_code = 0, home_code = 0;
     if (dpy) {
         Window root = DefaultRootWindow(dpy);
         game_window = nso_menu_wait_window(dpy, root, game);
@@ -446,10 +449,15 @@ int NsoMenuLauncherMain(int argc, char **argv)
                 if (centre) nso_menu_place(dpy, game_window, (Window)parent_id);
                 else XMoveResizeWindow(dpy, game_window, 0, 0,
                                        (unsigned int)host.width, (unsigned int)host.height);
-                XSelectInput(dpy, game_window, KeyPressMask | StructureNotifyMask);
-                int keycode = XKeysymToKeycode(dpy, XK_End);
-                XGrabKey(dpy, keycode, AnyModifier, game_window, False,
-                         GrabModeAsync, GrabModeAsync);
+                XSelectInput(dpy, game_window, KeyPressMask | KeyReleaseMask | StructureNotifyMask);
+                end_code = XKeysymToKeycode(dpy, XK_End);
+                home_code = XKeysymToKeycode(dpy, XK_Home);
+                if (end_code)
+                    XGrabKey(dpy, end_code, AnyModifier, game_window, False,
+                             GrabModeAsync, GrabModeAsync);
+                if (home_code)
+                    XGrabKey(dpy, home_code, AnyModifier, game_window, False,
+                             GrabModeAsync, GrabModeAsync);
                 XMapRaised(dpy, game_window);
                 XSetInputFocus(dpy, game_window, RevertToParent, CurrentTime);
                 XSync(dpy, False);
@@ -482,8 +490,14 @@ int NsoMenuLauncherMain(int argc, char **argv)
             while (XPending(dpy)) {
                 XEvent event;
                 XNextEvent(dpy, &event);
-                if (event.type == KeyPress && event.xkey.keycode == XKeysymToKeycode(dpy, XK_End))
+                if (event.type == KeyPress && end_code && event.xkey.keycode == end_code)
                     nso_menu_requested = 1;
+                else if (event.type == KeyPress && home_code && event.xkey.keycode == home_code
+                         && !nso_menu_home_held) {
+                    nso_menu_home_held = 1;
+                    nso_menu_home = 1;
+                } else if (event.type == KeyRelease && home_code && event.xkey.keycode == home_code)
+                    nso_menu_home_held = 0;
                 if (centre && event.type == ConfigureNotify && event.xconfigure.window == game_window)
                     nso_menu_place(dpy, game_window, (Window)parent_id);
             }
@@ -494,6 +508,11 @@ int NsoMenuLauncherMain(int argc, char **argv)
             nso_menu_type_keys(dpy, game_window, start_keys);
         }
 
+        if (nso_menu_home) {
+            nso_menu_home = 0;
+            nso_menu_send_host_signal(SIGUSR2);
+        }
+
         if (nso_menu_requested && !paused) {
             nso_menu_requested = 0;
             nso_menu_plain_request();
@@ -502,7 +521,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
             if ((ended == game && !WIFSTOPPED(status))
                 || (ended < 0 && !nso_menu_process_group_alive(game))) break;
             paused = true;
-            nso_menu_send_host_signal();
+            nso_menu_send_host_signal(SIGUSR1);
         }
 
         if (paused) {
