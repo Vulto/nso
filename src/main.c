@@ -1040,6 +1040,7 @@ static void GameEnter_Reset(void);
 static void GameEnter_Begin(void);
 static void GameEnter_Step(float dt);
 static void BeginMosaicEnterIntro(void);
+static bool GameMenuDirectory(char *out, size_t cap, const GameEntry *game);
 /* NSO menu > Quit of an external game: its process is still shutting down while the card-return
  * animation plays and after it. No black cover and no second enter intro for that wait. */
 static bool externalQuitting = false;
@@ -1065,8 +1066,24 @@ static float liveConfirmT = 0.0f;
 
 static bool Live_Busy(void) { return waitingForGame && !live.parked; }
 
+typedef enum {
+    HOME_RET_NONE = 0,
+    HOME_RET_SYSTEMS,
+    HOME_RET_MANAGE,
+    HOME_RET_SIDEBAR,
+    HOME_RET_DETAILS,
+    HOME_RET_STATUS,
+    HOME_RET_SORT,
+    HOME_RET_LIFT,
+    HOME_RET_GAME,
+} HomeReturn;
+static HomeReturn homeReturn = HOME_RET_NONE;
+static int homeRetSidebarItem = 0, homeRetSetRow = 0;
+static bool homeRetPanelFocus = false, homeRetPad = false, homeRetGameSel = false;
+
 static void Live_Clear(void)
 {
+    if (homeReturn == HOME_RET_GAME) homeReturn = HOME_RET_NONE;
     live.parked = false;
     live.embedded = false;
     live.external = false;
@@ -1094,6 +1111,23 @@ static void Live_BeginPark(void)
         snprintf(live.menuDir, sizeof(live.menuDir), "%s", Embed_StateDir());
         live.pid = gamePid;
         live.slots = g && g->externalSlots;
+    } else if (!live.embedded && NsoProcOk(gamePid) && g && !g->embedRomKey) {
+        /* Running child with no End menu overlay: still park it as an external. */
+        live.external = true;
+        live.pid = gamePid;
+        live.slots = g->externalSlots;
+        live.window = 0;
+        if (GameMenuDirectory(live.menuDir, sizeof(live.menuDir), g)) {
+            char windowPath[1240];
+            snprintf(windowPath, sizeof(windowPath), "%s/nso-menu-window", live.menuDir);
+            FILE *fp = fopen(windowPath, "rb");
+            if (fp) {
+                if (fscanf(fp, "%lu", &live.window) != 1) live.window = 0;
+                fclose(fp);
+            }
+        } else {
+            live.menuDir[0] = '\0';
+        }
     } else {
         live.window = 0;
         live.menuDir[0] = '\0';
@@ -4802,7 +4836,15 @@ static void GameExit_Step(float dt)
         if (!gameExitCloseStarted) {
             gameExitCloseStarted = true;
             /* Only now, with the screen fully covered, hide the child and park. */
-            if (Embed_IsExternal()) Embed_ExternalSetChildVisible(false);
+            if (Embed_IsExternal()) {
+                Embed_ExternalSetChildVisible(false);
+            } else if (live.external && NsoProcOk(live.pid)) {
+#ifndef _WIN32
+                /* Pause via the launcher (SIGUSR1). Skip if the End menu already did. */
+                kill(live.pid, SIGUSR1);
+#endif
+            }
+            if (live.window) Embed_UnmapWindow(live.window);
             if (liveParking) Live_FinishPark();
             else Embed_Stop();
             currentState = MOSAIC;
@@ -5308,6 +5350,169 @@ static void RequestLeaveMosaic(void) {
     InfoBar_Request(INFO_BAR_NONE);
 }
 
+static bool Home_InGame(void)
+{
+    if (live.parked) return false;
+    if (currentState == EMBED && Embed_IsActive() && !Embed_IsParked()) return true;
+    return Live_Busy();
+}
+
+static bool Home_KeyPressed(bool gpReady)
+{
+    return IsKeyPressed(KEY_HOME)
+        || (gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+}
+
+/* Clean games grid, no submenu or overlay. */
+static bool Home_AtMainMenu(void)
+{
+    if (currentState != MOSAIC) return false;
+    if (Home_InGame() || GameExitActive() || GameEnterActive() || isLaunching) return false;
+    if (liveConfirm) return false;
+    if (detailsOpen || statusOpen || SortPanel_Active() || gridLifted) return false;
+    if (padOpen || gsOpen || GameSel_Busy() || scrapeBusy) return false;
+    if (sidebarOpen || sidebarExpandPending || sidebarClosing || sidebarPanelFocus) return false;
+    if (sbWidthPhase != SB_WIDTH_IDLE) return false;
+    if (mosaicExitPhase != MOSAIC_EXIT_NONE) return false;
+    return true;
+}
+
+static void Home_DismissOverlays(void)
+{
+    if (liveConfirm) {
+        liveConfirm = 0;
+        liveConfirmT = 0.0f;
+    }
+    if (gridLifted) {
+        if (gridLiftMoved && gridLiftFrom >= 0 && gridLiftFrom < ActiveGameCount())
+            Grid_MoveLifted(gridLiftFrom);
+        gridLifted = false;
+        gridLiftMoved = false;
+    }
+    if (padOpen) PadUi_Close();
+    if (GameSel_Busy()) GameSel_Cancel();
+    gsOpen = false;
+    if (scrapeBusy) ScrapeMenu_Cancel();
+    if (detailsOpen) Details_Close();
+    if (statusOpen) Status_Close();
+    if (SortPanel_Active()) SortPanel_Close();
+    sidebarExpandPending = false;
+    sidebarClosing = false;
+    sidebarOpen = false;
+    sidebarPanelFocus = false;
+    sbWidthPhase = SB_WIDTH_IDLE;
+    {
+        float rail = SidebarRailWidth();
+        sidebarWidth = rail;
+        targetSidebarWidth = rail;
+    }
+    mosaicExitPhase = MOSAIC_EXIT_NONE;
+    if (currentState == MOSAIC) InfoBar_Request(INFO_BAR_MOSAIC);
+}
+
+static void Home_SaveReturn(void)
+{
+    if (homeReturn != HOME_RET_NONE) return;
+    if (Home_InGame()) {
+        homeReturn = HOME_RET_GAME;
+        return;
+    }
+    if (currentState == SYSTEMS) { homeReturn = HOME_RET_SYSTEMS; return; }
+    if (currentState == MANAGE) { homeReturn = HOME_RET_MANAGE; return; }
+    if (detailsOpen) { homeReturn = HOME_RET_DETAILS; return; }
+    if (statusOpen) { homeReturn = HOME_RET_STATUS; return; }
+    if (SortPanel_Active()) { homeReturn = HOME_RET_SORT; return; }
+    if (gridLifted) { homeReturn = HOME_RET_LIFT; return; }
+    if (sidebarOpen || sidebarExpandPending || sidebarClosing || sidebarPanelFocus
+        || padOpen || gsOpen || GameSel_Busy() || scrapeBusy) {
+        homeReturn = HOME_RET_SIDEBAR;
+        homeRetSidebarItem = sidebarItem;
+        homeRetSetRow = sidebarSetRow;
+        homeRetPanelFocus = sidebarPanelFocus;
+        homeRetPad = padOpen;
+        homeRetGameSel = gsOpen || GameSel_Busy();
+    }
+}
+
+static void Home_GoToMainMenu(void)
+{
+    Home_SaveReturn();
+    if (Home_InGame()) {
+        Live_BeginPark();
+        GameExit_Begin();
+        return;
+    }
+    if (currentState == MANAGE) currentSystem = manageReturnSystem;
+    if (currentState == SYSTEMS || currentState == MANAGE) {
+        StartEnterMosaic();
+        return;
+    }
+    Home_DismissOverlays();
+}
+
+static void Home_Return(void)
+{
+    HomeReturn dest = homeReturn;
+    homeReturn = HOME_RET_NONE;
+    switch (dest) {
+    case HOME_RET_SYSTEMS:
+        RequestLeaveMosaic();
+        break;
+    case HOME_RET_MANAGE:
+        Manage_Open();
+        break;
+    case HOME_RET_DETAILS:
+        Details_Open();
+        break;
+    case HOME_RET_STATUS:
+        Status_Open();
+        break;
+    case HOME_RET_SORT:
+        SortPanel_Open();
+        break;
+    case HOME_RET_LIFT:
+        gridLifted = true;
+        gridLiftFrom = GameIdx;
+        gridLiftMoved = false;
+        break;
+    case HOME_RET_SIDEBAR:
+        ExpandSidebarMenu();
+        sidebarItem = homeRetSidebarItem;
+        sidebarSetRow = homeRetSetRow;
+        sidebarPanelFocus = homeRetPanelFocus;
+        if (homeRetPad)
+            PadUi_Open(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
+        if (homeRetGameSel) GameSel_Open();
+        break;
+    case HOME_RET_GAME:
+        if (!live.parked) break;
+        currentSystem = live.sys;
+        GameIdx = live.game;
+        launchingGameIdx = live.game;
+        isLaunching = true;
+        currentState = LAUNCHING;
+        GameEnter_Begin();
+        break;
+    default:
+        break;
+    }
+}
+
+static void Home_Poll(bool gpReady)
+{
+    if (!Home_KeyPressed(gpReady)) return;
+    if (GameExitActive() || GameEnterActive() || isLaunching || screenSliding) return;
+    if (currentState == SPLASH) return;
+    if (mosaicExitPhase != MOSAIC_EXIT_NONE) return;
+    if (homeReturn != HOME_RET_NONE && Home_AtMainMenu()) {
+        Sfx_Play(SFX_CLICK);
+        Home_Return();
+    } else if (!Home_AtMainMenu()) {
+        Sfx_Play(SFX_CLICK);
+        Home_GoToMainMenu();
+    }
+}
+
 // ====================== MAIN PROGRAM ======================
 int main(int argc, char **argv) {
 #ifndef _WIN32
@@ -5447,6 +5652,8 @@ int main(int argc, char **argv) {
 //        bool gpSelect = gpReady && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT);
         bool gpBack = gpReady && Nso_PadBackPressed(0);
 
+        Home_Poll(gpReady);
+
         padCUp = gpReady && eRY < 0;
         padCDown = gpReady && eRY > 0;
         padCLeft = gpReady && eRX < 0;
@@ -5557,9 +5764,7 @@ int main(int argc, char **argv) {
          * Guide request into a pause plus a signal back to the host. */
         if (Live_Busy() && currentState != EMBED && launchingGameIdx < ActiveGameCount()) {
             const GameEntry *runningGame = &ActiveGames()[launchingGameIdx];
-            bool menuPressed = IsKeyPressed(KEY_END)
-                || (IsGamepadAvailable(0)
-                    && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE));
+            bool menuPressed = IsKeyPressed(KEY_END);
             if (GameUsesMenuLauncher(runningGame) && menuPressed && NsoProcOk(gamePid))
                 kill(gamePid, SIGUSR1);
         }
