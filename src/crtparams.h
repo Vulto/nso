@@ -67,7 +67,7 @@ static inline void CrtSteps_Resolve(const signed char *game, const signed char *
 
 typedef struct {
     bool active;                          /* CRT Geometry is on for the running game and it can be adjusted */
-    char gamePath[1100], defPath[1100], runPath[1100];
+    char gamePath[2048], defPath[2048], runPath[2048];
     signed char game[CRTP_COUNT], def[CRTP_COUNT];
     float val[CRTP_COUNT];
     bool angleSet;
@@ -100,7 +100,7 @@ CrtSession crtSession;
 static void CrtParams_MkdirsFor(const char *path)
 {
 #ifndef _WIN32
-    char dir[1200];
+    char dir[2048];
     snprintf(dir, sizeof(dir), "%s", path);
     for (char *p = dir + 1; *p; p++) {
         if (*p != '/') continue;
@@ -137,7 +137,7 @@ bool CrtSteps_Load(const char *path, signed char steps[CRTP_COUNT])
 bool CrtSteps_Save(const char *path, const signed char steps[CRTP_COUNT])
 {
     if (!path || !path[0]) return false;
-    char tmp[1200];
+    char tmp[2052];
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
     CrtParams_MkdirsFor(path);
     FILE *f = fopen(tmp, "w");
@@ -154,7 +154,7 @@ bool CrtSteps_Save(const char *path, const signed char steps[CRTP_COUNT])
 bool CrtRun_Write(const char *path, const float val[CRTP_COUNT], bool angleSet)
 {
     if (!path || !path[0]) return true;
-    char tmp[1200];
+    char tmp[2052];
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
     CrtParams_MkdirsFor(path);
     FILE *f = fopen(tmp, "w");

@@ -4331,7 +4331,7 @@ static void CrtSessionEnd(void) {
 
 /* rawFrames: the hosted port draws the frame NSO captures unfiltered, so NSO applies the look to its frozen frame */
 static void CrtSessionBegin(const GameEntry *game, const char *runPath, bool rawFrames) {
-    char slug[128], gamePath[1200], defPath[1200];
+    char slug[128], gamePath[2048], defPath[2048];
     const char *sys = systems[currentSystem].platform->id;
     size_t n = 0;
     for (const char *t = game->title; *t && n + 1 < sizeof(slug); t++) {

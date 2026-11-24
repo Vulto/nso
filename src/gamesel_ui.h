@@ -36,7 +36,7 @@ static void GameSel_Open(void) {
     const char *folder = Gs_RomFolder(ActiveSystem()->platform->id);
     char dir[2048];
     static char names[GS_MAX_ROWS][256];
-    const char *sorted[GS_MAX_ROWS], *bases[GS_MAX_ROWS], *titles[MAX_GAMES];
+    const char *sorted[GS_MAX_ROWS] = { 0 }, *bases[GS_MAX_ROWS] = { 0 }, *titles[MAX_GAMES] = { 0 };
     static char baseBuf[GS_MAX_ROWS][256];
     int matched[GS_MAX_ROWS], n = 0, gc = ActiveGameTotal();   /* hidden titles are the ones to install */
     GameEntry *games = ActiveGames();

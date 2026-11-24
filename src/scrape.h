@@ -370,13 +370,21 @@ int Scrape_ParseIndex(const char *json, char ***outNames, int *outCount)
 int Scrape_DatUrl(char *dst, size_t n, const char *field, const char *playlist)
 {
     char encPlay[512];
+    char url[1024];
     int wrote;
     if (!dst || n == 0 || !field || !playlist) return -1;
     if (UrlEncode(encPlay, sizeof(encPlay), playlist) != 0) return -1;
-    wrote = snprintf(dst, n,
+    wrote = snprintf(url, sizeof(url),
         "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/%s/%s.dat",
         field, encPlay);
-    return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
+    if (wrote < 0 || (size_t)wrote >= sizeof(url)) return -1;
+    if ((size_t)wrote >= n) {
+        memcpy(dst, url, n - 1);
+        dst[n - 1] = '\0';
+        return -1;
+    }
+    memcpy(dst, url, (size_t)wrote + 1);
+    return 0;
 }
 
 static int Scrape_DatAdd(char ***names, int **vals, int *count, int *cap,
