@@ -5,7 +5,7 @@ All notable changes to NSO. Newest first. Versions follow the Git tags.
 ## [Unreleased]
 
 ### Fixes
-- KEY_END again only opens the End/pause menu (launcher XK_End → SIGUSR1). KEY_HOME alone does the main-menu toggle. The Home alpha fade is 0.15 s in both directions. System art is still reloaded before that fade; other animations are unchanged.
+- KEY_END again only opens the in-game End menu (same launcher keycode grab and SIGUSR1 path as before the Home toggle). KEY_HOME fades the systems menu in 0.15 s over the game and unloads games-grid covers (they load again when a system is entered). Other animations are unchanged.
 - Creating a suspend point no longer changes the End menu or flashes the live game over it. The previous root cover was a full-window black/snapshot overlay. The game is now mapped off-screen (clipped as a child of the host, never XMapRaised) just long enough to accept Mednafen's save keys, then stopped and unmapped; the slot thumbnail is still the already-frozen frame. The End menu stays on screen as it is.
 - Home still toggles the main games menu when a Mednafen game or a reparented port has keyboard focus: the menu launcher grabs the Home key on the game window (the same X grab already used for End) and signals NSO, which parks or resumes with the existing exit and opening animations. The keyboard Home key in the NSO window is unchanged, and the gamepad Guide button is not used.
 - NSO and the unit tests compile with `-O3 -Werror`: GameSel's ROM/title pointers are initialized, CRT Geometry path buffers are large enough for a full data path, and dat URLs are formatted in a full-size local buffer before being copied to the caller.

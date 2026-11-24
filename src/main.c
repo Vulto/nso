@@ -5636,7 +5636,16 @@ static void Home_GoToMainMenu(void)
     /* Snapshot the current screen (the live game, or mosaic/manage/End)
      * before anything is unmapped or redrawn. */
     Home_CaptureUnderlay();
-    if (frontendArtsParked) FrontendArts_Reload();
+    /* System tiles need their art; the games-grid covers do not — they are
+     * loaded again when a system is entered (StartEnterMosaic). */
+    if (frontendArtsParked) {
+        InitSystems();
+        frontendArtsParked = false;
+        frontendKeepCover = -1;
+    }
+    CoverLoader_Stop();
+    UnloadAllBoxarts();
+    mosaicRevealWait = false;
     if (Home_InGame()) {
         Live_BeginPark();
         homeUnmapAfterFrame = true; /* unmap only after the snapshot is on screen */
