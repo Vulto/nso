@@ -5,6 +5,8 @@ All notable changes to NSO. Newest first. Versions follow the Git tags.
 ## [Unreleased]
 
 ### Fixes
+- The Home key now goes to NSO's main menu (the top-level system select), not a system's game list. A second press returns to where you were: a parked game is resumed only after its own system, grid and cursor are restored, so its cover and opening animation cannot draw over another title.
+- Creating a suspend point no longer lets the live game window flash over the End menu: while the emulator is briefly mapped to write the state, a cover window stays above it.
 - Home still toggles the main games menu when a Mednafen game or a reparented port has keyboard focus: the menu launcher grabs the Home key on the game window (the same X grab already used for End) and signals NSO, which parks or resumes with the existing exit and opening animations. The keyboard Home key in the NSO window is unchanged, and the gamepad Guide button is not used.
 - NSO and the unit tests compile with `-O3 -Werror`: GameSel's ROM/title pointers are initialized, CRT Geometry path buffers are large enough for a full data path, and dat URLs are formatted in a full-size local buffer before being copied to the caller.
 - The Home key toggles the main games menu from anywhere. The first press leaves submenus, settings, controls, the End menu or a running game and shows the grid (a running game is parked with the same exit animation as To Game Selection). The second press returns to where you were, resuming a parked game with the same opening animation.

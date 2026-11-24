@@ -1081,10 +1081,17 @@ typedef enum {
     HOME_RET_SORT,
     HOME_RET_LIFT,
     HOME_RET_GAME,
+    HOME_RET_MOSAIC,
 } HomeReturn;
 static HomeReturn homeReturn = HOME_RET_NONE;
 static int homeRetSidebarItem = 0, homeRetSetRow = 0;
 static bool homeRetPanelFocus = false, homeRetPad = false, homeRetGameSel = false;
+static int homeRetSys = 0, homeRetGame = 0;
+static float homeRetViewY = 0.0f;
+static bool homeResumePending = false;
+static int homeEnterGame = -1;
+static float homeEnterViewY = 0.0f;
+static bool gameExitToSystems = false;
 
 static void Live_Clear(void)
 {
@@ -4803,6 +4810,7 @@ static void GameExit_Reset(void)
     gameExitT = 0.0f;
     gameExitCloseStarted = false;
     gameExitHandoff = false;
+    gameExitToSystems = false;
     Embed_ExitOverlayDestroy();
 }
 
@@ -4854,7 +4862,7 @@ static void GameExit_Step(float dt)
             else Embed_Stop();
             currentState = MOSAIC;
         }
-        if (GameExit_GameGone() && CoverLoader_VisibleReady())
+        if (GameExit_GameGone() && (gameExitToSystems || CoverLoader_VisibleReady()))
             gameExitHandoff = true;
     } else if (gameExitPhase == GAME_EXIT_REVEAL) {
         gameExitT += dt / GAME_COVER_SEC;
@@ -5015,15 +5023,23 @@ static void BeginMosaicEnterIntro(void) {
 }
 
 static void StartEnterMosaic(void) {
-    if (screenSliding || scrapeBusy) return;
+    if (screenSliding || scrapeBusy) { homeEnterGame = -1; return; }
 
     Hide_Resync(false);   /* games installed since the last visit */
-    if (ActiveGameTotal() <= 0) return;   /* nothing playable still opens the (empty) grid */
+    if (ActiveGameTotal() <= 0) { homeEnterGame = -1; return; }   /* nothing playable still opens the (empty) grid */
 
-    GameIdx = 0;
-    viewportY = 0.0f;
-    targetViewportY = 0.0f;
-    viewportSlideFromY = 0.0f;
+    if (homeEnterGame >= 0 && homeEnterGame < ActiveGameCount()) {
+        GameIdx = homeEnterGame;
+        GridLayout enterGrid = GetGridLayout();
+        viewportY = GridClampViewportY(&enterGrid, homeEnterViewY, ActiveGameCount());
+        homeEnterGame = -1;
+    } else {
+        GameIdx = 0;
+        viewportY = 0.0f;
+        homeEnterGame = -1;
+    }
+    targetViewportY = viewportY;
+    viewportSlideFromY = viewportY;
     viewportSlideT = 1.0f;
 
     /* Covers load during the splash (UpdateSplash); start from a clean set. */
@@ -5373,17 +5389,12 @@ static bool Home_KeyPressed(void)
     return IsKeyPressed(KEY_HOME);
 }
 
-/* Clean games grid, no submenu or overlay. */
+/* Top-level system select (NSO's main menu), not a system's game grid. */
 static bool Home_AtMainMenu(void)
 {
-    if (currentState != MOSAIC) return false;
+    if (currentState != SYSTEMS) return false;
     if (Home_InGame() || GameExitActive() || GameEnterActive() || isLaunching) return false;
-    if (liveConfirm) return false;
-    if (detailsOpen || statusOpen || SortPanel_Active() || gridLifted) return false;
-    if (padOpen || gsOpen || GameSel_Busy() || scrapeBusy) return false;
-    if (sidebarOpen || sidebarExpandPending || sidebarClosing || sidebarPanelFocus) return false;
-    if (sbWidthPhase != SB_WIDTH_IDLE) return false;
-    if (mosaicExitPhase != MOSAIC_EXIT_NONE) return false;
+    if (screenSliding || homeResumePending) return false;
     return true;
 }
 
@@ -5420,9 +5431,19 @@ static void Home_DismissOverlays(void)
     if (currentState == MOSAIC) InfoBar_Request(INFO_BAR_MOSAIC);
 }
 
+static void Home_RememberGrid(void)
+{
+    if (currentState == MOSAIC || currentState == LAUNCHING || currentState == EMBED || Home_InGame()) {
+        homeRetSys = currentSystem;
+        homeRetGame = (Home_InGame() && launchingGameIdx >= 0) ? launchingGameIdx : GameIdx;
+        homeRetViewY = viewportY;
+    }
+}
+
 static void Home_SaveReturn(void)
 {
     if (homeReturn != HOME_RET_NONE) return;
+    Home_RememberGrid();
     if (Home_InGame()) {
         homeReturn = HOME_RET_GAME;
         return;
@@ -5441,23 +5462,52 @@ static void Home_SaveReturn(void)
         homeRetPanelFocus = sidebarPanelFocus;
         homeRetPad = padOpen;
         homeRetGameSel = gsOpen || GameSel_Busy();
+        return;
     }
+    if (currentState == MOSAIC)
+        homeReturn = HOME_RET_MOSAIC;
+}
+
+static void Home_PrepareGrid(int sys, int game, float viewY)
+{
+    if (sys >= 0 && sys < SYSTEM_COUNT) currentSystem = sys;
+    Hide_Resync(false);
+    int n = ActiveGameCount();
+    GameIdx = (game >= 0 && game < n) ? game : 0;
+    launchingGameIdx = GameIdx;
+    GridLayout g = GetGridLayout();
+    viewportY = GridClampViewportY(&g, viewY, n);
+    targetViewportY = viewportY;
+    viewportSlideFromY = viewportY;
+    viewportSlideT = 1.0f;
+}
+
+static void Home_EnterSavedMosaic(void)
+{
+    currentSystem = homeRetSys;
+    homeEnterGame = homeRetGame;
+    homeEnterViewY = homeRetViewY;
+    StartEnterMosaic();
 }
 
 static void Home_GoToMainMenu(void)
 {
     Home_SaveReturn();
     if (Home_InGame()) {
+        gameExitToSystems = true;
         Live_BeginPark();
         GameExit_Begin();
         return;
     }
-    if (currentState == MANAGE) currentSystem = manageReturnSystem;
-    if (currentState == SYSTEMS || currentState == MANAGE) {
-        StartEnterMosaic();
+    if (currentState == MANAGE) {
+        Manage_Close();
         return;
     }
+    if (currentState == SYSTEMS)
+        return;
     Home_DismissOverlays();
+    if (currentState == MOSAIC)
+        RequestLeaveMosaic();
 }
 
 static void Home_Return(void)
@@ -5466,20 +5516,48 @@ static void Home_Return(void)
     homeReturn = HOME_RET_NONE;
     switch (dest) {
     case HOME_RET_SYSTEMS:
-        RequestLeaveMosaic();
         break;
     case HOME_RET_MANAGE:
         Manage_Open();
         break;
+    case HOME_RET_MOSAIC:
+        Home_EnterSavedMosaic();
+        break;
     case HOME_RET_DETAILS:
-        Details_Open();
-        break;
     case HOME_RET_STATUS:
-        Status_Open();
-        break;
     case HOME_RET_SORT:
-        SortPanel_Open();
+    case HOME_RET_LIFT:
+    case HOME_RET_SIDEBAR:
+        Home_EnterSavedMosaic();
+        /* Overlay is reopened once the mosaic enter animation finishes. */
+        homeReturn = dest;
+        return;
+    case HOME_RET_GAME:
+        if (!live.parked) break;
+        Home_PrepareGrid(live.sys, live.game, homeRetViewY);
+        UnloadAllBoxarts();
+        mosaicRevealWait = true;
+        CoverLoader_Start();
+        homeResumePending = true;
         break;
+    default:
+        break;
+    }
+}
+
+static void Home_ApplyDeferredOverlay(void)
+{
+    HomeReturn dest = homeReturn;
+    if (dest != HOME_RET_DETAILS && dest != HOME_RET_STATUS && dest != HOME_RET_SORT
+        && dest != HOME_RET_LIFT && dest != HOME_RET_SIDEBAR) return;
+    /* Wait until the systems→grid enter has landed and the visible covers are up. */
+    if (currentState != MOSAIC || screenSliding || mosaicRevealWait) return;
+    if (mosaicIntroPhase != MOSAIC_INTRO_NONE) return;
+    homeReturn = HOME_RET_NONE;
+    switch (dest) {
+    case HOME_RET_DETAILS: Details_Open(); break;
+    case HOME_RET_STATUS: Status_Open(); break;
+    case HOME_RET_SORT: SortPanel_Open(); break;
     case HOME_RET_LIFT:
         gridLifted = true;
         gridLiftFrom = GameIdx;
@@ -5494,22 +5572,26 @@ static void Home_Return(void)
             PadUi_Open(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
         if (homeRetGameSel) GameSel_Open();
         break;
-    case HOME_RET_GAME:
-        if (!live.parked) break;
-        currentSystem = live.sys;
-        GameIdx = live.game;
-        launchingGameIdx = live.game;
-        isLaunching = true;
-        currentState = LAUNCHING;
-        GameEnter_Begin();
-        break;
-    default:
-        break;
+    default: break;
     }
+}
+
+static void Home_ResumeIfReady(void)
+{
+    if (!homeResumePending) return;
+    if (!live.parked) { homeResumePending = false; return; }
+    if (!CoverLoader_VisibleReady()) return;
+    homeResumePending = false;
+    mosaicRevealWait = false;
+    isLaunching = true;
+    launchingGameIdx = GameIdx;
+    currentState = LAUNCHING;
+    GameEnter_Begin();
 }
 
 static void Home_Poll(void)
 {
+    if (homeResumePending) return;
     if (!Home_KeyPressed()) return;
     if (GameExitActive() || GameEnterActive() || isLaunching || screenSliding) return;
     if (currentState == SPLASH) return;
@@ -5899,6 +5981,8 @@ int main(int argc, char **argv) {
         }
         UpdateSidebarWidth();
 
+        Home_ResumeIfReady();
+        Home_ApplyDeferredOverlay();
         if (GameEnterActive()) {
             GameEnter_Step(dt);
         } else if (GameExitActive()) {
@@ -6247,11 +6331,22 @@ int main(int argc, char **argv) {
         /* After a fully black host frame has been swapped, drop the X overlay
          * and start shrinking the GL black rectangle into the cover. */
         if (gameExitHandoff && gameExitPhase == GAME_EXIT_CLOSE) {
+            bool toMain = gameExitToSystems;
             Embed_ExitOverlayDestroy();
             gameExitHandoff = false;
-            gameExitPhase = GAME_EXIT_REVEAL;
-            gameExitT = 0.0f;
-            BeginMosaicEnterIntro();
+            if (toMain) {
+                GameExit_Reset();
+                currentState = SYSTEMS;
+                introFrames = 0;
+                introOpacity = 1.0f;
+                mosaicIntroPhase = MOSAIC_INTRO_NONE;
+                mosaicExitPhase = MOSAIC_EXIT_NONE;
+                InfoBar_Reset();
+            } else {
+                gameExitPhase = GAME_EXIT_REVEAL;
+                gameExitT = 0.0f;
+                BeginMosaicEnterIntro();
+            }
         }
         if (gameEnterHandoff && gameEnterPhase == GAME_ENTER_START) {
             gameEnterHandoff = false;

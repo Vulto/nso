@@ -1,6 +1,7 @@
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
 #include <X11/extensions/XTest.h>
@@ -318,23 +319,94 @@ static void nso_menu_game_focus(Display *dpy, Window w)
     XSync(dpy, False);
 }
 
+/* Cover the game window while a save briefly maps and runs it, so the live
+ * child does not flash over the End menu (NSO's GL sits under child windows). */
+static Window nso_menu_save_cover(Display *dpy, Window host, Window game)
+{
+    XWindowAttributes ha, ga;
+    Window cover;
+    XSetWindowAttributes attrs = { 0 };
+    int x, y, w, h;
+    if (!dpy || host == None || game == None) return None;
+    if (!XGetWindowAttributes(dpy, host, &ha) || !XGetWindowAttributes(dpy, game, &ga))
+        return None;
+    x = ga.x;
+    y = ga.y;
+    w = ga.width;
+    h = ga.height;
+    if (w < 1 || h < 1) {
+        x = 0;
+        y = 0;
+        w = ha.width;
+        h = ha.height;
+    }
+    if (w < 1 || h < 1) return None;
+    attrs.override_redirect = True;
+    attrs.background_pixel = BlackPixel(dpy, DefaultScreen(dpy));
+    cover = XCreateWindow(dpy, host, x, y, (unsigned)w, (unsigned)h, 0,
+                          CopyFromParent, InputOutput, CopyFromParent,
+                          CWOverrideRedirect | CWBackPixel, &attrs);
+    if (!cover) return None;
+    /* Prefer a snapshot of what the menu already shows in this rectangle, so
+     * the cover is invisible. Root is used because the host is a GL window. */
+    {
+        Window child;
+        int rx = 0, ry = 0;
+        if (XTranslateCoordinates(dpy, host, DefaultRootWindow(dpy), x, y, &rx, &ry, &child)) {
+            XImage *img = XGetImage(dpy, DefaultRootWindow(dpy), rx, ry,
+                                    (unsigned)w, (unsigned)h, AllPlanes, ZPixmap);
+            if (img) {
+                GC gc = XCreateGC(dpy, cover, 0, NULL);
+                if (gc) {
+                    XPutImage(dpy, cover, gc, img, 0, 0, 0, 0, (unsigned)w, (unsigned)h);
+                    XFreeGC(dpy, gc);
+                }
+                XDestroyImage(img);
+            }
+        }
+    }
+    XMapRaised(dpy, cover);
+    XSync(dpy, False);
+    return cover;
+}
+
+static void nso_menu_save_cover_destroy(Display *dpy, Window cover)
+{
+    if (!dpy || cover == None) return;
+    XUnmapWindow(dpy, cover);
+    XDestroyWindow(dpy, cover);
+    XSync(dpy, False);
+}
+
 /* Slot action while the game is paused. save: the game runs a moment, writes
  * its state, is stopped again and the file is copied to "Suspend point N".
  * load: the file is copied back and the game keeps running (the host does not
  * send "resume" after a load). Returns true if the game was left running. */
 static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, int slot,
-                               const char *emu_dir, const char *menu_dir)
+                               const char *emu_dir, const char *menu_dir, Window host)
 {
     char emu_file[1200], sav[1260];
     struct timespec settle = { .tv_sec = 0, .tv_nsec = 200000000L };
+    Window cover = None;
     if (!dpy || w == None || !nso_menu_slot_paths(emu_dir, menu_dir, slot, emu_file,
                                                   sizeof(emu_file), sav, sizeof(sav)))
         return false;
     if (save) remove(emu_file);
     else if (!nso_menu_copy_file(sav, emu_file)) return false;
-    nso_menu_game_focus(dpy, w);
+    if (save) cover = nso_menu_save_cover(dpy, host, w);
+    if (save && cover != None) {
+        /* Map the game under the cover; it must run to accept F5, but must not
+         * be seen over the menu. */
+        XMapWindow(dpy, w);
+        XSetInputFocus(dpy, w, RevertToParent, CurrentTime);
+        XRaiseWindow(dpy, cover);
+        XSync(dpy, False);
+    } else {
+        nso_menu_game_focus(dpy, w);
+    }
     kill(-game, SIGCONT);
     nanosleep(&settle, NULL);
+    if (cover != None) { XRaiseWindow(dpy, cover); XSync(dpy, False); }
     nso_menu_tap_key(dpy, (KeySym)(XK_0 + slot), 40);
     if (!save) {
         nso_menu_tap_key(dpy, XK_F7, 200);
@@ -347,6 +419,7 @@ static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, in
         off_t size = stat(emu_file, &st) == 0 ? st.st_size : -1;
         if (size > 0 && size == last) break;
         last = size;
+        if (cover != None) XRaiseWindow(dpy, cover);
         nso_menu_short_sleep();
         nso_menu_short_sleep();
         nso_menu_short_sleep();
@@ -354,6 +427,7 @@ static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, in
     kill(-game, SIGSTOP);
     XUnmapWindow(dpy, w);
     XSync(dpy, False);
+    nso_menu_save_cover_destroy(dpy, cover);
     if (last > 0) nso_menu_copy_file(emu_file, sav);
     return false;
 }
@@ -530,7 +604,7 @@ int NsoMenuLauncherMain(int argc, char **argv)
             if (nso_menu_read_action(state_dir, action, sizeof(action), &slot)) {
                 if (strcmp(action, "save") == 0 || strcmp(action, "load") == 0) {
                     if (nso_menu_emu_state(dpy, game_window, game, action[0] == 's', slot,
-                                           emu_dir, state_dir))
+                                           emu_dir, state_dir, (Window)parent_id))
                         paused = false;
                 } else if (strcmp(action, "resume") == 0) {
                     nso_menu_plain_release();
