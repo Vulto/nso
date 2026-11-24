@@ -1154,6 +1154,45 @@ static void Live_Close(void)
     Live_Clear();
 }
 
+/* Tear down a parked game without mapping, resuming, or showing a frame.
+ * "quit" is not sent: the menu launcher would SIGCONT the child to end it. */
+static void Live_CloseHidden(void)
+{
+    liveConfirm = 0;
+    liveConfirmT = 0.0f;
+#if !defined(_WIN32)
+    if (live.window) Embed_UnmapWindow(live.window);
+    if (live.parked && live.external && NsoProcOk(live.pid)) {
+        NsoProc pid = live.pid;
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%ld/task/%ld/children", (long)pid, (long)pid);
+        FILE *f = fopen(path, "r");
+        if (f) {
+            long child;
+            while (fscanf(f, "%ld", &child) == 1) {
+                if (child > 1) {
+                    kill(-(pid_t)child, SIGKILL);
+                    kill((pid_t)child, SIGKILL);
+                }
+            }
+            fclose(f);
+        }
+        kill(pid, SIGKILL);
+        for (int i = 0; i < 20; i++) {
+            if (NsoSpawnExited(&pid, NULL)) break;
+            struct timespec ts = { 0, 10 * 1000 * 1000 };
+            nanosleep(&ts, NULL);
+        }
+        if (live.pid == gamePid || pid == gamePid) {
+            gamePid = NsoProcNone();
+            waitingForGame = false;
+        }
+    }
+#endif
+    Embed_Unload();
+    Live_Clear();
+}
+
 static bool Live_IsSame(int sys, int game)
 {
     return live.parked && live.sys == sys && live.game == game;
@@ -1197,13 +1236,11 @@ static void Live_ConfirmInput(bool gpUp, bool gpDown, bool gpConfirm, bool gpBac
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) {
         Sfx_Play(SFX_CLICK);
         if (liveConfirmSel == 0) {
-            /* Yes: close the parked game, then launch the chosen one. */
+            /* Yes: play the same opening animation; the parked game is closed
+             * behind full black in GameEnter_StartGame, then the new one launches. */
             int next = liveConfirmGame;
             liveConfirm = 0;
             liveConfirmT = 0.0f;
-            Live_Close();
-            /* CRT session of the closed game ends with Embed_Unload's host path; Mednafen's
-             * run file is cleared on the next LaunchGame. */
             if (next >= 0 && next < ActiveGameCount() && GameIsLaunchable(&ActiveGames()[next])) {
                 isLaunching = true;
                 launchingGameIdx = next;
@@ -4845,7 +4882,10 @@ static void GameEnter_StartGame(void)
         }
         return;
     }
-    if (live.parked) Live_Close();
+    /* Cover first, then kill the parked game while it stays unmapped/stopped. */
+    Embed_ExitOverlaySet(1.0f);
+    if (live.window) Embed_UnmapWindow(live.window);
+    if (live.parked) Live_CloseHidden();
     if (launched->embedRomKey) {
         if (StartEmbeddedGame(launched)) {
             currentState = EMBED;

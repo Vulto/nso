@@ -183,6 +183,7 @@ bool Embed_ExternalChildGone(void);
 bool Embed_WindowIsViewable(unsigned long window);
 /* Map without raising, so a covering overlay can stay on top. */
 void Embed_MapExternalWindow(unsigned long window);
+void Embed_UnmapWindow(unsigned long window);
 void Embed_FocusWindow(unsigned long window);
 
 #endif /* NSO_EMBED_H */
@@ -257,6 +258,7 @@ void Embed_ExitOverlayDestroy(void) {}
 bool Embed_ExternalChildGone(void) { return true; }
 bool Embed_WindowIsViewable(unsigned long window) { (void)window; return false; }
 void Embed_MapExternalWindow(unsigned long window) { (void)window; }
+void Embed_UnmapWindow(unsigned long window) { (void)window; }
 void Embed_FocusWindow(unsigned long window) { (void)window; }
 #else
 #include <dlfcn.h>
@@ -1143,6 +1145,23 @@ void Embed_MapExternalWindow(unsigned long window)
     XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
     embedXErrorCode = 0;
     XMapWindow(display, (Window)window);
+    XSync(display, False);
+    XSetErrorHandler(previousHandler);
+    XCloseDisplay(display);
+#else
+    (void)window;
+#endif
+}
+
+void Embed_UnmapWindow(unsigned long window)
+{
+#if defined(__linux__)
+    if (!window) return;
+    Display *display = XOpenDisplay(NULL);
+    if (!display) return;
+    XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XUnmapWindow(display, (Window)window);
     XSync(display, False);
     XSetErrorHandler(previousHandler);
     XCloseDisplay(display);
