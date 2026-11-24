@@ -319,55 +319,95 @@ static void nso_menu_game_focus(Display *dpy, Window w)
     XSync(dpy, False);
 }
 
-/* Cover the game window while a save briefly maps and runs it, so the live
- * child does not flash over the End menu (NSO's GL sits under child windows). */
-static Window nso_menu_save_cover(Display *dpy, Window host, Window game)
+/* Cover the host from the root, not as a sibling of the game. A child
+ * cover can never stay above Mednafen: SIGCONT is followed by XMapRaised
+ * (and often a resize), and that request wins any sibling stacking race
+ * with a later XRaiseWindow. A child also cannot hide a new top-level
+ * window. An override-redirect window on the root, above the host, covers
+ * every descendant of NSO no matter how they stack. */
+static Window nso_menu_save_cover(Display *dpy, Window host)
 {
-    XWindowAttributes ha, ga;
-    Window cover;
+    XWindowAttributes ha;
+    Window root, cover, child;
     XSetWindowAttributes attrs = { 0 };
-    int x, y, w, h;
-    if (!dpy || host == None || game == None) return None;
-    if (!XGetWindowAttributes(dpy, host, &ha) || !XGetWindowAttributes(dpy, game, &ga))
-        return None;
-    x = ga.x;
-    y = ga.y;
-    w = ga.width;
-    h = ga.height;
-    if (w < 1 || h < 1) {
-        x = 0;
-        y = 0;
-        w = ha.width;
-        h = ha.height;
-    }
+    int rx = 0, ry = 0, w, h;
+    if (!dpy || host == None) return None;
+    if (!XGetWindowAttributes(dpy, host, &ha)) return None;
+    w = ha.width;
+    h = ha.height;
     if (w < 1 || h < 1) return None;
+    root = DefaultRootWindow(dpy);
+    if (!XTranslateCoordinates(dpy, host, root, 0, 0, &rx, &ry, &child))
+        return None;
     attrs.override_redirect = True;
     attrs.background_pixel = BlackPixel(dpy, DefaultScreen(dpy));
-    cover = XCreateWindow(dpy, host, x, y, (unsigned)w, (unsigned)h, 0,
+    cover = XCreateWindow(dpy, root, rx, ry, (unsigned)w, (unsigned)h, 0,
                           CopyFromParent, InputOutput, CopyFromParent,
                           CWOverrideRedirect | CWBackPixel, &attrs);
     if (!cover) return None;
-    /* Prefer a snapshot of what the menu already shows in this rectangle, so
-     * the cover is invisible. Root is used because the host is a GL window. */
+    /* Snapshot of the menu already on screen, so the cover is invisible. */
     {
-        Window child;
-        int rx = 0, ry = 0;
-        if (XTranslateCoordinates(dpy, host, DefaultRootWindow(dpy), x, y, &rx, &ry, &child)) {
-            XImage *img = XGetImage(dpy, DefaultRootWindow(dpy), rx, ry,
-                                    (unsigned)w, (unsigned)h, AllPlanes, ZPixmap);
-            if (img) {
-                GC gc = XCreateGC(dpy, cover, 0, NULL);
-                if (gc) {
-                    XPutImage(dpy, cover, gc, img, 0, 0, 0, 0, (unsigned)w, (unsigned)h);
-                    XFreeGC(dpy, gc);
-                }
-                XDestroyImage(img);
+        XImage *img = XGetImage(dpy, root, rx, ry, (unsigned)w, (unsigned)h,
+                                AllPlanes, ZPixmap);
+        if (img) {
+            GC gc = XCreateGC(dpy, cover, 0, NULL);
+            if (gc) {
+                XPutImage(dpy, cover, gc, img, 0, 0, 0, 0, (unsigned)w, (unsigned)h);
+                XFreeGC(dpy, gc);
             }
+            XDestroyImage(img);
         }
     }
     XMapRaised(dpy, cover);
     XSync(dpy, False);
     return cover;
+}
+
+/* Keep the root cover above the host (and lower the game among siblings
+ * as a fallback if the cover could not be created). */
+static void nso_menu_cover_top(Display *dpy, Window cover, Window game)
+{
+    if (!dpy) return;
+    if (game != None) XLowerWindow(dpy, game);
+    if (cover != None) XRaiseWindow(dpy, cover);
+    XSync(dpy, False);
+}
+
+static void nso_menu_cover_sleep(Display *dpy, Window cover, Window game, unsigned int ms)
+{
+    struct timespec end, now, slice = { .tv_sec = 0, .tv_nsec = 4000000L };
+    if (clock_gettime(CLOCK_MONOTONIC, &end) != 0) {
+        nso_menu_cover_top(dpy, cover, game);
+        {
+            struct timespec hold = { .tv_sec = ms / 1000, .tv_nsec = (long)(ms % 1000) * 1000000L };
+            nanosleep(&hold, NULL);
+        }
+        nso_menu_cover_top(dpy, cover, game);
+        return;
+    }
+    end.tv_nsec += (long)ms * 1000000L;
+    while (end.tv_nsec >= 1000000000L) { end.tv_sec++; end.tv_nsec -= 1000000000L; }
+    for (;;) {
+        nso_menu_cover_top(dpy, cover, game);
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) break;
+        if (now.tv_sec > end.tv_sec || (now.tv_sec == end.tv_sec && now.tv_nsec >= end.tv_nsec))
+            break;
+        nanosleep(&slice, NULL);
+    }
+}
+
+static void nso_menu_tap_key_covered(Display *dpy, Window cover, Window game,
+                                     KeySym sym, unsigned int hold_ms)
+{
+    KeyCode code = XKeysymToKeycode(dpy, sym);
+    if (!code) return;
+    nso_menu_cover_top(dpy, cover, game);
+    XTestFakeKeyEvent(dpy, code, True, CurrentTime);
+    XSync(dpy, False);
+    nso_menu_cover_sleep(dpy, cover, game, hold_ms);
+    XTestFakeKeyEvent(dpy, code, False, CurrentTime);
+    XSync(dpy, False);
+    nso_menu_cover_sleep(dpy, cover, game, 120);
 }
 
 static void nso_menu_save_cover_destroy(Display *dpy, Window cover)
@@ -393,38 +433,51 @@ static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, in
         return false;
     if (save) remove(emu_file);
     else if (!nso_menu_copy_file(sav, emu_file)) return false;
-    if (save) cover = nso_menu_save_cover(dpy, host, w);
-    if (save && cover != None) {
-        /* Map the game under the cover; it must run to accept F5, but must not
-         * be seen over the menu. */
+    if (save) {
+        cover = nso_menu_save_cover(dpy, host);
+        /* Cover first, then map the game under it. Never XMapRaised: that
+         * puts the child above NSO's GL and above a late/undersized cover.
+         * Grab the server so the map and the raise are one update. */
+        XGrabServer(dpy);
         XMapWindow(dpy, w);
+        XLowerWindow(dpy, w);
         XSetInputFocus(dpy, w, RevertToParent, CurrentTime);
-        XRaiseWindow(dpy, cover);
+        if (cover != None) XRaiseWindow(dpy, cover);
+        XUngrabServer(dpy);
         XSync(dpy, False);
     } else {
         nso_menu_game_focus(dpy, w);
     }
     kill(-game, SIGCONT);
-    nanosleep(&settle, NULL);
-    if (cover != None) { XRaiseWindow(dpy, cover); XSync(dpy, False); }
-    nso_menu_tap_key(dpy, (KeySym)(XK_0 + slot), 40);
-    if (!save) {
+    if (save) nso_menu_cover_sleep(dpy, cover, w, 200);
+    else nanosleep(&settle, NULL);
+    if (save) {
+        nso_menu_tap_key_covered(dpy, cover, w, (KeySym)(XK_0 + slot), 40);
+        nso_menu_tap_key_covered(dpy, cover, w, XK_F5, 200);
+    } else {
+        nso_menu_tap_key(dpy, (KeySym)(XK_0 + slot), 40);
         nso_menu_tap_key(dpy, XK_F7, 200);
         return true;
     }
-    nso_menu_tap_key(dpy, XK_F5, 200);
     off_t last = -1;
     for (int i = 0; i < 150; ++i) {
         struct stat st;
         off_t size = stat(emu_file, &st) == 0 ? st.st_size : -1;
         if (size > 0 && size == last) break;
         last = size;
-        if (cover != None) XRaiseWindow(dpy, cover);
-        nso_menu_short_sleep();
-        nso_menu_short_sleep();
-        nso_menu_short_sleep();
+        nso_menu_cover_sleep(dpy, cover, w, 60);
     }
     kill(-game, SIGSTOP);
+    /* The process must actually be stopped before the cover drops: a
+     * MapRaised already in flight, or one issued after a too-early unmap,
+     * would flash the game over the menu. */
+    {
+        int st = 0;
+        pid_t ended;
+        do ended = waitpid(game, &st, WUNTRACED); while (ended < 0 && errno == EINTR);
+        (void)ended;
+    }
+    nso_menu_cover_top(dpy, cover, w);
     XUnmapWindow(dpy, w);
     XSync(dpy, False);
     nso_menu_save_cover_destroy(dpy, cover);
