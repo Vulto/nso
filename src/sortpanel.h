@@ -123,11 +123,19 @@ static void SortPanel_Apply(int sys, SortMode mode, bool live) {
     for (int k = 0; k < count; k++) tmp[k] = games[perm[k]];
     memcpy(games, tmp, sizeof(GameEntry) * (size_t)count);
     if (!live) return;
+    /* Slot size comes from boxartMetaW/H; it must travel with the cover. */
     Texture2D art[MAX_GAMES];
-    float scale[MAX_GAMES];
-    for (int k = 0; k < count; k++) { art[k] = gameBoxarts[perm[k]]; scale[k] = animScales[perm[k]]; }
+    float scale[MAX_GAMES], metaW[MAX_GAMES], metaH[MAX_GAMES];
+    for (int k = 0; k < count; k++) {
+        art[k] = gameBoxarts[perm[k]];
+        scale[k] = animScales[perm[k]];
+        metaW[k] = boxartMetaW[perm[k]];
+        metaH[k] = boxartMetaH[perm[k]];
+    }
     memcpy(gameBoxarts, art, sizeof(Texture2D) * (size_t)count);
     memcpy(animScales, scale, sizeof(float) * (size_t)count);
+    memcpy(boxartMetaW, metaW, sizeof(float) * (size_t)count);
+    memcpy(boxartMetaH, metaH, sizeof(float) * (size_t)count);
     for (int k = 0; k < count; k++) if (perm[k] == GameIdx) { GameIdx = k; break; }
     for (int k = shown; k < count; k++) {   /* hidden covers are not kept on the GPU */
         if (gameBoxarts[k].id != 0) UnloadTexture(gameBoxarts[k]);
@@ -145,11 +153,14 @@ static void Hide_Save(int sys) {
     if (!Cfg_SaveKey(cfg, key, Hide_CfgValue(hideOn[sys]))) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
-/* Settings > Hide unplayable: flip the shown system, re-list it at once. */
+/* Settings > Hide unplayable: flip the shown system, re-list it at once.
+ * Covers and slot sizes are remapped with the list; any missing art is
+ * decoded in the background while the grid is still blurred. */
 static void Hide_Toggle(void) {
     hideOn[currentSystem] = !hideOn[currentSystem];
     Hide_Save(currentSystem);
     SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+    CoverLoader_Start();
 }
 
 /* Something may have been installed: list the shown system again. */
