@@ -1093,7 +1093,7 @@ static int homeEnterGame = -1;
 static float homeEnterViewY = 0.0f;
 /* Home only: fade the system menu over a snapshot of the previous screen
  * (the game, or mosaic/manage). Other transitions are unchanged. */
-#define HOME_XFADE_SEC 1.0f
+#define HOME_XFADE_SEC 0.15f
 typedef enum { HOME_XFADE_NONE = 0, HOME_XFADE_IN, HOME_XFADE_OUT } HomeXFadePhase;
 static HomeXFadePhase homeXFade = HOME_XFADE_NONE;
 static float homeXFadeT = 0.0f;
@@ -5389,7 +5389,17 @@ static bool Home_InGame(void)
 
 static bool Home_KeyPressed(void)
 {
+    /* KEY_END is the pause/End menu only (pre-0f2efa5). Never treat it as Home,
+     * even if this frame also reports KEY_HOME or a leftover USR2. */
+    if (IsKeyPressed(KEY_END)) {
 #ifndef _WIN32
+        externalHomeSignal = 0;
+#endif
+        return false;
+    }
+#ifndef _WIN32
+    if (externalMenuSignal)
+        return false;
     if (externalHomeSignal) {
         externalHomeSignal = 0;
         return true;
@@ -5608,7 +5618,9 @@ static void Home_ParkAfterFrame(void)
     if (!homeUnmapAfterFrame) return;
     homeUnmapAfterFrame = false;
 #ifndef _WIN32
-    if (live.external && NsoProcOk(live.pid)) kill(live.pid, SIGUSR1);
+    /* SIGUSR2 tells the launcher to stop the game only. SIGUSR1 is the
+     * End key: pause and signal NSO to open the End menu. */
+    if (live.external && NsoProcOk(live.pid)) kill(live.pid, SIGUSR2);
 #endif
     if (live.window) Embed_UnmapWindow(live.window);
     if (Embed_IsExternal()) Embed_ExternalSetChildVisible(false);

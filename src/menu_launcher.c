@@ -22,12 +22,20 @@
 
 static volatile sig_atomic_t nso_menu_requested;
 static volatile sig_atomic_t nso_menu_home;
+static volatile sig_atomic_t nso_menu_park;
 static int nso_menu_home_held;
 
 static void nso_menu_request_signal(int sig)
 {
     (void)sig;
     nso_menu_requested = 1;
+}
+
+/* Host Home toggle: stop the game without asking NSO to open the End menu. */
+static void nso_menu_park_signal(int sig)
+{
+    (void)sig;
+    nso_menu_park = 1;
 }
 
 static volatile sig_atomic_t nso_menu_stop;
@@ -467,6 +475,7 @@ static bool nso_menu_emu_state(Display *dpy, Window w, pid_t game, bool save, in
     if (have_geom) {
         XMoveResizeWindow(dpy, w, ox, oy, (unsigned)ow, (unsigned)oh);
     }
+    XSelectInput(dpy, w, KeyPressMask | KeyReleaseMask | StructureNotifyMask);
     XSync(dpy, False);
     if (last > 0) nso_menu_copy_file(emu_file, sav);
     return false;
@@ -530,6 +539,8 @@ int NsoMenuLauncherMain(int argc, char **argv)
     sa.sa_handler = nso_menu_request_signal;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
+    sa.sa_handler = nso_menu_park_signal;
+    sigaction(SIGUSR2, &sa, NULL);
     struct sigaction st = { 0 };
     st.sa_handler = nso_menu_stop_signal;
     sigemptyset(&st.sa_mask);
@@ -604,14 +615,16 @@ int NsoMenuLauncherMain(int argc, char **argv)
             while (XPending(dpy)) {
                 XEvent event;
                 XNextEvent(dpy, &event);
-                if (event.type == KeyPress && end_code && event.xkey.keycode == end_code)
-                    nso_menu_requested = 1;
-                else if (event.type == KeyPress && home_code && event.xkey.keycode == home_code
-                         && !nso_menu_home_held) {
-                    nso_menu_home_held = 1;
-                    nso_menu_home = 1;
-                } else if (event.type == KeyRelease && home_code && event.xkey.keycode == home_code)
-                    nso_menu_home_held = 0;
+                if (event.type == KeyPress || event.type == KeyRelease) {
+                    KeySym sym = XLookupKeysym(&event.xkey, 0);
+                    if (event.type == KeyPress && sym == XK_End)
+                        nso_menu_requested = 1;
+                    else if (event.type == KeyPress && sym == XK_Home && !nso_menu_home_held) {
+                        nso_menu_home_held = 1;
+                        nso_menu_home = 1;
+                    } else if (event.type == KeyRelease && sym == XK_Home)
+                        nso_menu_home_held = 0;
+                }
                 if (centre && event.type == ConfigureNotify && event.xconfigure.window == game_window)
                     nso_menu_place(dpy, game_window, (Window)parent_id);
             }
@@ -627,15 +640,18 @@ int NsoMenuLauncherMain(int argc, char **argv)
             nso_menu_send_host_signal(SIGUSR2);
         }
 
-        if (nso_menu_requested && !paused) {
+        if ((nso_menu_requested || nso_menu_park) && !paused) {
+            int from_end = nso_menu_requested;
             nso_menu_requested = 0;
+            nso_menu_park = 0;
             nso_menu_plain_request();
             if (kill(-game, SIGSTOP) != 0) continue;
             do ended = waitpid(game, &status, WUNTRACED); while (ended < 0 && errno == EINTR);
             if ((ended == game && !WIFSTOPPED(status))
                 || (ended < 0 && !nso_menu_process_group_alive(game))) break;
             paused = true;
-            nso_menu_send_host_signal(SIGUSR1);
+            /* End/pause: tell NSO to open the End menu. Home park: do not. */
+            if (from_end) nso_menu_send_host_signal(SIGUSR1);
         }
 
         if (paused) {
