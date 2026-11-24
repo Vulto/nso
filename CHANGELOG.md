@@ -4,6 +4,9 @@ All notable changes to NSO. Newest first. Versions follow the Git tags.
 
 ## [Unreleased]
 
+### Fixes
+- Leaving a game no longer flashes the screen. A full-window black rectangle fades in over the still-visible game in 0.3 s; only then is the game closed or parked. Once it is gone and the visible covers are ready, that black rectangle shrinks quickly into the game's cover and reveals the grid. For Mednafen and reparented ports an override-redirect black window is raised above the child so the fade covers it (NSO's own draw sits under that window). The previous exit zoom unmapped the child and finished the shrink before a covering frame was drawn, which is what let a stale or empty frame show through.
+
 ### Performance
 - Mednafen CRT Geometry (two-pass): the 960×720 pass used a projection-matrix ortho, but Mednafen stores its window transform on MODELVIEW, so the CRT draw missed the FBO and the screen was black with CRT on. The pass now sets MODELVIEW, and the present uses the textured mask blit.
 - While a Mednafen game or a reparented port owns the screen, NSO no longer redraws the grid at 60 fps (it waits on input). End, the close prompt and park/resume still work; enter/leave animations still play.

@@ -172,6 +172,14 @@ void Embed_Park(void);
 void Embed_Unpark(void);
 /* Write an action for a parked external child (menuDir from Embed_StateDir before Stop). */
 bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot);
+/* True once To Game Selection was chosen, including while the menu is still closing. */
+bool Embed_IsLeaving(void);
+/* Override-redirect black window raised above a hosted child, opacity 0..1.
+ * With no compositor the window is mapped only at full opacity, so a GL fade stays visible. */
+void Embed_ExitOverlaySet(float opacity);
+void Embed_ExitOverlayDestroy(void);
+/* True when there is no hosted child, or it is unmapped or destroyed. */
+bool Embed_ExternalChildGone(void);
 
 #endif /* NSO_EMBED_H */
 
@@ -239,6 +247,10 @@ void Embed_Park(void) {}
 void Embed_Unpark(void) {}
 bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot)
 { (void)menuDir; (void)action; (void)slot; return false; }
+bool Embed_IsLeaving(void) { return false; }
+void Embed_ExitOverlaySet(float opacity) { (void)opacity; }
+void Embed_ExitOverlayDestroy(void) {}
+bool Embed_ExternalChildGone(void) { return true; }
 #else
 #include <dlfcn.h>
 #include <pthread.h>
@@ -247,6 +259,7 @@ bool Embed_WriteMenuAction(const char *menuDir, const char *action, int slot)
 #define Font X11Font
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #undef Font
 #endif
 
@@ -455,6 +468,7 @@ void Embed_Unload(void)
 }
 
 bool Embed_IsActive(void) { return embed.active; }
+bool Embed_IsLeaving(void) { return embed.active && embed.quitting; }
 bool Embed_NeedsFastExit(void) { return embedPersistentSeen; }
 bool Embed_IsParked(void) { return embed.active && embed.parked; }
 bool Embed_IsExternal(void) { return embed.active && embed.external; }
@@ -870,6 +884,134 @@ void Embed_ShowExternalWindow(unsigned long window)
     XCloseDisplay(display);
 #else
     (void)window;
+#endif
+}
+
+#if defined(__linux__)
+static Display *exitOvDpy;
+static Window exitOvWin;
+static bool exitOvMapped;
+
+static bool Embed_CompositorActive(Display *dpy)
+{
+    if (!dpy) return false;
+    Atom cm = XInternAtom(dpy, "_NET_WM_CM_S0", False);
+    return XGetSelectionOwner(dpy, cm) != None;
+}
+
+static void Embed_ExitOverlaySetOpacity(Display *dpy, Window win, float opacity)
+{
+    unsigned long val;
+    Atom atom;
+    if (opacity <= 0.0f) val = 0;
+    else if (opacity >= 1.0f) val = 0xffffffffUL;
+    else val = (unsigned long)(opacity * 65535.0f) * 0x10001UL;
+    atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
+    XChangeProperty(dpy, win, atom, XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)&val, 1);
+}
+#endif
+
+void Embed_ExitOverlaySet(float opacity)
+{
+#if defined(__linux__)
+    void *hostHandle = GetWindowHandle();
+    Window parent = hostHandle ? (Window)*(unsigned long *)hostHandle : 0;
+    int sw, sh;
+    XErrorHandler previousHandler;
+    bool compositor;
+    if (!parent) return;
+    opacity = fminf(1.0f, fmaxf(0.0f, opacity));
+    if (!exitOvDpy) {
+        exitOvDpy = XOpenDisplay(NULL);
+        if (!exitOvDpy) return;
+    }
+    sw = GetScreenWidth();
+    sh = GetScreenHeight();
+    if (sw < 1) sw = 1;
+    if (sh < 1) sh = 1;
+    previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    if (!exitOvWin) {
+        XSetWindowAttributes swa = { 0 };
+        swa.override_redirect = True;
+        swa.background_pixel = BlackPixel(exitOvDpy, DefaultScreen(exitOvDpy));
+        swa.border_pixel = 0;
+        exitOvWin = XCreateWindow(exitOvDpy, parent, 0, 0,
+                                  (unsigned)sw, (unsigned)sh, 0,
+                                  CopyFromParent, InputOutput, CopyFromParent,
+                                  CWOverrideRedirect | CWBackPixel | CWBorderPixel, &swa);
+        if (exitOvWin) Embed_ExitOverlaySetOpacity(exitOvDpy, exitOvWin, 0.0f);
+    } else {
+        XMoveResizeWindow(exitOvDpy, exitOvWin, 0, 0, (unsigned)sw, (unsigned)sh);
+    }
+    if (!exitOvWin) {
+        XSetErrorHandler(previousHandler);
+        return;
+    }
+    compositor = Embed_CompositorActive(exitOvDpy);
+    Embed_ExitOverlaySetOpacity(exitOvDpy, exitOvWin, opacity);
+    /* No compositor: an unmapped-to-mapped window is instantly opaque, so keep
+     * it hidden until the fade reaches 1 and a GL fade can run underneath. */
+    if (!compositor && opacity < 1.0f) {
+        if (exitOvMapped) {
+            XUnmapWindow(exitOvDpy, exitOvWin);
+            exitOvMapped = false;
+        }
+    } else if (!exitOvMapped) {
+        XMapRaised(exitOvDpy, exitOvWin);
+        exitOvMapped = true;
+    } else {
+        XRaiseWindow(exitOvDpy, exitOvWin);
+    }
+    XSync(exitOvDpy, False);
+    XSetErrorHandler(previousHandler);
+#else
+    (void)opacity;
+#endif
+}
+
+void Embed_ExitOverlayDestroy(void)
+{
+#if defined(__linux__)
+    if (exitOvDpy && exitOvWin) {
+        XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+        embedXErrorCode = 0;
+        if (exitOvMapped) XUnmapWindow(exitOvDpy, exitOvWin);
+        XDestroyWindow(exitOvDpy, exitOvWin);
+        XSync(exitOvDpy, False);
+        XSetErrorHandler(previousHandler);
+    }
+    exitOvWin = 0;
+    exitOvMapped = false;
+    if (exitOvDpy) {
+        XCloseDisplay(exitOvDpy);
+        exitOvDpy = NULL;
+    }
+#endif
+}
+
+bool Embed_ExternalChildGone(void)
+{
+#if defined(__linux__)
+    Display *display;
+    XWindowAttributes attrs = { 0 };
+    XErrorHandler previousHandler;
+    Status ok;
+    int err;
+    if (!embed.external || !embed.externalWindow) return true;
+    display = (Display *)embed.externalDisplay;
+    if (!display) return true;
+    previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    ok = XGetWindowAttributes(display, (Window)embed.externalWindow, &attrs);
+    XSync(display, False);
+    err = embedXErrorCode;
+    XSetErrorHandler(previousHandler);
+    if (!ok || err != 0) return true;
+    return attrs.map_state != IsViewable;
+#else
+    return true;
 #endif
 }
 
