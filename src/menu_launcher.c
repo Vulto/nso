@@ -525,6 +525,24 @@ static void nso_menu_end_game(pid_t game, int *status)
     waitpid(game, status, WNOHANG);
 }
 
+/* CapsLock=Lock, NumLock=Mod2, ScrollLock/Level3=Mod5 on Jefferson's map. */
+static void nso_menu_grab_locks(Display *dpy, KeyCode code, Window w)
+{
+    static const unsigned locks[] = {
+        0,
+        LockMask,
+        Mod2Mask,
+        Mod5Mask,
+        LockMask | Mod2Mask,
+        LockMask | Mod5Mask,
+        Mod2Mask | Mod5Mask,
+        LockMask | Mod2Mask | Mod5Mask,
+    };
+    if (!dpy || !code || w == None) return;
+    for (size_t i = 0; i < sizeof(locks) / sizeof(locks[0]); i++)
+        XGrabKey(dpy, code, locks[i], w, False, GrabModeAsync, GrabModeAsync);
+}
+
 int NsoMenuLauncherMain(int argc, char **argv)
 {
     const char *state_dir = getenv("NSO_MENU_DIR");
@@ -577,12 +595,11 @@ int NsoMenuLauncherMain(int argc, char **argv)
                 XSelectInput(dpy, game_window, KeyPressMask | KeyReleaseMask | StructureNotifyMask);
                 end_code = XKeysymToKeycode(dpy, XK_End);
                 home_code = XKeysymToKeycode(dpy, XK_Home);
-                if (end_code)
-                    XGrabKey(dpy, end_code, AnyModifier, game_window, False,
-                             GrabModeAsync, GrabModeAsync);
-                if (home_code)
-                    XGrabKey(dpy, home_code, AnyModifier, game_window, False,
-                             GrabModeAsync, GrabModeAsync);
+                /* AnyModifier can miss keys when Caps/NumLock are on.
+                 * Grab every lock-modifier combination (0, Lock, Mod2=NumLock,
+                 * Mod5, and their unions), same keycodes as before 0f2efa5. */
+                nso_menu_grab_locks(dpy, end_code, game_window);
+                nso_menu_grab_locks(dpy, home_code, game_window);
                 XMapRaised(dpy, game_window);
                 XSetInputFocus(dpy, game_window, RevertToParent, CurrentTime);
                 XSync(dpy, False);
@@ -652,15 +669,21 @@ int NsoMenuLauncherMain(int argc, char **argv)
             nso_menu_send_host_signal(SIGUSR1);
         }
 
-        /* Home park only: stop the game, do not open the End menu. */
-        if (nso_menu_park && !paused) {
-            nso_menu_park = 0;
-            nso_menu_plain_request();
-            if (kill(-game, SIGSTOP) != 0) continue;
-            do ended = waitpid(game, &status, WUNTRACED); while (ended < 0 && errno == EINTR);
-            if ((ended == game && !WIFSTOPPED(status))
-                || (ended < 0 && !nso_menu_process_group_alive(game))) break;
-            paused = true;
+        /* Home park only: stop the game, do not open the End menu.
+         * If End already stopped the game, drop the flag so a later resume
+         * does not immediately SIGSTOP again (that froze re-entry). */
+        if (nso_menu_park) {
+            if (paused) {
+                nso_menu_park = 0;
+            } else {
+                nso_menu_park = 0;
+                nso_menu_plain_request();
+                if (kill(-game, SIGSTOP) != 0) continue;
+                do ended = waitpid(game, &status, WUNTRACED); while (ended < 0 && errno == EINTR);
+                if ((ended == game && !WIFSTOPPED(status))
+                    || (ended < 0 && !nso_menu_process_group_alive(game))) break;
+                paused = true;
+            }
         }
 
         if (paused) {

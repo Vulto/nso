@@ -5766,16 +5766,20 @@ static void Home_Poll(void)
     if (GameExitActive() || GameEnterActive() || isLaunching || screenSliding) return;
     if (currentState == SPLASH) return;
     if (currentState != SYSTEMS && mosaicExitPhase != MOSAIC_EXIT_NONE) return;
-    if (homeReturn != HOME_RET_NONE && Home_AtMainMenu()) {
+    /* Home only with a game: in-game → systems menu; on the systems menu
+     * with a game parked by Home → toggle back. Otherwise do nothing. */
+    if (homeReturn == HOME_RET_GAME && Home_AtMainMenu() && live.parked) {
         Sfx_Play(SFX_CLICK);
         Home_XFadeBeginOut();
-    } else if (!Home_AtMainMenu()) {
+    } else if (Home_InGame()) {
         Sfx_Play(SFX_CLICK);
         Home_GoToMainMenu();
     }
 }
 
 // ====================== MAIN PROGRAM ======================
+static bool nsoQuit = false;
+
 int main(int argc, char **argv) {
 #ifndef _WIN32
     if (argc >= 3 && strcmp(argv[1], "--menu-launcher") == 0) {
@@ -5881,7 +5885,7 @@ int main(int argc, char **argv) {
     Color Mosaicbg = GetColor(0x303030FF);
 
     bool externalResumeAfterFrame = false;
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose() && !nsoQuit) {
 
         N64Pad_Poll();   /* Switch-mode N64 pad mapping, rumble device */
         bool gp = IsGamepadAvailable(0);
@@ -6224,6 +6228,12 @@ int main(int argc, char **argv) {
         if (!screenSliding && !noticeTookInput) {
             switch (currentState) {
                 case SYSTEMS:
+                    /* KEY_END leaves NSO only from this menu (not in-game). */
+                    if (canNavigate && !Home_XFadeActive() && !Home_InGame()
+                        && IsKeyPressed(KEY_END)) {
+                        nsoQuit = true;
+                        break;
+                    }
                     /* O: repository download + language screen. */
                     if (canNavigate && (IsKeyPressed(KEY_O) || padCLeft)) {
                         Manage_Open();
@@ -6397,9 +6407,15 @@ int main(int argc, char **argv) {
         /* While a child (Mednafen / reparented port) owns the screen, do not keep
          * redrawing the 4x-MSAA 1920x1080 grid under it. Poll End / exit only. */
         static bool frontendIdleBlanked = false;
+        /* A Home trip sets SYSTEMS / xfade / unmap-after-frame while the
+         * child is still Live_Busy(); those frames must keep drawing and
+         * reach Home_ParkAfterFrame. Skipping them latched the Home action
+         * until End (or another wakeup) left this idle path. */
         bool gameOwnsScreen = Live_Busy() && currentState != EMBED
             && !GameExitActive() && !GameEnterActive() && !externalResumeAfterFrame && !externalQuitting
-            && !isLaunching;
+            && !isLaunching
+            && !Home_XFadeActive() && !homeUnmapAfterFrame && !homeResumeAfterFrame
+            && !homeApplyAfterFrame;
         bool frontendIdle = gameOwnsScreen && !Rewind_NeedsDraw();
 #ifndef _WIN32
         if (frontendIdle) {
