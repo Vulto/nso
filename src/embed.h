@@ -180,6 +180,10 @@ void Embed_ExitOverlaySet(float opacity);
 void Embed_ExitOverlayDestroy(void);
 /* True when there is no hosted child, or it is unmapped or destroyed. */
 bool Embed_ExternalChildGone(void);
+bool Embed_WindowIsViewable(unsigned long window);
+/* Map without raising, so a covering overlay can stay on top. */
+void Embed_MapExternalWindow(unsigned long window);
+void Embed_FocusWindow(unsigned long window);
 
 #endif /* NSO_EMBED_H */
 
@@ -251,6 +255,9 @@ bool Embed_IsLeaving(void) { return false; }
 void Embed_ExitOverlaySet(float opacity) { (void)opacity; }
 void Embed_ExitOverlayDestroy(void) {}
 bool Embed_ExternalChildGone(void) { return true; }
+bool Embed_WindowIsViewable(unsigned long window) { (void)window; return false; }
+void Embed_MapExternalWindow(unsigned long window) { (void)window; }
+void Embed_FocusWindow(unsigned long window) { (void)window; }
 #else
 #include <dlfcn.h>
 #include <pthread.h>
@@ -1099,6 +1106,65 @@ bool Embed_ExternalChildGone(void)
     return attrs.map_state != IsViewable;
 #else
     return true;
+#endif
+}
+
+bool Embed_WindowIsViewable(unsigned long window)
+{
+#if defined(__linux__)
+    Display *display;
+    XWindowAttributes attrs = { 0 };
+    XErrorHandler previousHandler;
+    Status ok;
+    int err;
+    if (!window) return false;
+    display = XOpenDisplay(NULL);
+    if (!display) return false;
+    previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    ok = XGetWindowAttributes(display, (Window)window, &attrs);
+    XSync(display, False);
+    err = embedXErrorCode;
+    XSetErrorHandler(previousHandler);
+    XCloseDisplay(display);
+    return ok && err == 0 && attrs.map_state == IsViewable;
+#else
+    (void)window;
+    return false;
+#endif
+}
+
+void Embed_MapExternalWindow(unsigned long window)
+{
+#if defined(__linux__)
+    if (!window) return;
+    Display *display = XOpenDisplay(NULL);
+    if (!display) return;
+    XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XMapWindow(display, (Window)window);
+    XSync(display, False);
+    XSetErrorHandler(previousHandler);
+    XCloseDisplay(display);
+#else
+    (void)window;
+#endif
+}
+
+void Embed_FocusWindow(unsigned long window)
+{
+#if defined(__linux__)
+    if (!window) return;
+    Display *display = XOpenDisplay(NULL);
+    if (!display) return;
+    XErrorHandler previousHandler = XSetErrorHandler(Embed_XErrorTrap);
+    embedXErrorCode = 0;
+    XSetInputFocus(display, (Window)window, RevertToParent, CurrentTime);
+    XSync(display, False);
+    XSetErrorHandler(previousHandler);
+    XCloseDisplay(display);
+#else
+    (void)window;
 #endif
 }
 
