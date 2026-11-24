@@ -1091,10 +1091,17 @@ static float homeRetViewY = 0.0f;
 static bool homeResumePending = false;
 static int homeEnterGame = -1;
 static float homeEnterViewY = 0.0f;
-static bool gameExitToSystems = false;
-typedef enum { HOME_BACK_NONE = 0, HOME_BACK_IN, HOME_BACK_HOLD, HOME_BACK_OUT } HomeBackPhase;
-static HomeBackPhase homeBackPhase = HOME_BACK_NONE;
-static float homeBackT = 0.0f;
+/* Home only: fade the system menu over a snapshot of the previous screen
+ * (the game, or mosaic/manage). Other transitions are unchanged. */
+#define HOME_XFADE_SEC 1.0f
+typedef enum { HOME_XFADE_NONE = 0, HOME_XFADE_IN, HOME_XFADE_OUT } HomeXFadePhase;
+static HomeXFadePhase homeXFade = HOME_XFADE_NONE;
+static float homeXFadeT = 0.0f;
+static Texture2D homeUnderlay;
+static RenderTexture2D homeMenuRt;
+static bool homeUnmapAfterFrame = false;
+static bool homeResumeAfterFrame = false;
+static bool homeApplyAfterFrame = false;
 
 static void Live_Clear(void)
 {
@@ -4813,7 +4820,6 @@ static void GameExit_Reset(void)
     gameExitT = 0.0f;
     gameExitCloseStarted = false;
     gameExitHandoff = false;
-    gameExitToSystems = false;
     Embed_ExitOverlayDestroy();
 }
 
@@ -4823,9 +4829,9 @@ static void GameExit_Begin(void)
     gameExitT = 0.0f;
     gameExitCloseStarted = false;
     gameExitHandoff = false;
-    /* Grid covers are only needed when the veil shrinks into a mosaic slot.
-     * Home-to-systems stays fully black, so skip the reload (and the wait). */
-    if (!gameExitToSystems) FrontendArts_Reload();
+    /* Start the visible-screen reload during the fade so the grid is ready
+     * before the black rectangle shrinks away. */
+    FrontendArts_Reload();
     Embed_ExitOverlaySet(0.0f);
 }
 
@@ -4862,17 +4868,13 @@ static void GameExit_Step(float dt)
             }
             if (live.window) Embed_UnmapWindow(live.window);
             if (liveParking) Live_FinishPark();
-            else if (!gameExitToSystems) Embed_Stop();
-            if (currentState == MANAGE) currentSystem = manageReturnSystem;
-            /* Stay off the mosaic: a later frame would shrink the veil into a
-             * cover slot (and flash the grid) if we switched to MOSAIC here. */
-            if (!gameExitToSystems) currentState = MOSAIC;
+            else Embed_Stop();
+            currentState = MOSAIC;
         }
-        if (GameExit_GameGone() && (gameExitToSystems || CoverLoader_VisibleReady()))
+        if (GameExit_GameGone() && CoverLoader_VisibleReady())
             gameExitHandoff = true;
     } else if (gameExitPhase == GAME_EXIT_REVEAL) {
-        gameExitT += dt / (gameExitToSystems ? GAME_FADE_SEC : GAME_COVER_SEC);
-        if (gameExitToSystems) Embed_ExitOverlaySet(1.0f - gameExitT);
+        gameExitT += dt / GAME_COVER_SEC;
         if (gameExitT >= 1.0f) GameExit_Reset();
     }
 }
@@ -5489,20 +5491,154 @@ static void Home_PrepareGrid(int sys, int game, float viewY)
     viewportSlideT = 1.0f;
 }
 
+static void Home_UnloadGfx(void)
+{
+    if (homeUnderlay.id) { UnloadTexture(homeUnderlay); homeUnderlay = (Texture2D){ 0 }; }
+    if (homeMenuRt.id) { UnloadRenderTexture(homeMenuRt); homeMenuRt = (RenderTexture2D){ 0 }; }
+}
+
+static void Home_CaptureUnderlay(void)
+{
+    Image img = { 0 };
+#ifndef _WIN32
+    unsigned long child = 0;
+    if (Home_InGame()) {
+        if (live.window) child = live.window;
+        else if (Embed_IsExternal()) child = Embed_ExternalWindow();
+    }
+    if (child) {
+        Display *dpy = XOpenDisplay(NULL);
+        void *hostHandle = GetWindowHandle();
+        Window host = hostHandle ? *(Window *)hostHandle : None;
+        if (dpy && host != None) {
+            XWindowAttributes ha;
+            Window root = DefaultRootWindow(dpy), unused;
+            int rx = 0, ry = 0;
+            XErrorHandler prev = XSetErrorHandler(Embed_XErrorTrap);
+            embedXErrorCode = 0;
+            if (XGetWindowAttributes(dpy, host, &ha)
+                && ha.width > 0 && ha.height > 0
+                && XTranslateCoordinates(dpy, host, root, 0, 0, &rx, &ry, &unused)) {
+                XImage *shot = XGetImage(dpy, root, rx, ry, (unsigned)ha.width, (unsigned)ha.height,
+                                         AllPlanes, ZPixmap);
+                XSync(dpy, False);
+                if (shot && embedXErrorCode == 0) {
+                    img = GenImageColor(ha.width, ha.height, BLACK);
+                    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+                    if (img.data) {
+                        unsigned char *px = (unsigned char *)img.data;
+                        for (int y = 0; y < ha.height; y++) {
+                            for (int x = 0; x < ha.width; x++) {
+                                unsigned long p = XGetPixel(shot, x, y);
+                                size_t i = ((size_t)y * (size_t)ha.width + (size_t)x) * 4;
+                                px[i + 0] = Embed_XChannel(p, shot->red_mask);
+                                px[i + 1] = Embed_XChannel(p, shot->green_mask);
+                                px[i + 2] = Embed_XChannel(p, shot->blue_mask);
+                                px[i + 3] = 255;
+                            }
+                        }
+                    }
+                    XDestroyImage(shot);
+                } else if (shot) {
+                    XDestroyImage(shot);
+                }
+            }
+            XSetErrorHandler(prev);
+            XCloseDisplay(dpy);
+        }
+    }
+#endif
+    if (!img.data) img = LoadImageFromScreen();
+    Home_UnloadGfx();
+    if (img.data) {
+        homeUnderlay = LoadTextureFromImage(img);
+        if (homeUnderlay.id)
+            SetTextureFilter(homeUnderlay, TEXTURE_FILTER_BILINEAR);
+        UnloadImage(img);
+    }
+}
+
+static void Home_EnsureMenuRt(void)
+{
+    int sw = GetScreenWidth(), sh = GetScreenHeight();
+    if (homeMenuRt.id && (homeMenuRt.texture.width != sw || homeMenuRt.texture.height != sh)) {
+        UnloadRenderTexture(homeMenuRt);
+        homeMenuRt = (RenderTexture2D){ 0 };
+    }
+    if (!homeMenuRt.id) homeMenuRt = LoadRenderTexture(sw, sh);
+}
+
+static void Home_DrawXFade(float menuAlpha)
+{
+    int sw = GetScreenWidth(), sh = GetScreenHeight();
+    if (homeUnderlay.id) {
+        DrawTexturePro(homeUnderlay,
+                       (Rectangle){ 0, 0, (float)homeUnderlay.width, (float)homeUnderlay.height },
+                       (Rectangle){ 0, 0, (float)sw, (float)sh },
+                       (Vector2){ 0, 0 }, 0.0f, WHITE);
+    } else {
+        ClearBackground(MENU_BG);
+    }
+    if (menuAlpha <= 0.0f) return;
+    Home_EnsureMenuRt();
+    if (!homeMenuRt.id) {
+        DrawSystemMenu(0.0f);
+        return;
+    }
+    BeginTextureMode(homeMenuRt);
+    DrawSystemMenu(0.0f);
+    EndTextureMode();
+    DrawTexturePro(homeMenuRt.texture,
+                   (Rectangle){ 0, 0, (float)homeMenuRt.texture.width, -(float)homeMenuRt.texture.height },
+                   (Rectangle){ 0, 0, (float)sw, (float)sh },
+                   (Vector2){ 0, 0 }, 0.0f, Fade(WHITE, menuAlpha));
+}
+
+static bool Home_XFadeActive(void) { return homeXFade != HOME_XFADE_NONE; }
+
+static float Home_MenuAlpha(void)
+{
+    if (homeXFade == HOME_XFADE_IN) return homeXFadeT;
+    if (homeXFade == HOME_XFADE_OUT) return 1.0f - homeXFadeT;
+    return 1.0f;
+}
+
+static void Home_ParkAfterFrame(void)
+{
+    if (!homeUnmapAfterFrame) return;
+    homeUnmapAfterFrame = false;
+#ifndef _WIN32
+    if (live.external && NsoProcOk(live.pid)) kill(live.pid, SIGUSR1);
+#endif
+    if (live.window) Embed_UnmapWindow(live.window);
+    if (Embed_IsExternal()) Embed_ExternalSetChildVisible(false);
+    if (liveParking) Live_FinishPark();
+}
+
 static void Home_GoToMainMenu(void)
 {
     Home_SaveReturn();
-    if (currentState == SYSTEMS && !Home_InGame())
+    if (currentState == SYSTEMS && !Home_InGame() && !Home_XFadeActive())
         return;
     Home_DismissOverlays();
+    /* Snapshot the current screen (the live game, or mosaic/manage/End)
+     * before anything is unmapped or redrawn. */
+    Home_CaptureUnderlay();
+    if (frontendArtsParked) FrontendArts_Reload();
     if (Home_InGame()) {
         Live_BeginPark();
+        homeUnmapAfterFrame = true; /* unmap only after the snapshot is on screen */
     }
-    gameExitToSystems = true;
-    GameExit_Begin();
+    currentState = SYSTEMS;
+    introOpacity = 0.0f;
+    introFrames = FPS;
+    mosaicIntroPhase = MOSAIC_INTRO_NONE;
+    mosaicExitPhase = MOSAIC_EXIT_NONE;
+    homeXFade = HOME_XFADE_IN;
+    homeXFadeT = 0.0f;
 }
 
-static void Home_ReturnUnderBlack(void)
+static void Home_ApplyReturn(void)
 {
     HomeReturn dest = homeReturn;
     homeReturn = HOME_RET_NONE;
@@ -5511,6 +5647,8 @@ static void Home_ReturnUnderBlack(void)
         break;
     case HOME_RET_MANAGE:
         Manage_Open();
+        introOpacity = 0.0f;
+        introFrames = FPS;
         break;
     case HOME_RET_MOSAIC:
     case HOME_RET_DETAILS:
@@ -5520,99 +5658,50 @@ static void Home_ReturnUnderBlack(void)
     case HOME_RET_SIDEBAR:
         Home_PrepareGrid(homeRetSys, homeRetGame, homeRetViewY);
         if (frontendArtsParked) FrontendArts_Reload();
-        else {
-            UnloadAllBoxarts();
-            mosaicRevealWait = true;
-            CoverLoader_Start();
-        }
         mosaicIntroPhase = MOSAIC_INTRO_NONE;
+        mosaicRevealWait = false;
         currentState = MOSAIC;
         if (dest != HOME_RET_MOSAIC) homeReturn = dest;
         break;
     case HOME_RET_GAME:
         if (!live.parked) break;
         Home_PrepareGrid(live.sys, live.game, homeRetViewY);
-        isLaunching = true;
-        launchingGameIdx = GameIdx;
-        currentState = LAUNCHING;
-        /* Already fully black: skip the grow-from-cover (no cover is on screen). */
-        gameEnterPhase = GAME_ENTER_START;
-        gameEnterT = 0.0f;
-        gameEnterStarted = false;
-        gameEnterHadFrame = false;
-        gameEnterHandoff = false;
-        gameEnterFailed = false;
-        Embed_ExitOverlaySet(1.0f);
+        /* Resume behind the still-visible snapshot; no enter veil. */
+        Live_Resume();
+        homeResumeAfterFrame = true;
         break;
     default:
         break;
     }
 }
 
-static bool Home_BackActive(void) { return homeBackPhase != HOME_BACK_NONE; }
-
-static float Home_BackAlpha(void)
+static void Home_XFadeBeginOut(void)
 {
-    if (homeBackPhase == HOME_BACK_IN) return homeBackT;
-    if (homeBackPhase == HOME_BACK_HOLD) return 1.0f;
-    if (homeBackPhase == HOME_BACK_OUT) return 1.0f - homeBackT;
-    return 0.0f;
+    homeXFade = HOME_XFADE_OUT;
+    homeXFadeT = 0.0f;
 }
 
-static float Home_ToSystemsAlpha(void)
+static void Home_XFadeStep(float dt)
 {
-    if (!gameExitToSystems || !GameExitActive()) return 0.0f;
-    if (gameExitPhase == GAME_EXIT_FADE) return gameExitT;
-    if (gameExitPhase == GAME_EXIT_CLOSE) return 1.0f;
-    if (gameExitPhase == GAME_EXIT_REVEAL) return 1.0f - gameExitT;
-    return 0.0f;
-}
-
-static bool homeBackApplied = false;
-
-static void Home_BackBegin(void)
-{
-    homeBackPhase = HOME_BACK_IN;
-    homeBackT = 0.0f;
-    homeBackApplied = false;
-    Embed_ExitOverlaySet(0.0f);
-}
-
-static void Home_BackStep(float dt)
-{
-    if (homeBackPhase == HOME_BACK_IN) {
-        homeBackT += dt / GAME_FADE_SEC;
-        if (homeBackT >= 1.0f) {
-            homeBackT = 1.0f;
-            homeBackPhase = HOME_BACK_HOLD;
+    if (homeXFade == HOME_XFADE_IN) {
+        homeXFadeT += dt / HOME_XFADE_SEC;
+        if (homeXFadeT >= 1.0f) {
+            homeXFadeT = 1.0f;
+            homeXFade = HOME_XFADE_NONE;
+            /* Keep the underlay: a later Home fades back to it. */
+            if (homeMenuRt.id) {
+                UnloadRenderTexture(homeMenuRt);
+                homeMenuRt = (RenderTexture2D){ 0 };
+            }
         }
-        Embed_ExitOverlaySet(homeBackT);
-    }
-    if (homeBackPhase == HOME_BACK_HOLD) {
-        Embed_ExitOverlaySet(1.0f);
-        if (!homeBackApplied) {
-            Home_ReturnUnderBlack();
-            homeBackApplied = true;
-        }
-        if (GameEnterActive()) {
-            /* Enter veil (start/fade) owns the fade-out. */
-            homeBackPhase = HOME_BACK_NONE;
-            homeBackT = 0.0f;
-            return;
-        }
-        if (currentState == MOSAIC && mosaicRevealWait && !CoverLoader_VisibleReady())
-            return;
-        if (currentState == MOSAIC) mosaicRevealWait = false;
-        homeBackPhase = HOME_BACK_OUT;
-        homeBackT = 0.0f;
-    }
-    if (homeBackPhase == HOME_BACK_OUT) {
-        homeBackT += dt / GAME_FADE_SEC;
-        Embed_ExitOverlaySet(1.0f - homeBackT);
-        if (homeBackT >= 1.0f) {
-            homeBackPhase = HOME_BACK_NONE;
-            homeBackT = 0.0f;
-            Embed_ExitOverlayDestroy();
+    } else if (homeXFade == HOME_XFADE_OUT) {
+        homeXFadeT += dt / HOME_XFADE_SEC;
+        if (homeXFadeT >= 1.0f) {
+            homeXFadeT = 1.0f;
+            homeXFade = HOME_XFADE_NONE;
+            /* Apply after this frame's snapshot has been swapped, so the
+             * grid or the enter veil cannot flash over it. */
+            homeApplyAfterFrame = true;
         }
     }
 }
@@ -5622,9 +5711,9 @@ static void Home_ApplyDeferredOverlay(void)
     HomeReturn dest = homeReturn;
     if (dest != HOME_RET_DETAILS && dest != HOME_RET_STATUS && dest != HOME_RET_SORT
         && dest != HOME_RET_LIFT && dest != HOME_RET_SIDEBAR) return;
-    /* Wait until the systems→grid enter has landed and the visible covers are up. */
     if (currentState != MOSAIC || screenSliding || mosaicRevealWait) return;
     if (mosaicIntroPhase != MOSAIC_INTRO_NONE) return;
+    if (Home_XFadeActive()) return;
     homeReturn = HOME_RET_NONE;
     switch (dest) {
     case HOME_RET_DETAILS: Details_Open(); break;
@@ -5648,29 +5737,17 @@ static void Home_ApplyDeferredOverlay(void)
     }
 }
 
-static void Home_ResumeIfReady(void)
-{
-    if (!homeResumePending) return;
-    if (!live.parked) { homeResumePending = false; return; }
-    if (!CoverLoader_VisibleReady()) return;
-    homeResumePending = false;
-    mosaicRevealWait = false;
-    isLaunching = true;
-    launchingGameIdx = GameIdx;
-    currentState = LAUNCHING;
-    GameEnter_Begin();
-}
-
 static void Home_Poll(void)
 {
-    if (homeResumePending || Home_BackActive()) return;
+    if (Home_XFadeActive() || homeUnmapAfterFrame || homeResumeAfterFrame
+        || homeApplyAfterFrame) return;
     if (!Home_KeyPressed()) return;
     if (GameExitActive() || GameEnterActive() || isLaunching || screenSliding) return;
     if (currentState == SPLASH) return;
     if (currentState != SYSTEMS && mosaicExitPhase != MOSAIC_EXIT_NONE) return;
     if (homeReturn != HOME_RET_NONE && Home_AtMainMenu()) {
         Sfx_Play(SFX_CLICK);
-        Home_BackBegin();
+        Home_XFadeBeginOut();
     } else if (!Home_AtMainMenu()) {
         Sfx_Play(SFX_CLICK);
         Home_GoToMainMenu();
@@ -6053,8 +6130,7 @@ int main(int argc, char **argv) {
         }
         UpdateSidebarWidth();
 
-        Home_ResumeIfReady();
-        if (Home_BackActive()) Home_BackStep(dt);
+        if (Home_XFadeActive()) Home_XFadeStep(dt);
         Home_ApplyDeferredOverlay();
         if (GameEnterActive()) {
             GameEnter_Step(dt);
@@ -6325,16 +6401,14 @@ int main(int argc, char **argv) {
         if (screenSliding) {
             SlideEffect(Mosaicbg, font);
         } else if (currentState == SYSTEMS) {
-            DrawSystemMenu(0.0f);
-            if (introOpacity > 0.0f) {
-                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
-                              Fade(BLACK, introOpacity));
-            }
-            {
-                float a = Home_ToSystemsAlpha();
-                if (a <= 0.0f) a = Home_BackAlpha();
-                if (a > 0.0f)
-                    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, a));
+            if (Home_XFadeActive() || homeApplyAfterFrame || homeResumeAfterFrame) {
+                Home_DrawXFade(Home_XFadeActive() ? Home_MenuAlpha() : 0.0f);
+            } else {
+                DrawSystemMenu(0.0f);
+                if (introOpacity > 0.0f) {
+                    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
+                                  Fade(BLACK, introOpacity));
+                }
             }
         } else if (currentState == SPLASH) {
             DrawEnterTransition();
@@ -6342,12 +6416,6 @@ int main(int argc, char **argv) {
             Manage_Draw(font);
             if (introOpacity > 0.0f) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, introOpacity));
-            }
-            {
-                float a = Home_ToSystemsAlpha();
-                if (a <= 0.0f) a = Home_BackAlpha();
-                if (a > 0.0f)
-                    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, a));
             }
         } else if (currentState == EMBED) {
             const char *const text[EMBED_TXT_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_LOAD), T(S_EMB_SAVE),
@@ -6366,13 +6434,15 @@ int main(int argc, char **argv) {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, a));
             }
         } else if (currentState == MOSAIC || currentState == LAUNCHING) {
+            if (homeResumeAfterFrame && homeUnderlay.id) {
+                Home_DrawXFade(0.0f);
+            } else
             /* A child already owns the screen: skip the grid (the black cover
              * plus Rewind_Draw are enough). Enter/leave still draw it when
              * gameOwnsScreen is false. */
-            if (gameExitPhase == GAME_EXIT_CLOSE && (!gameExitHandoff || gameExitToSystems)) {
+            if (gameExitPhase == GAME_EXIT_CLOSE && !gameExitHandoff) {
                 ClearBackground(BLACK);
-            } else if ((gameExitPhase == GAME_EXIT_CLOSE || gameExitPhase == GAME_EXIT_REVEAL)
-                       && !gameExitToSystems) {
+            } else if (gameExitPhase == GAME_EXIT_CLOSE || gameExitPhase == GAME_EXIT_REVEAL) {
                 DrawMosaic(Mosaicbg, font);
                 Details_Draw(font);
                 Status_Draw(font);
@@ -6401,15 +6471,6 @@ int main(int argc, char **argv) {
             }
             if (externalResumeAfterFrame)
                 Embed_DrawExternalResumeFrame(ActiveEmbedScreen());
-            {
-                float a = 0.0f;
-                if (gameExitToSystems && gameExitPhase == GAME_EXIT_FADE)
-                    a = gameExitT;
-                else if (Home_BackActive())
-                    a = Home_BackAlpha();
-                if (a > 0.0f)
-                    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, a));
-            }
         }
 
         if (Live_Busy() && currentState != EMBED && !GameExitActive() && !externalResumeAfterFrame && !externalQuitting) {
@@ -6426,21 +6487,11 @@ int main(int argc, char **argv) {
         /* After a fully black host frame has been swapped, drop the X overlay
          * and start shrinking the GL black rectangle into the cover. */
         if (gameExitHandoff && gameExitPhase == GAME_EXIT_CLOSE) {
-            bool toMain = gameExitToSystems;
             Embed_ExitOverlayDestroy();
             gameExitHandoff = false;
-            if (toMain) {
-                currentState = SYSTEMS;
-                gameExitPhase = GAME_EXIT_REVEAL;
-                gameExitT = 0.0f;
-                mosaicIntroPhase = MOSAIC_INTRO_NONE;
-                mosaicExitPhase = MOSAIC_EXIT_NONE;
-                InfoBar_Reset();
-            } else {
-                gameExitPhase = GAME_EXIT_REVEAL;
-                gameExitT = 0.0f;
-                BeginMosaicEnterIntro();
-            }
+            gameExitPhase = GAME_EXIT_REVEAL;
+            gameExitT = 0.0f;
+            BeginMosaicEnterIntro();
         }
         if (gameEnterHandoff && gameEnterPhase == GAME_ENTER_START) {
             gameEnterHandoff = false;
@@ -6448,6 +6499,24 @@ int main(int argc, char **argv) {
             gameEnterT = 0.0f;
         }
 
+        Home_ParkAfterFrame();
+        if (homeApplyAfterFrame) {
+            homeApplyAfterFrame = false;
+            Home_ApplyReturn();
+            if (liveShowAfterFrame) {
+                Embed_ShowExternalWindow(live.window);
+                liveShowAfterFrame = false;
+            }
+            if (!homeResumeAfterFrame) Home_UnloadGfx();
+        }
+        if (homeResumeAfterFrame) {
+            homeResumeAfterFrame = false;
+            if (liveShowAfterFrame) {
+                Embed_ShowExternalWindow(live.window);
+                liveShowAfterFrame = false;
+            }
+            Home_UnloadGfx();
+        }
         if (liveShowAfterFrame) {
             Embed_ShowExternalWindow(live.window);
             liveShowAfterFrame = false;
