@@ -1407,9 +1407,15 @@ static Font enterLogoFont, enterTextFont;
 static bool enterLogoOk = false, enterTextOk = false;
 #define ENTER_LOGO_CP 0xE22A
 /* Per-system "select jingle": plays once the system's full-screen image is completely shown
- * (the gray transition finished, no overlay), after the click of the A press. Only Nintendo 64
- * has one for now (the coin); -1 = none. */
-static int SystemSelectJingle(const PlatformEntry *p) { return p == &n64_platform ? (int)SFX_COIN : -1; }
+ * (the gray transition finished, no overlay), after the click of the A press. Nintendo 64
+ * uses the coin, SNES and NES have their own; -1 = none. */
+static int SystemSelectJingle(const PlatformEntry *p)
+{
+    if (p == &n64_platform)  return (int)SFX_COIN;
+    if (p == &snes_platform) return (int)SFX_SNES;
+    if (p == &nes_platform)  return (int)SFX_NES;
+    return -1;
+}
 static bool enterJinglePending = false;
 static int splashJingle = -1;   /* the select jingle started for this entry, -1 if none */
 

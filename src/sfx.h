@@ -10,6 +10,8 @@ typedef enum {
     SFX_PLUCK,
     SFX_COIN,
     SFX_AUDIO,
+    SFX_SNES,
+    SFX_NES,
     SFX_COUNT
 } SfxId;
 
@@ -47,6 +49,8 @@ void Sfx_Init(void)
         [SFX_PLUCK]    = "assets/sounds/pluck.ogg",
         [SFX_COIN]     = "assets/sounds/coin.ogg",
         [SFX_AUDIO]    = "assets/sounds/audio.ogg",
+        [SFX_SNES]     = "assets/sounds/snes_open.wav",
+        [SFX_NES]      = "assets/sounds/nes_open.wav",
     };
 
     if (!IsAudioDeviceReady()) {
