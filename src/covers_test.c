@@ -82,6 +82,43 @@ int main(void)
         CHECK(o[3] == 0 && o[4] == 1 && o[5] == 2);   /* first */
         CHECK(is_perm(o, 10));
     }
+    {   /* Hide a middle title: textures must follow the game, not the slot. */
+        char oldK[4][COVER_KEY_MAX], newK[4][COVER_KEY_MAX];
+        int from[4];
+        Covers_Key("A", "art/a.png", NULL, oldK[0], COVER_KEY_MAX);
+        Covers_Key("B", "art/b.png", NULL, oldK[1], COVER_KEY_MAX);
+        Covers_Key("C", "art/c.png", NULL, oldK[2], COVER_KEY_MAX);
+        Covers_Key("D", "art/d.png", NULL, oldK[3], COVER_KEY_MAX);
+        Covers_Key("A", "art/a.png", NULL, newK[0], COVER_KEY_MAX);
+        Covers_Key("C", "art/c.png", NULL, newK[1], COVER_KEY_MAX);
+        Covers_Key("D", "art/d.png", NULL, newK[2], COVER_KEY_MAX);
+        Covers_Key("B", "art/b.png", NULL, newK[3], COVER_KEY_MAX);
+        Covers_PlanMoves(oldK, 4, newK, 4, from);
+        CHECK(from[0] == 0 && from[1] == 2 && from[2] == 3 && from[3] == 1);
+    }
+    {   /* Favorites / show-hidden: a shorter visible list, no double use. */
+        char oldK[3][COVER_KEY_MAX], newK[2][COVER_KEY_MAX];
+        int from[2];
+        Covers_Key("A", "a", NULL, oldK[0], COVER_KEY_MAX);
+        Covers_Key("B", "b", NULL, oldK[1], COVER_KEY_MAX);
+        Covers_Key("C", "c", NULL, oldK[2], COVER_KEY_MAX);
+        Covers_Key("C", "c", NULL, newK[0], COVER_KEY_MAX);
+        Covers_Key("A", "a", NULL, newK[1], COVER_KEY_MAX);
+        Covers_PlanMoves(oldK, 3, newK, 2, from);
+        CHECK(from[0] == 2 && from[1] == 0);
+    }
+    {   /* Version grouping: same group title + same box art follows the game. */
+        char oldK[2][COVER_KEY_MAX], newK[1][COVER_KEY_MAX];
+        int from[1];
+        Covers_Key("Final Fight 3", "ff3.png", NULL, oldK[0], COVER_KEY_MAX);
+        Covers_Key("Other", "o.png", NULL, oldK[1], COVER_KEY_MAX);
+        Covers_Key("Final Fight 3", "ff3-usa.png", NULL, newK[0], COVER_KEY_MAX);
+        Covers_PlanMoves(oldK, 2, newK, 1, from);
+        CHECK(from[0] == -1);
+        Covers_Key("Final Fight 3", "ff3.png", NULL, newK[0], COVER_KEY_MAX);
+        Covers_PlanMoves(oldK, 2, newK, 1, from);
+        CHECK(from[0] == 0);
+    }
     if (fails) { fprintf(stderr, "covers_test: %d failed\n", fails); return 1; }
     printf("covers_test: ok\n");
     return 0;

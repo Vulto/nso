@@ -33,14 +33,14 @@ int main(void)
     near("cross 203", EnterAnim_Cross(at(203)), 1.0f, 0.001f);
     near("ghost start", EnterAnim_GhostAlpha(at(106)), 0.0f, 0.001f);
     near("ghost end", EnterAnim_GhostAlpha(at(134)), 0.0f, 0.001f);
-    near("total", EnterAnim_Total(), (17.0f + 42.0f) / ENTER_REF_FPS * ENTER_STRETCH + 2.0f * ENTER_FADE_SEC, 0.0005f);
-    near("dim 300 ms", at(134) - at(123), 0.300f, 0.0005f);
-    near("cross 300 ms", at(203) - at(176), 0.300f, 0.0005f);
-    near("lead + hold keep +20 ms", (at(123) - at(106)) + (at(176) - at(134)), 59.0f / ENTER_REF_FPS + 0.020f * 59.0f / 97.0f, 0.0005f);
+    near("total", EnterAnim_Total(), ((17.0f + 42.0f) / ENTER_REF_FPS * ENTER_STRETCH + 2.0f * ENTER_FADE_SEC) / ENTER_SPEED, 0.0005f);
+    near("dim 300 ms", at(134) - at(123), 0.300f / ENTER_SPEED, 0.0005f);
+    near("cross 300 ms", at(203) - at(176), 0.300f / ENTER_SPEED, 0.0005f);
+    near("lead + hold keep +20 ms", (at(123) - at(106)) + (at(176) - at(134)), (59.0f / ENTER_REF_FPS + 0.020f * 59.0f / 97.0f) / ENTER_SPEED, 0.0005f);
     near("exit total", EnterAnim_ExitTotal(), 0.600f, 0.0005f);
     near("exit start", EnterAnim_ExitCover(0.0f), 0.0f, 0.001f);
     near("exit opaque", EnterAnim_ExitCover(0.2999f), 1.0f, 0.02f);
-    near("exit mid in", EnterAnim_ExitCover(0.150f), EnterAnim_Cover(at(123) + 0.150f), 0.001f);
+    near("exit mid in", EnterAnim_ExitCover(0.150f), EnterAnim_Cover(at(123) + 0.150f / ENTER_SPEED), 0.001f);
     near("exit mirrored", EnterAnim_ExitCover(0.300f + 0.100f), EnterAnim_ExitCover(0.300f - 0.100f), 0.001f);
     near("exit end", EnterAnim_ExitCover(0.600f), 0.0f, 0.001f);
     if (EnterAnim_ExitSwitched(0.2999f) || !EnterAnim_ExitSwitched(0.300f)) { fprintf(stderr, "FAIL exit switch moment\n"); fails++; }

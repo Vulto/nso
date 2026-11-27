@@ -23,6 +23,9 @@
  * N64 (n64.map.<button>.*): up|down|left|right (D-pad), stickup|stickdown|stickleft|stickright,
  * start|a|b|z|l|r, cup|cdown|cleft|cright. It reaches the games NSO runs itself (embed.h); no N64
  * port reads it (their SDL controller setups are their own) and there is no Mednafen N64 module.
+ * GameCube (gamecube.map.<button>.*): up|down|left|right (D-pad), stickup|stickdown|stickleft|stickright,
+ * start|a|b|x|y|z|l|r, lanalog|ranalog (the analog L / R triggers), cup|cdown|cleft|cright (C-stick).
+ * The Settings menu stores the map the same way; it is not handed to an emulator yet.
  * Pure helpers (no window): unit-tested in padmap_test.c. */
 #ifndef NSO_PADMAP_H
 #define NSO_PADMAP_H
@@ -46,7 +49,13 @@ enum { N64_BTN_UP, N64_BTN_DOWN, N64_BTN_LEFT, N64_BTN_RIGHT,
        N64_BTN_SUP, N64_BTN_SDOWN, N64_BTN_SLEFT, N64_BTN_SRIGHT,
        N64_BTN_START, N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_L, N64_BTN_R,
        N64_BTN_CUP, N64_BTN_CDOWN, N64_BTN_CLEFT, N64_BTN_CRIGHT, N64_BTN_COUNT };
-#define PAD_MAX_BTN 18
+/* GameCube: D-pad, main stick, Start, A, B, X, Y, Z, L / R digital, L / R analog, C-stick. */
+enum { GC_BTN_UP, GC_BTN_DOWN, GC_BTN_LEFT, GC_BTN_RIGHT,
+       GC_BTN_SUP, GC_BTN_SDOWN, GC_BTN_SLEFT, GC_BTN_SRIGHT,
+       GC_BTN_START, GC_BTN_A, GC_BTN_B, GC_BTN_X, GC_BTN_Y, GC_BTN_Z,
+       GC_BTN_L, GC_BTN_R, GC_BTN_LA, GC_BTN_RA,
+       GC_BTN_CUP, GC_BTN_CDOWN, GC_BTN_CLEFT, GC_BTN_CRIGHT, GC_BTN_COUNT };
+#define PAD_MAX_BTN 22
 enum { PAD_JS_NONE = 0, PAD_JS_BUTTON = 1, PAD_JS_AXIS_NEG = 2, PAD_JS_AXIS_POS = 3 };
 
 typedef struct {
@@ -78,6 +87,9 @@ static const char *const PADMAP_NES_NAMES[NES_BTN_COUNT] = { "up", "down", "left
 static const char *const PADMAP_SNES_NAMES[SNES_BTN_COUNT] = { "up", "down", "left", "right", "select", "start", "y", "b", "x", "a", "l", "r", "zl", "zr" };
 static const char *const PADMAP_N64_NAMES[N64_BTN_COUNT] = { "up", "down", "left", "right", "stickup", "stickdown", "stickleft", "stickright",
                                                              "start", "a", "b", "z", "l", "r", "cup", "cdown", "cleft", "cright" };
+static const char *const PADMAP_GC_NAMES[GC_BTN_COUNT] = { "up", "down", "left", "right", "stickup", "stickdown", "stickleft", "stickright",
+                                                            "start", "a", "b", "x", "y", "z", "l", "r", "lanalog", "ranalog",
+                                                            "cup", "cdown", "cleft", "cright" };
 
 /* Keys that can be bound: raylib key, SDL scancode (= USB HID usage, what Mednafen
  * stores), SDL name (what the NESRecomp ports store). Escape, Backspace (rewind),
@@ -194,6 +206,20 @@ static const PadSys PADSYS_NES = { "nes", NES_BTN_COUNT, NES_BTN_COUNT, PADMAP_N
 static const PadSys PADSYS_SNES = { "snes", SNES_BTN_COUNT, SNES_BTN_R + 1, PADMAP_SNES_NAMES, PADMAP_SNES_DEF, SNES_BTN_A, SNES_BTN_B, SNES_BTN_ZR };
 
 static const PadSys PADSYS_N64 = { "n64", N64_BTN_COUNT, N64_BTN_COUNT, PADMAP_N64_NAMES, PADMAP_N64_DEF, N64_BTN_A, N64_BTN_B, -1 };
+
+static const PadBind PADMAP_GC_DEF[GC_BTN_COUNT] = {
+    { 0, GAMEPAD_BUTTON_LEFT_FACE_UP, 0, 0 }, { 0, GAMEPAD_BUTTON_LEFT_FACE_DOWN, 0, 0 },
+    { 0, GAMEPAD_BUTTON_LEFT_FACE_LEFT, 0, 0 }, { 0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT, 0, 0 },
+    { KEY_UP, -1, 0, 0 }, { KEY_DOWN, -1, 0, 0 }, { KEY_LEFT, -1, 0, 0 }, { KEY_RIGHT, -1, 0, 0 },
+    { KEY_ENTER, GAMEPAD_BUTTON_MIDDLE_RIGHT, 0, 0 },
+    { KEY_X, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, 0, 0 }, { KEY_Z, GAMEPAD_BUTTON_RIGHT_FACE_DOWN, 0, 0 },
+    { KEY_S, GAMEPAD_BUTTON_RIGHT_FACE_UP, 0, 0 }, { KEY_A, GAMEPAD_BUTTON_RIGHT_FACE_LEFT, 0, 0 },
+    { KEY_Q, -1, 0, 0 },
+    { KEY_C, GAMEPAD_BUTTON_LEFT_TRIGGER_1, 0, 0 }, { KEY_V, GAMEPAD_BUTTON_RIGHT_TRIGGER_1, 0, 0 },
+    { 0, GAMEPAD_BUTTON_LEFT_TRIGGER_2, 0, 0 }, { 0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2, 0, 0 },
+    { KEY_I, -1, 0, 0 }, { KEY_K, -1, 0, 0 }, { KEY_J, -1, 0, 0 }, { KEY_L, -1, 0, 0 },
+};
+static const PadSys PADSYS_GC = { "gamecube", GC_BTN_COUNT, GC_BTN_COUNT, PADMAP_GC_NAMES, PADMAP_GC_DEF, GC_BTN_A, GC_BTN_B, -1 };
 
 static inline void PadMap_Defaults(const PadSys *sys, PadSysMap *m)
 {

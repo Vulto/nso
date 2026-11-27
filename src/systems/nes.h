@@ -30,11 +30,11 @@ PlatformEntry nes_platform = {
 };
 
 /* Mednafen (mednafen/src/mednafen, built from the source tree in the NSO root)
- * runs the ROM in repos/roms/NES. Config and saves: saves/nes/mednafen; NSO's
+ * runs the ROM in roms/NES. Config and saves: saves/nes/mednafen; NSO's
  * suspend points: saves/nes/mednafen/states/<ROM file>. */
 #define MEDNAFEN_NES(file) \
     .dir = "mednafen/src", .binary = "./mednafen", .mednafen = "nes", \
-    .rom = "repos/roms/NES/" file, \
+    .rom = "roms/NES/" file, \
     .stateDir = "saves/nes/mednafen/states/" file, .externalSlots = true
 
 GameEntry nes_games[] = {
@@ -99,7 +99,7 @@ GameEntry nes_games[] = {
         .binary = "build-linux-prod/MetroidNESRecomp",
         .orient = SLOT_ORIENT_INHERIT,
     },
-    /* Everything else runs in Mednafen (mednafen/src/mednafen), ROMs from repos/roms/NES. */
+    /* Everything else runs in Mednafen (mednafen/src/mednafen), ROMs from roms/NES. */
     {
         .title = "Abadox: The Deadly Inner War",
         .boxartPath = "assets/images/systems/nes/abadox.png",

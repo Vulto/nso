@@ -1,7 +1,13 @@
-/* sortpanel.h - "Change order of titles" panel (grid T / right stick right).
+/* sortpanel.h - "Change order of titles" panel (hold keyboard or gamepad Y, or right stick right).
  * Included by main.c after the Y Move code; uses its statics. The chosen mode
  * is "<id>.sort" in config/nso.cfg; "custom" is the Y Move order file. Play
- * stats (last played, total seconds) live in config/played-<id>.txt. */
+ * stats (last played, total seconds) live in config/played-<id>.txt.
+ * The Favorites filter is a separate row under a Filter heading; it is
+ * "<id>.favorites" in config/nso.cfg and the titles live in
+ * config/favorites-<id>.txt. Per-game hides are config/hidden-<id>.txt
+ * and are excluded from every other view; "Show hidden" (<id>.show_hidden)
+ * lists only those titles. "Hide unplayable" (<id>.hide_unplayable) is the
+ * row below that; the setting and re-list behaviour are unchanged. */
 #ifndef NSO_SORTPANEL_H
 #define NSO_SORTPANEL_H
 
@@ -87,6 +93,165 @@ static void SortPanel_DatesScrape(const char *yearText, const char *monthText) {
     SortPanel_Refresh();
 }
 
+static void Fav_Path(int sys, char *dst, size_t n) {
+    snprintf(dst, n, "%s/config/favorites-%s.txt", GetBaseDirectory(), systems[sys].platform->id);
+}
+
+static void Fav_SetText(int sys, const char *text) {
+    free(favText[sys]);
+    favText[sys] = NULL;
+    if (text && text[0]) {
+        size_t n = strlen(text) + 1;
+        favText[sys] = malloc(n);
+        if (favText[sys]) memcpy(favText[sys], text, n);
+    }
+}
+
+static const char *Fav_TextOf(int sys) {
+    return favText[sys] ? favText[sys] : "";
+}
+
+static void Fav_LoadAll(void) {
+    for (int s = 0; s < SYSTEM_COUNT; s++) {
+        char path[2112];
+        Fav_Path(s, path, sizeof(path));
+        if (!FileExists(path)) continue;
+        char *text = LoadFileText(path);
+        if (!text) continue;
+        Fav_SetText(s, text);
+        UnloadFileText(text);
+    }
+}
+
+static void Fav_SaveList(int sys) {
+    char dir[2048], path[2112];
+    snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
+    MakeDirectory(dir);
+    Fav_Path(sys, path, sizeof(path));
+    const char *text = Fav_TextOf(sys);
+    if (!text[0]) {
+        if (FileExists(path)) remove(path);
+        return;
+    }
+    if (!SaveFileText(path, text)) fprintf(stderr, "NSO: cannot save %s\n", path);
+}
+
+static void Fav_SaveFilter(int sys) {
+    char cfg[2112], key[64];
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    snprintf(key, sizeof(key), "%s.favorites", systems[sys].platform->id);
+    if (!Cfg_SaveKey(cfg, key, Fav_CfgValue(favOn[sys]))) fprintf(stderr, "NSO: cannot save %s\n", cfg);
+}
+
+static bool Fav_IsTitle(int sys, const char *title) {
+    return Version_TextHas(sys, Fav_TextOf(sys), title);
+}
+
+/* Toggle the current game's favorite mark and persist the list. Returns the
+ * new state. The caller re-filters when the Favorites filter is on. */
+static bool Fav_ToggleCurrent(void) {
+    int sys = currentSystem;
+    if (GameIdx >= ActiveGameCount()) return false;
+    const char *title = ActiveGames()[GameIdx].title;
+    static char buf[MAX_GAMES * 256];
+    bool on = false;
+    if (!title || Fav_Toggle(Fav_TextOf(sys), title, buf, sizeof(buf), &on) != 0) {
+        fprintf(stderr, "NSO: favorites list too long, not saved\n");
+        return Fav_IsTitle(sys, title);
+    }
+    if (!on) {
+        static char cleaned[MAX_GAMES * 256];
+        if (Version_ClearAliases(sys, title, buf, cleaned, sizeof(cleaned)) == 0)
+            snprintf(buf, sizeof(buf), "%s", cleaned);
+    }
+    Fav_SetText(sys, buf);
+    Fav_SaveList(sys);
+    return on;
+}
+
+static void Hidden_Path(int sys, char *dst, size_t n) {
+    snprintf(dst, n, "%s/config/hidden-%s.txt", GetBaseDirectory(), systems[sys].platform->id);
+}
+
+static void Hidden_SetText(int sys, const char *text) {
+    free(hiddenText[sys]);
+    hiddenText[sys] = NULL;
+    if (text && text[0]) {
+        size_t n = strlen(text) + 1;
+        hiddenText[sys] = malloc(n);
+        if (hiddenText[sys]) memcpy(hiddenText[sys], text, n);
+    }
+}
+
+static const char *Hidden_TextOf(int sys) {
+    return hiddenText[sys] ? hiddenText[sys] : "";
+}
+
+static bool Hidden_Any(int sys) {
+    return Hidden_TextOf(sys)[0] != 0;
+}
+
+static void Hidden_LoadAll(void) {
+    for (int s = 0; s < SYSTEM_COUNT; s++) {
+        char path[2112];
+        Hidden_Path(s, path, sizeof(path));
+        if (!FileExists(path)) continue;
+        char *text = LoadFileText(path);
+        if (!text) continue;
+        Hidden_SetText(s, text);
+        UnloadFileText(text);
+    }
+}
+
+static void Hidden_SaveList(int sys) {
+    char dir[2048], path[2112];
+    snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
+    MakeDirectory(dir);
+    Hidden_Path(sys, path, sizeof(path));
+    const char *text = Hidden_TextOf(sys);
+    if (!text[0]) {
+        if (FileExists(path)) remove(path);
+        return;
+    }
+    if (!SaveFileText(path, text)) fprintf(stderr, "NSO: cannot save %s\n", path);
+}
+
+static void Hidden_SaveFilter(int sys) {
+    char cfg[2112], key[64];
+    Lang_ConfigPath(cfg, sizeof(cfg));
+    snprintf(key, sizeof(key), "%s.show_hidden", systems[sys].platform->id);
+    if (!Cfg_SaveKey(cfg, key, Fav_CfgValue(showHidden[sys])))
+        fprintf(stderr, "NSO: cannot save %s\n", cfg);
+}
+
+static bool Hidden_IsTitle(int sys, const char *title) {
+    return Version_TextHas(sys, Hidden_TextOf(sys), title);
+}
+
+static bool Hidden_ToggleCurrent(void) {
+    int sys = currentSystem;
+    if (GameIdx >= ActiveGameCount()) return false;
+    const char *title = ActiveGames()[GameIdx].title;
+    static char buf[MAX_GAMES * 256];
+    bool on = false;
+    if (!title || Fav_Toggle(Hidden_TextOf(sys), title, buf, sizeof(buf), &on) != 0) {
+        fprintf(stderr, "NSO: hidden list too long, not saved\n");
+        return Hidden_IsTitle(sys, title);
+    }
+    if (!on) {
+        static char cleaned[MAX_GAMES * 256];
+        if (Version_ClearAliases(sys, title, buf, cleaned, sizeof(cleaned)) == 0)
+            snprintf(buf, sizeof(buf), "%s", cleaned);
+    }
+    Hidden_SetText(sys, buf);
+    Hidden_SaveList(sys);
+    return on;
+}
+
+static bool SortPanel_NeedsFilter(int sys) {
+    return hideOn[sys] || favOn[sys] || showHidden[sys] || Hidden_Any(sys);
+}
+
 /* Reorder system `sys` by `mode`. live = it is the shown system, so its cover
  * textures and tile scales travel along and the cursor stays on its game. */
 static void SortPanel_Apply(int sys, SortMode mode, bool live) {
@@ -98,49 +263,56 @@ static void SortPanel_Apply(int sys, SortMode mode, bool live) {
     for (int i = 0; i < count; i++) titles[i] = games[i].title;
     if (mode == SORT_CUSTOM) {
         char path[2112];
+        static char rewritten[MAX_GAMES * 256];
         Order_Path(sys, path, sizeof(path));
         char *text = FileExists(path) ? LoadFileText(path) : NULL;
-        Order_Perm(text ? text : "", titles, count, perm);
+        const char *orderText = text ? text : "";
+        if (text) {
+            Version_RewriteOrder(sys, text, rewritten, sizeof(rewritten));
+            if (rewritten[0]) orderText = rewritten;
+        }
+        Order_Perm(orderText, titles, count, perm);
         if (text) UnloadFileText(text);
     } else {
         SortKeys keys[MAX_GAMES] = { 0 };   /* release 0 = unknown: no date scraped yet */
         char path[2112];
         SortPanel_Path(sys, path, sizeof(path));
         char *text = FileExists(path) ? LoadFileText(path) : NULL;
-        if (text) { Sort_StatsParse(text, titles, keys, count); UnloadFileText(text); }
+        if (text) {
+            Sort_StatsParse(text, titles, keys, count);
+            Version_StatsAbsorb(sys, text, titles, keys, count);
+            UnloadFileText(text);
+        }
         if (mode == SORT_RELEASE) SortPanel_DatesLoad(sys, titles, keys, count);
         Sort_Perm(mode, titles, keys, count, perm);
     }
-    if (hideOn[sys]) {   /* playable titles first (same order inside each group), the rest hidden */
-        bool ok[MAX_GAMES];
+    if (SortPanel_NeedsFilter(sys)) {   /* visible titles first (same order inside each group) */
+        bool ok[MAX_GAMES], mark[MAX_GAMES], hid[MAX_GAMES];
         int order[MAX_GAMES];
-        for (int i = 0; i < count; i++) { order[i] = perm[i]; ok[i] = GameIsLaunchable(&games[i]); }
+        for (int i = 0; i < count; i++) {
+            mark[i] = Version_TextHas(sys, Fav_TextOf(sys), titles[i]);
+            hid[i] = Version_TextHas(sys, Hidden_TextOf(sys), titles[i]);
+        }
+        for (int i = 0; i < count; i++) {
+            order[i] = perm[i];
+            ok[i] = true;
+            if (hideOn[sys] && !GameIsLaunchable(&games[i])) ok[i] = false;
+            if (favOn[sys] && !mark[i]) ok[i] = false;
+            /* User-hidden titles stay out of every other filter; Show hidden lists only them. */
+            if (showHidden[sys]) { if (!hid[i]) ok[i] = false; }
+            else if (hid[i]) ok[i] = false;
+        }
         shown = Hide_Perm(ok, order, count, perm);
     }
     hideShown[sys] = shown;
-    hideReady[sys] = hideOn[sys];
+    hideReady[sys] = SortPanel_NeedsFilter(sys);
     GameEntry tmp[MAX_GAMES];
     for (int k = 0; k < count; k++) tmp[k] = games[perm[k]];
     memcpy(games, tmp, sizeof(GameEntry) * (size_t)count);
     if (!live) return;
-    /* Slot size comes from boxartMetaW/H; it must travel with the cover. */
-    Texture2D art[MAX_GAMES];
-    float scale[MAX_GAMES], metaW[MAX_GAMES], metaH[MAX_GAMES];
-    for (int k = 0; k < count; k++) {
-        art[k] = gameBoxarts[perm[k]];
-        scale[k] = animScales[perm[k]];
-        metaW[k] = boxartMetaW[perm[k]];
-        metaH[k] = boxartMetaH[perm[k]];
-    }
-    memcpy(gameBoxarts, art, sizeof(Texture2D) * (size_t)count);
-    memcpy(animScales, scale, sizeof(float) * (size_t)count);
-    memcpy(boxartMetaW, metaW, sizeof(float) * (size_t)count);
-    memcpy(boxartMetaH, metaH, sizeof(float) * (size_t)count);
+    /* Covers and slot sizes follow the game/group key, not the slot index. */
+    Covers_SyncToGames(games, count, shown);
     for (int k = 0; k < count; k++) if (perm[k] == GameIdx) { GameIdx = k; break; }
-    for (int k = shown; k < count; k++) {   /* hidden covers are not kept on the GPU */
-        if (gameBoxarts[k].id != 0) UnloadTexture(gameBoxarts[k]);
-        gameBoxarts[k] = (Texture2D){ 0 };
-    }
     GameIdx = Hide_Clamp(GameIdx, shown);
 }
 
@@ -153,19 +325,30 @@ static void Hide_Save(int sys) {
     if (!Cfg_SaveKey(cfg, key, Hide_CfgValue(hideOn[sys]))) fprintf(stderr, "NSO: cannot save %s\n", cfg);
 }
 
-/* Settings > Hide unplayable: flip the shown system, re-list it at once.
- * Covers and slot sizes are remapped with the list; any missing art is
- * decoded in the background while the grid is still blurred. */
+/* Drain any in-flight cover load, rebuild the list, then start a new reload
+ * behind a frozen blur of the previous grid. The new grid is shown once the
+ * visible covers are on the GPU. */
+static void SortPanel_RelistReload(void) {
+    MosaicBlur_HoldBegin();
+    CoverLoader_Stop();
+    SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+    mosaicRevealWait = true;
+    coverReloadVisibleLogged = false;
+    CoverReload_Stamp("reveal-wait");
+    CoverLoader_Start();
+}
+
+/* Sort menu > Hide unplayable: flip the shown system, then re-list as above. */
 static void Hide_Toggle(void) {
     hideOn[currentSystem] = !hideOn[currentSystem];
     Hide_Save(currentSystem);
-    SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
-    CoverLoader_Start();
+    SortPanel_RelistReload();
 }
 
 /* Something may have been installed: list the shown system again. */
 static void Hide_Resync(bool live) {
-    if (hideOn[currentSystem]) SortPanel_Apply(currentSystem, sortMode[currentSystem], live);
+    if (SortPanel_NeedsFilter(currentSystem))
+        SortPanel_Apply(currentSystem, sortMode[currentSystem], live);
 }
 
 static void SortPanel_Save(int sys) {
@@ -185,14 +368,24 @@ static void SortPanel_LoadAll(void) {
     char cfg[2112], v[32];
     Lang_ConfigPath(cfg, sizeof(cfg));
     char *text = FileExists(cfg) ? LoadFileText(cfg) : NULL;
-    if (!text) return;
+    Fav_LoadAll();
+    Hidden_LoadAll();
+    if (!text) {
+        for (int s = 0; s < SYSTEM_COUNT; s++)
+            if (SortPanel_NeedsFilter(s)) SortPanel_Apply(s, sortMode[s], false);
+        return;
+    }
     for (int s = 0; s < SYSTEM_COUNT; s++) {
         char key[64];
         snprintf(key, sizeof(key), "%s.sort", systems[s].platform->id);
         if (Cfg_Get(text, key, v, sizeof(v))) sortMode[s] = Sort_ModeParse(v);
         snprintf(key, sizeof(key), "%s.hide_unplayable", systems[s].platform->id);
         if (Cfg_Get(text, key, v, sizeof(v))) hideOn[s] = Hide_CfgParse(v);
-        if (sortMode[s] != SORT_CUSTOM || hideOn[s]) SortPanel_Apply(s, sortMode[s], false);
+        snprintf(key, sizeof(key), "%s.favorites", systems[s].platform->id);
+        if (Cfg_Get(text, key, v, sizeof(v))) favOn[s] = Fav_CfgParse(v);
+        snprintf(key, sizeof(key), "%s.show_hidden", systems[s].platform->id);
+        if (Cfg_Get(text, key, v, sizeof(v))) showHidden[s] = Fav_CfgParse(v);
+        if (sortMode[s] != SORT_CUSTOM || SortPanel_NeedsFilter(s)) SortPanel_Apply(s, sortMode[s], false);
     }
     UnloadFileText(text);
 }
@@ -257,13 +450,26 @@ static void SortPanel_Close(void) {
 static void SortPanel_Input(bool gpUp, bool gpDown, bool gpConfirm, bool gpBack) {
     if (!sortOpen) return;
     if (IsKeyPressed(KEY_B) || gpBack) { SortPanel_Close(); return; }
-    if (IsKeyPressed(KEY_UP) || gpUp) { sortRow = (sortRow + SORT_COUNT - 1) % SORT_COUNT; Sfx_Play(SFX_PLUCK); }
-    if (IsKeyPressed(KEY_DOWN) || gpDown) { sortRow = (sortRow + 1) % SORT_COUNT; Sfx_Play(SFX_PLUCK); }
+    const int rows = SORT_COUNT + 3;   /* sort modes, Favorites, Show hidden, Hide unplayable */
+    if (IsKeyPressed(KEY_UP) || gpUp) { sortRow = (sortRow + rows - 1) % rows; Sfx_Play(SFX_PLUCK); }
+    if (IsKeyPressed(KEY_DOWN) || gpDown) { sortRow = (sortRow + 1) % rows; Sfx_Play(SFX_PLUCK); }
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) {
         Sfx_Play(SFX_CLICK);
-        sortMode[currentSystem] = (SortMode)sortRow;
-        SortPanel_Save(currentSystem);
-        SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+        if (sortRow == SORT_COUNT) {
+            favOn[currentSystem] = !favOn[currentSystem];
+            Fav_SaveFilter(currentSystem);
+        } else if (sortRow == SORT_COUNT + 1) {
+            showHidden[currentSystem] = !showHidden[currentSystem];
+            Hidden_SaveFilter(currentSystem);
+        } else if (sortRow == SORT_COUNT + 2) {
+            Hide_Toggle();
+            SortPanel_Close();
+            return;
+        } else {
+            sortMode[currentSystem] = (SortMode)sortRow;
+            SortPanel_Save(currentSystem);
+        }
+        SortPanel_RelistReload();
         SortPanel_Close();
     }
 }
@@ -346,6 +552,38 @@ static void SortPanel_Draw(Font font) {
         SortPanel_Circle(sortRing, c, r, on ? red : grey);
         if (on) SortPanel_Circle(sortDisc, c, r * 0.52f, red);
         DrawFitText(font, T(labels[k]), (Vector2){ px + sw * 0.0732f, y }, (float)font.baseSize * 1.2f,
+                    sw - px - sw * 0.08f, cur ? red : ink);
+    }
+    float yf = sh * (0.1574f + 0.0849f * (float)SORT_COUNT + 0.050f);
+    DrawFitText(font, T(S_SORT_FILTER), (Vector2){ px + sw * 0.0732f - sw * 0.0312f, yf - sh * 0.050f },
+                (float)font.baseSize * 0.85f, sw - px - sw * 0.05f, head);
+    {
+        bool cur = (sortRow == SORT_COUNT), on = favOn[currentSystem];
+        if (cur) DrawRectangle((int)px, (int)roundf(yf - bh * 0.5f), (int)sortW + 1, (int)roundf(bh), band);
+        Vector2 c = { px + sw * 0.0518f, yf };
+        SortPanel_Circle(sortRing, c, r, on ? red : grey);
+        if (on) SortPanel_Circle(sortDisc, c, r * 0.52f, red);
+        DrawFitText(font, T(S_SORT_FAVORITES), (Vector2){ px + sw * 0.0732f, yf }, (float)font.baseSize * 1.2f,
+                    sw - px - sw * 0.08f, cur ? red : ink);
+    }
+    {
+        float yh = yf + sh * 0.0849f;
+        bool cur = (sortRow == SORT_COUNT + 1), on = showHidden[currentSystem];
+        if (cur) DrawRectangle((int)px, (int)roundf(yh - bh * 0.5f), (int)sortW + 1, (int)roundf(bh), band);
+        Vector2 c = { px + sw * 0.0518f, yh };
+        SortPanel_Circle(sortRing, c, r, on ? red : grey);
+        if (on) SortPanel_Circle(sortDisc, c, r * 0.52f, red);
+        DrawFitText(font, T(S_SORT_HIDDEN), (Vector2){ px + sw * 0.0732f, yh }, (float)font.baseSize * 1.2f,
+                    sw - px - sw * 0.08f, cur ? red : ink);
+    }
+    {
+        float yu = yf + sh * 0.0849f * 2.0f;
+        bool cur = (sortRow == SORT_COUNT + 2), on = hideOn[currentSystem];
+        if (cur) DrawRectangle((int)px, (int)roundf(yu - bh * 0.5f), (int)sortW + 1, (int)roundf(bh), band);
+        Vector2 c = { px + sw * 0.0518f, yu };
+        SortPanel_Circle(sortRing, c, r, on ? red : grey);
+        if (on) SortPanel_Circle(sortDisc, c, r * 0.52f, red);
+        DrawFitText(font, T(S_SET_HIDE), (Vector2){ px + sw * 0.0732f, yu }, (float)font.baseSize * 1.2f,
                     sw - px - sw * 0.08f, cur ? red : ink);
     }
 }

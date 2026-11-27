@@ -2,6 +2,13 @@
 #ifndef NSO_SORT_H
 #define NSO_SORT_H
 
+/* Standalone pure-C tests: capacity fallback. main.c defines the real
+ * MAX_GAMES from the catalog sizes before including this header. */
+#ifndef MAX_GAMES
+#define MAX_GAMES 4096
+#endif
+
+
 #include <stddef.h>
 
 typedef enum { SORT_CUSTOM = 0, SORT_TITLE, SORT_RELEASE, SORT_PLAYED, SORT_TIME, SORT_COUNT } SortMode;
@@ -106,7 +113,7 @@ SortMode Sort_ModeParse(const char *s)
 void Sort_Perm(SortMode mode, const char *const *titles, const SortKeys *keys, int count, int *perm)
 {
     if (!perm || count <= 0) return;
-    if (count > 512) count = 512;
+    if (count > MAX_GAMES) count = MAX_GAMES;
     for (int i = 0; i < count; i++) perm[i] = i;
     if ((int)mode <= SORT_CUSTOM || mode >= SORT_COUNT) return;
     for (int i = 1; i < count; i++) {
@@ -123,7 +130,7 @@ void Sort_Perm(SortMode mode, const char *const *titles, const SortKeys *keys, i
 void Sort_StatsParse(const char *text, const char *const *titles, SortKeys *keys, int count)
 {
     if (!text || !keys || count <= 0) return;
-    if (count > 512) count = 512;
+    if (count > MAX_GAMES) count = MAX_GAMES;
     for (const char *p = text; *p;) {
         const char *e = strchr(p, '\n');
         if (!e) e = p + strlen(p);
@@ -176,7 +183,7 @@ int Sort_StatsFormat(char *dst, size_t n, const char *const *titles, const SortK
 void Sort_DatesParse(const char *text, const char *const *titles, SortKeys *keys, int count)
 {
     if (!text || !keys || count <= 0) return;
-    if (count > 512) count = 512;
+    if (count > MAX_GAMES) count = MAX_GAMES;
     for (const char *p = text; *p;) {
         const char *e = strchr(p, '\n');
         const char *tab = NULL;

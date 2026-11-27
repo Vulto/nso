@@ -249,6 +249,45 @@ int main(void)
         remove(path);
     }
 
+    /* GameCube: D-pad, stick, Start, A, B, X, Y, Z, L / R digital and analog, C-stick. */
+    {
+        PadSysMap gm, gr;
+        char path[] = "/tmp/padmap_gc_test.cfg", *text = NULL;
+        FILE *f;
+        long len;
+        CHECK(PADSYS_GC.count == GC_BTN_COUNT && GC_BTN_COUNT <= PAD_MAX_BTN
+              && PADSYS_GC.btnA == GC_BTN_A && PADSYS_GC.btnB == GC_BTN_B && PADSYS_GC.btnZR == -1);
+        CHECK(strcmp(PADSYS_GC.id, "gamecube") == 0);
+        PadMap_Defaults(&PADSYS_GC, &gm);
+        CHECK(gm.b[GC_BTN_SUP].key == KEY_UP && gm.b[GC_BTN_CUP].key == KEY_I && gm.b[GC_BTN_Z].key == KEY_Q);
+        CHECK(gm.b[GC_BTN_A].key == KEY_X && gm.b[GC_BTN_X].key == KEY_S && gm.b[GC_BTN_Y].key == KEY_A);
+        CHECK(gm.b[GC_BTN_UP].key == 0 && gm.b[GC_BTN_UP].pad == GAMEPAD_BUTTON_LEFT_FACE_UP && gm.b[GC_BTN_SUP].pad == -1);
+        CHECK(gm.b[GC_BTN_A].pad == GAMEPAD_BUTTON_RIGHT_FACE_RIGHT && gm.b[GC_BTN_LA].pad == GAMEPAD_BUTTON_LEFT_TRIGGER_2);
+        CHECK(strcmp(PADMAP_GC_NAMES[GC_BTN_RA], "ranalog") == 0 && strcmp(PADMAP_GC_NAMES[GC_BTN_CRIGHT], "cright") == 0);
+        gm.b[GC_BTN_Z].key = KEY_G;
+        gm.b[GC_BTN_LA].jsKind = PAD_JS_AXIS_POS; gm.b[GC_BTN_LA].jsIdx = 2;
+        remove(path);
+        CHECK(PadMap_Save(&PADSYS_GC, &gm, path));
+        f = fopen(path, "r");
+        CHECK(f != NULL);
+        if (f) {
+            fseek(f, 0, SEEK_END); len = ftell(f); fseek(f, 0, SEEK_SET);
+            text = calloc(1, (size_t)len + 1);
+            CHECK(fread(text, 1, (size_t)len, f) == (size_t)len);
+            fclose(f);
+            CHECK(strstr(text, "gamecube.map.z.key=G\n") && strstr(text, "gamecube.map.lanalog.js=a2+\n"));
+            CHECK(strstr(text, "nes.map.") == NULL && strstr(text, "n64.map.") == NULL);
+            PadMap_Load(&PADSYS_GC, &gr, text);
+            CHECK(gr.custom && gr.b[GC_BTN_Z].key == KEY_G && gr.b[GC_BTN_CUP].key == KEY_I);
+            CHECK(gr.b[GC_BTN_LA].jsKind == PAD_JS_AXIS_POS && gr.b[GC_BTN_LA].jsIdx == 2);
+            free(text);
+        }
+        CHECK(PadMap_Clear(&PADSYS_GC, path));
+        f = fopen(path, "r");
+        if (f) { char buf2[64] = { 0 }; CHECK(fread(buf2, 1, sizeof(buf2) - 1, f) == 0); fclose(f); }
+        remove(path);
+    }
+
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("padmap_test: ok");
     return 0;

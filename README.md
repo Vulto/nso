@@ -1,7 +1,9 @@
 # NSO
 
-NSO is a Nintendo Switch Online-style launcher, written in C with Raylib, for
-source ports and decompilations of NES, SNES, N64, and GameCube games.
+NSO is a Nintendo Switch Online-style launcher, written in C with Raylib.
+This release supports playing emulated games (NES, SNES, N64, GameCube, and
+Mega Drive). Put legally obtained ROMs in each system's folder under `roms/`.
+Cover images are not shipped; scrape them from the Emulated tab.
 
 This repository does not include ROMs or copyrighted art. You must supply your
 own legally obtained ROMs. Cover images are fetched or added locally; a missing
@@ -9,9 +11,9 @@ cover is shown as a "?" placeholder.
 
 ## What's new (Novidades)
 
-Version 0.2.0. The full list is in [CHANGELOG.md](CHANGELOG.md). The screenshots
-below are NSO's own interface on a clean install, without ROMs or covers (missing
-covers show a "?").
+Version 0.2.0 supports emulated games only. The full feature list is in
+[CHANGELOG.md](CHANGELOG.md). The screenshots below are NSO's own interface
+on a clean install, without ROMs or covers (missing covers show a "?").
 
 **Main menu:** the system cards are twice as big.
 
@@ -84,6 +86,12 @@ make
 make test
 ./nso
 ```
+
+`make release` produces a single self-contained `dist/nso` with NSO's fonts,
+main-menu system cards and UI art embedded, and Raylib linked statically.
+Scrapable game box arts are not embedded; users scrape covers themselves.
+glibc, OpenGL and X11 remain dynamic. The ordinary `make` / `./nso` developer
+build is unchanged and still loads those assets from the tree.
 
 `./nso` works from any directory: data paths are resolved next to the binary
 (override with `NSO_BASE_DIR=/path/to/nso`). NSO creates `assets/cache`,
@@ -159,7 +167,7 @@ switches system (NES, SNES, Nintendo 64, GameCube).
     overlay: raylib shader, built once at start. NES/SNES: the shader draws the scanlines
     (they follow the Scanlines toggle) instead of the plain dark bands. N64: always with its
     beam scanlines (no Scanlines toggle there).
-  - **NES / SNES games run by Mednafen** (all `repos/roms` games): a Mednafen with a small
+  - **NES / SNES games run by Mednafen** (all `roms` games): a Mednafen with a small
     patch, `tools/mednafen-nsocrt.patch` (apply to the `mednafen/` tree; an unpatched
     Mednafen fails to start with the toggle on). The rewind overlay uses the same shader,
     so holding rewind does not change the look.

@@ -25,8 +25,8 @@ GameEntry gamecube_games[] = {
     {
         .title = "Twilight Princess",
         .boxartPath = "assets/images/systems/gamecube/ztp.png",
-        .dir = "repos/gamecube/dusk",
-        .binary = "./ztp.appimage",
+        .dir = "repos/gamecube/dusklight/build/linux-default-relwithdebinfo",
+        .binary = "./dusklight",
         .orient = SLOT_ORIENT_INHERIT,
     },
     {

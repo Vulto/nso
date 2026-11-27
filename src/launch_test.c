@@ -129,10 +129,15 @@ int main(void)
 
     {   /* Mednafen: Pixel Perfect and Scanlines are independent Game Screen toggles */
         char buf[1024];
-        char *w[24];
+        char *w[32];
+#if !defined(_WIN32)
+        const int soundArgs = 2;   /* -sound.device sexyal-literal-default */
+#else
+        const int soundArgs = 0;
+#endif
         /* Both on (recommended): integer square scale + scanlines 90, shader none. */
-        int n = NsoMednafenArgv("snes", true, true, "/r/Super Mario Kart.sfc", 1920, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 21);
+        int n = NsoMednafenArgv("snes", true, true, "/r/Super Mario Kart.sfc", 1920, 1080, buf, sizeof(buf), w, 32);
+        EXPECT(n == 21 + soundArgs);
         EXPECT(strcmp(w[0], "-video.fs") == 0 && strcmp(w[1], "0") == 0);
         EXPECT(strcmp(w[3], "state.%X") == 0);
         EXPECT(strcmp(w[4], "-snes.xscale") == 0 && strcmp(w[6], "-snes.yscale") == 0);
@@ -144,38 +149,61 @@ int main(void)
         /* Rewind (Backspace) on, 600 frames of history, before the ROM. */
         EXPECT(strcmp(w[16], "-srwautoenable") == 0 && strcmp(w[17], "1") == 0);
         EXPECT(strcmp(w[18], "-srwframes") == 0 && strcmp(w[19], "600") == 0);
+#if !defined(_WIN32)
+        /* ALSA's "default" (the sound server), not Mednafen's hw:0, which NSO's audio owns. */
+        EXPECT(strcmp(w[20], "-sound.device") == 0 && strcmp(w[21], "sexyal-literal-default") == 0);
+#endif
         /* Pixel Perfect only. */
-        n = NsoMednafenArgv("nes", true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 21 && strcmp(w[4], "-nes.xscale") == 0);
+        n = NsoMednafenArgv("nes", true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 32);
+        EXPECT(n == 21 + soundArgs && strcmp(w[4], "-nes.xscale") == 0);
         EXPECT(atof(w[5]) == 4.0 && atof(w[7]) == 4.0);             /* integer, square */
         EXPECT(strcmp(w[11], "none") == 0 && strcmp(w[13], "0") == 0);
         EXPECT(strcmp(w[14], "-nes.scanlines") == 0 && strcmp(w[15], "0") == 0);
         /* Scanlines only: non-integer scale, same aspect, videoip 1, scanlines 90. */
-        n = NsoMednafenArgv("nes", false, true, "a.nes", 1280, 720, buf, sizeof(buf), w, 24);
-        EXPECT(n == 21 && strcmp(w[11], "none") == 0);
+        n = NsoMednafenArgv("nes", false, true, "a.nes", 1280, 720, buf, sizeof(buf), w, 32);
+        EXPECT(n == 21 + soundArgs && strcmp(w[11], "none") == 0);
         EXPECT(fabs(atof(w[5]) - atof(w[7])) < 0.001);
         EXPECT(fabs(atof(w[7]) - 720.0 / 224.0) < 0.001);
         EXPECT(strcmp(w[13], "1") == 0);
         EXPECT(strcmp(w[14], "-nes.scanlines") == 0 && strcmp(w[15], "90") == 0);
         /* Both off: as large as fits, width-limited, no scanlines. */
-        n = NsoMednafenArgv("nes", false, false, "a.nes", 800, 1080, buf, sizeof(buf), w, 24);
-        EXPECT(n == 21 && fabs(atof(w[5]) * 256.0 - 800.0) < 0.5);
+        n = NsoMednafenArgv("nes", false, false, "a.nes", 800, 1080, buf, sizeof(buf), w, 32);
+        EXPECT(n == 21 + soundArgs && fabs(atof(w[5]) * 256.0 - 800.0) < 0.5);
         EXPECT(fabs(atof(w[5]) - atof(w[7])) < 0.001 && strcmp(w[15], "0") == 0);
-        EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, 20, w, 24) == 0);
+        EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, 20, w, 32) == 0);
         EXPECT(NsoMednafenArgv("nes", false, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 5) == 0);
         /* CRT Geometry: the nsocrt shader replaces Mednafen's own scanlines (the shader draws the beam lines);
          * the word count stays the same, and scale/aspect are unchanged. */
-        n = NsoMednafenArgvEx("nes", true, true, true, "a.nes", 1920, 1080, buf, sizeof(buf), w, 24, NULL, 0);
-        EXPECT(n == 21 && strcmp(w[10], "-nes.shader") == 0 && strcmp(w[11], "nsocrt") == 0);
+        n = NsoMednafenArgvEx("nes", true, true, true, "a.nes", 1920, 1080, buf, sizeof(buf), w, 32, NULL, 0);
+        EXPECT(n == 21 + soundArgs && strcmp(w[10], "-nes.shader") == 0 && strcmp(w[11], "nsocrt") == 0);
         EXPECT(strcmp(w[14], "-nes.scanlines") == 0 && strcmp(w[15], "0") == 0);
         EXPECT(atof(w[5]) == 4.0 && strcmp(w[13], "0") == 0);
         {   /* extra words (the controller bindings) go right before the ROM */
             char *extra[2] = { (char *)"-nes.input.port1.gamepad.a", (char *)"keyboard 0x0 4 || joystick 0x0 button_1" };
-            n = NsoMednafenArgvEx("nes", true, true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 24, extra, 2);
-            EXPECT(n == 23 && strcmp(w[19], "600") == 0);
-            EXPECT(strcmp(w[20], "-nes.input.port1.gamepad.a") == 0 && strncmp(w[21], "keyboard 0x0 4 ||", 17) == 0);
-            EXPECT(strcmp(w[22], "a.nes") == 0);
+            n = NsoMednafenArgvEx("nes", true, true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 32, extra, 2);
+            EXPECT(n == 23 + soundArgs && strcmp(w[19], "600") == 0);
+            EXPECT(strcmp(w[20 + soundArgs], "-nes.input.port1.gamepad.a") == 0
+                   && strncmp(w[21 + soundArgs], "keyboard 0x0 4 ||", 17) == 0);
+            EXPECT(strcmp(w[22 + soundArgs], "a.nes") == 0);
             EXPECT(NsoMednafenArgvEx("nes", true, true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 22, extra, 2) == 0);
+        }
+        /* Mega Drive: same rewind flags, plus OSD times 0 so the auto-enable
+         * status line is not shown (nes/snes already have this in their cfg). */
+        n = NsoMednafenArgv("md", true, false, "a.md", 1920, 1080, buf, sizeof(buf), w, 32);
+        EXPECT(n == 25 + soundArgs && strcmp(w[4], "-md.xscale") == 0);
+        EXPECT(strcmp(w[16], "-srwautoenable") == 0 && strcmp(w[17], "1") == 0);
+        EXPECT(strcmp(w[18], "-srwframes") == 0 && strcmp(w[19], "600") == 0);
+        EXPECT(strcmp(w[20 + soundArgs], "-osd.message_display_time") == 0
+               && strcmp(w[21 + soundArgs], "0") == 0);
+        EXPECT(strcmp(w[22 + soundArgs], "-osd.state_display_time") == 0
+               && strcmp(w[23 + soundArgs], "0") == 0);
+        EXPECT(strcmp(w[n - 1], "a.md") == 0);
+        n = NsoMednafenArgv("nes", true, false, "a.nes", 1920, 1080, buf, sizeof(buf), w, 32);
+        {
+            int k, hasOsd = 0;
+            for (k = 0; k < n; k++)
+                if (strcmp(w[k], "-osd.message_display_time") == 0) hasOsd = 1;
+            EXPECT(!hasOsd);
         }
     }
 

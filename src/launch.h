@@ -417,13 +417,13 @@ static inline int NsoSplitWords(char *buf, char **words, int max)
     return n;
 }
 
-/* Mednafen command line for GameEntry.mednafen (NES and SNES modules).
+/* Mednafen command line for GameEntry.mednafen (NES, SNES, and Mega Drive md modules).
  * Mednafen's windowed mode is a fixed-size window (scale x native size) that
  * cannot be resized, so NSO's Settings > Game Screen toggles pick the scale
  * for the host window (host_w x host_h) and the menu launcher centres it.
  * Pixel Perfect on: largest integer scale, square pixels, videoip 0. Off: as
  * large as fits (non-integer), same aspect, videoip 1. Scanlines on:
- * -<module>.scanlines 90 (90% opacity; nes/snes.scanlines is an integer
+ * -<module>.scanlines 90 (90% opacity; nes/snes/md.scanlines is an integer
  * -100 through 100). Off: scanlines 0, so the setting cannot leak. The two
  * are independent (both on is integer scale plus scanlines). Shader is
  * none, or nsocrt (shaders/crtgeom.glsl, the "CRT Geometry" toggle; Mednafen's
@@ -462,11 +462,34 @@ static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlin
                             opt[3], crtgeom ? "nsocrt" : "none",
                             opt[4], pixel ? "0" : "1",
                             opt[5], scanlines && !crtgeom ? "90" : "0",
-                            "-srwautoenable", "1", "-srwframes", "600", rom };
+                            "-srwautoenable", "1", "-srwframes", "600",
+#if !defined(_WIN32)
+                            /* Mednafen's "default" ALSA device is hw:0, which the desktop sound
+                             * server (and NSO's own audio) usually owns.  ALSA's "default" goes
+                             * through the server, so every module (md included) gets sound. */
+                            "-sound.device", "sexyal-literal-default",
+#endif
+                            rom };
+    /* Mega Drive's mednafen.cfg still has Mednafen's default OSD times
+     * (2500/2000 ms), so "-srwautoenable 1" shows "State rewinding
+     * functionality enabled." NES and SNES already have those times at 0
+     * in their NSO-managed cfg. Pass the same for md; do not edit the cfg. */
+    const char *mdOsd[] = {
+        "-osd.message_display_time", "0",
+        "-osd.state_display_time", "0",
+    };
+    const int mdOsdN = (strcmp(module, "md") == 0) ? 4 : 0;
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
         size_t len;
         if (i == count - 1) {   /* the ROM stays last: extra options go before it */
+            for (int e = 0; e < mdOsdN; e++) {
+                len = strlen(mdOsd[e]) + 1;
+                if (n >= max - 1 || used + len > cap) return 0;
+                memcpy(buf + used, mdOsd[e], len);
+                argv[n++] = buf + used;
+                used += len;
+            }
             for (int e = 0; e < extra_count; e++) {
                 len = strlen(extra[e]) + 1;
                 if (n >= max - 1 || used + len > cap) return 0;

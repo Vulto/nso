@@ -1,12 +1,12 @@
 CC ?= cc
-CFLAGS := -std=c23 -Wall -Wextra -Isrc -Wextra -Werror
+CFLAGS := -std=c23 -Wall -Wextra -Isrc -Wextra -Werror -O3
 SRC := src/main.c src/menu_launcher.c src/n64pad.c src/jspad.c
 HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h \
-	src/systems/n64.h src/systems/gamecube.h src/savestate.h src/repos.h src/lang.h src/order.h \
-	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h
-HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h src/covers.h
+	src/systems/n64.h src/systems/gamecube.h src/systems/megadrive.h src/savestate.h src/repos.h src/lang.h src/order.h \
+	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h src/gridlayout.h
+HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h src/fav.h src/covers.h src/sneslist.h src/syslist.h
 HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/crtgeom.h src/crtparams.h src/n64pad.h
-HDRS += src/padmap.h src/padui.h src/jspad.h
+HDRS += src/padmap.h src/padui.h src/jspad.h src/version.h src/version_ui.h src/sysstatus.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -18,7 +18,7 @@ ifeq ($(origin CC),command line)
 WINCC := $(CC)
 endif
 
-.PHONY: all linux windows embed check test clean
+.PHONY: all linux windows embed check test clean release
 
 all: linux
 
@@ -26,6 +26,26 @@ linux: nso nso-norumble.so
 
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -pthread -o nso $(SRC) -lraylib -lm -ldl -lX11 -lXtst -lXext
+
+# Self-contained binary: NSO UI assets (fonts, system cards, icons) are
+# embedded; scrapable game box arts/covers are not. raylib is linked
+# statically. glibc, OpenGL and X11 stay dynamic. Dev `nso` is unchanged.
+RELEASE_ASSETS := 	assets/fonts/NotoSansCJKkr-Regular.otf 	assets/fonts/SymbolsNerdFont-Regular.ttf 	assets/fonts/LICENSE-NotoSansCJK.txt 	assets/fonts/LICENSE-NerdFonts.txt 	assets/images/n64_controller.png 	assets/images/ui/download.png 	assets/images/ui/gamecube-lines.png 	assets/images/ui/gear.png 	assets/images/ui/gear1.png 	assets/images/ui/pad-gamecube.png 	assets/images/ui/pad-n64.png 	assets/images/ui/pad-nes.png 	assets/images/ui/pad-snes.png 	assets/images/systems/nes/nes.png 	assets/images/systems/snes/snes.png 	assets/images/systems/n64/n64.png 	assets/images/systems/gamecube/gamecube.png 	assets/images/systems/megadrive/megadrive.png 	assets/data/snes-titles.txt 	assets/data/gamecube-titles.txt 	assets/data/megadrive-titles.txt
+
+RELEASE_LIBS := -L/usr/local/lib -Wl,-Bstatic -lraylib -Wl,-Bdynamic -lGL -lX11 -lXtst -lXext -lm -ldl -lpthread
+
+build-release/assets.pack: tools/pack-assets.py $(RELEASE_ASSETS)
+	mkdir -p build-release
+	python3 tools/pack-assets.py $@ $(RELEASE_ASSETS)
+
+build-release/assets-pack.o: tools/assets-pack.S build-release/assets.pack
+	$(CC) -c -o $@ tools/assets-pack.S
+
+release: dist/nso
+
+dist/nso: $(SRC) $(HDRS) src/assetpack.c src/assetpack.h build-release/assets-pack.o
+	mkdir -p dist
+	$(CC) $(CFLAGS) -DNSO_RELEASE -pthread -o dist/nso $(SRC) src/assetpack.c 		build-release/assets-pack.o $(RELEASE_LIBS)
 
 # Preloaded into external games when Rumble is off (src/norumble.c).
 nso-norumble.so: src/norumble.c
@@ -62,10 +82,11 @@ check: export ALSA_CONFIG_PATH = /dev/null
 check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/repos_test.c src/repos.h tools/repo_sync.sh src/lang_test.c src/lang.h \
 		src/launch_test.c src/launch.h src/input_test.c src/nso.h src/n64pad.h \
-		src/order_test.c src/order.h src/embed_test.c src/embed.h embed/nsomod.h \
+		src/order_test.c src/order.h src/gridlayout_test.c src/gridlayout.h src/embed_test.c src/embed.h embed/nsomod.h \
 		src/sfx_test.c src/sfx.h src/sort_test.c src/sort.h src/catalog_test.c src/systems/nes.h \
-		src/systems/snes.h src/systems/n64.h src/systems/gamecube.h \
-		embed/sm64/reloc_test.c embed/sm64/reloc.h src/padmap_test.c src/padmap.h
+		src/systems/snes.h src/systems/n64.h src/systems/gamecube.h src/systems/megadrive.h \
+		embed/sm64/reloc_test.c embed/sm64/reloc.h src/padmap_test.c src/padmap.h \
+		src/version_test.c src/version.h src/version_scan_test.c src/sysstatus_test.c src/sysstatus.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
 	$(CC) $(CFLAGS) -o savestate_test src/savestate_test.c
@@ -80,18 +101,26 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./input_test
 	$(CC) $(CFLAGS) -o order_test src/order_test.c
 	./order_test
+	$(CC) $(CFLAGS) -o gridlayout_test src/gridlayout_test.c -lm
+	./gridlayout_test
 	$(CC) $(CFLAGS) -o sort_test src/sort_test.c
 	./sort_test
 	$(CC) $(CFLAGS) -o catalog_test src/catalog_test.c
 	./catalog_test
 	$(CC) $(CFLAGS) -o gamesel_test src/gamesel_test.c
 	./gamesel_test
+	$(CC) $(CFLAGS) -o sneslist_test src/sneslist_test.c
+	./sneslist_test
 	$(CC) $(CFLAGS) -o hide_test src/hide_test.c
 	./hide_test
+	$(CC) $(CFLAGS) -o fav_test src/fav_test.c
+	./fav_test
 	$(CC) $(CFLAGS) -o covers_test src/covers_test.c
 	./covers_test
 	$(CC) $(CFLAGS) -o status_test src/status_test.c
 	./status_test
+	$(CC) $(CFLAGS) -o sysstatus_test src/sysstatus_test.c
+	./sysstatus_test
 	$(CC) $(CFLAGS) -o enteranim_test src/enteranim_test.c -lm
 	./enteranim_test
 	$(CC) $(CFLAGS) -o rewindanim_test src/rewindanim_test.c -lm
@@ -106,9 +135,13 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./padmap_test
 	$(CC) $(CFLAGS) -o crtparams_test src/crtparams_test.c -lm
 	./crtparams_test
+	$(CC) $(CFLAGS) -o version_test src/version_test.c
+	./version_test
+	$(CC) $(CFLAGS) -o version_scan_test src/version_scan_test.c
+	./version_scan_test
 
-check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/hide_test.c src/hide.h src/covers_test.c src/covers.h
-check: src/crtparams_test.c src/crtparams.h src/status_test.c src/status.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h
+check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/sneslist_test.c src/sneslist.h src/syslist.h assets/data/snes-titles.txt assets/data/gamecube-titles.txt assets/data/megadrive-titles.txt src/hide_test.c src/hide.h src/fav_test.c src/fav.h src/covers_test.c src/covers.h
+check: src/crtparams_test.c src/crtparams.h src/status_test.c src/status.h src/sysstatus_test.c src/sysstatus.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h
 
 # Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
 test: check nso nso-norumble.so
@@ -118,6 +151,7 @@ test: check nso nso-norumble.so
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test hide_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test
+	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test gridlayout_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test sneslist_test hide_test fav_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test version_test version_scan_test sysstatus_test
+	rm -rf build-release dist/nso
 
-.PHONY: embed soh-nso windows test clean
+.PHONY: embed soh-nso windows test clean release

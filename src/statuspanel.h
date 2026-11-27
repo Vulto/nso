@@ -1,10 +1,9 @@
-/* statuspanel.h - "Port status" overlay (grid S key). Included by main.c after
- * the X Details card and drawn on the same card frame (Details_DrawFrame):
- * same fade, dimming, colors and text style. Shows only the active system
- * (NES in the NES grid, SNES in SNES, and so on). Left column: system name
- * and heading, headline, segmented bar and legend (counts per type, status.h).
- * Right column: that system's catalog games with type and whether they are
- * playable, scrollable. B or S closes it. */
+/* statuspanel.h - status + scraper overlay (grid S key). Included by main.c
+ * after the X Details card and drawn on the same card frame (Details_DrawFrame):
+ * same fade, dimming, colors and text style. Four tabs (Y cycles them).
+ * Statistics is the original port-status content. Emulated holds the image
+ * scraping page (moved from the sidebar), scoped to ROMs in roms/<System>/.
+ * PC Ports and Decomps are placeholders in this step. B or S closes it. */
 #ifndef NSO_STATUSPANEL_H
 #define NSO_STATUSPANEL_H
 
@@ -19,10 +18,29 @@ typedef struct {
     bool playable;
 } StatusRow;
 
+typedef enum {
+    STATUS_TAB_PORTS = 0,
+    STATUS_TAB_DECOMPS,
+    STATUS_TAB_EMU,
+    STATUS_TAB_STATS,
+    STATUS_TAB_COUNT
+} StatusTab;
+
+enum { STATUS_EMU_ALL = 0, STATUS_EMU_SELECT, STATUS_EMU_N };
+
 static StatusRow statusRows[STATUS_MAX_ROWS];
 static int statusRowCount = 0, statusTop = 0;
 static int statusCounts[ST_COUNT], statusTotal = 0, statusPlayable = 0;
 static const char *statusSystemName = "";
+static int statusTab = STATUS_TAB_STATS;
+static int statusEmuRow = 0;
+static int statusEmuRoms[MAX_GAMES];
+static int statusEmuRomN = 0;
+static int statusEmuListTop = 0;
+static int statusEmuNeedRefresh = 1;
+static int statusEmuSawBusy = 0;
+static Texture2D statusEmuPrevTex;
+static int statusEmuPrevIdx = -1;
 
 static const Color statusColors[ST_COUNT] = {
     { 66, 133, 244, 255 },    /* recompilation: blue */
@@ -49,6 +67,10 @@ static void Status_Open(void) {
     statusRowCount = 0;
     statusTotal = statusPlayable = 0;
     statusTop = 0;
+    statusTab = STATUS_TAB_STATS;
+    statusEmuRow = 0;
+    statusEmuListTop = 0;
+    statusEmuNeedRefresh = 1;
     memset(statusCounts, 0, sizeof(statusCounts));
     const System *sys = ActiveSystem();
     statusSystemName = sys->platform->name ? sys->platform->name : "";
@@ -63,10 +85,63 @@ static void Status_Open(void) {
         if (r->playable) statusPlayable++;
     }
     statusOpen = true;
-    InfoBar_Request(INFO_BAR_NONE);
+    InfoBar_Request(INFO_BAR_STATUS);
+}
+
+static void Status_EmuUnloadPrev(void) {
+    if (statusEmuPrevTex.id != 0) UnloadTexture(statusEmuPrevTex);
+    statusEmuPrevTex = (Texture2D){ 0 };
+    statusEmuPrevIdx = -1;
+}
+
+static void Status_EmuRefreshRoms(void) {
+    int last;
+    statusEmuRomN = ScrapeMenu_ListRoms(statusEmuRoms, MAX_GAMES);
+    last = STATUS_EMU_N - 1;
+    if (statusEmuRomN > 0) last = STATUS_EMU_N - 1 + statusEmuRomN;
+    if (statusEmuRow > last) statusEmuRow = last;
+    if (statusEmuRow < 0) statusEmuRow = 0;
+}
+
+static int Status_EmuFocusCatalog(void) {
+    if (gsOpen) return GameSel_FocusCatalog();
+    if (ScrapeMenu_Choosing()) return ScrapeMenu_ChoiceGame();
+    if (statusEmuRow >= STATUS_EMU_N) {
+        int i = statusEmuRow - STATUS_EMU_N;
+        if (i >= 0 && i < statusEmuRomN) return statusEmuRoms[i];
+    }
+    return -1;
+}
+
+static Texture2D Status_EmuArt(int catalog) {
+    Texture2D t;
+    if (catalog < 0) return (Texture2D){ 0 };
+    t = GetBoxart(catalog);
+    if (t.id != 0) return t;
+    if (catalog >= ActiveGameTotal()) return (Texture2D){ 0 };
+    if (statusEmuPrevIdx == catalog && statusEmuPrevTex.id != 0)
+        return statusEmuPrevTex;
+    Status_EmuUnloadPrev();
+    statusEmuPrevIdx = catalog;
+    {
+        const char *rel = ActiveGames()[catalog].boxartPath;
+        Image img;
+        if (!rel || !rel[0]) return (Texture2D){ 0 };
+        img = LoadBoxartImage(GetDataPath(rel));
+        if (!img.data) return (Texture2D){ 0 };
+        statusEmuPrevTex = LoadTextureFromImage(img);
+        UnloadImage(img);
+    }
+    return statusEmuPrevTex;
 }
 
 static void Status_Close(void) {
+    if (gsOpen) {
+        if (GameSel_Busy()) GameSel_Cancel();
+        gsOpen = false;
+    }
+    if (scrapeBusy) ScrapeMenu_Cancel();
+    Status_EmuUnloadPrev();
     statusOpen = false;
     InfoBar_Request(INFO_BAR_MOSAIC);
 }
@@ -79,23 +154,95 @@ static void Status_Update(float dt) {
     else if (statusT > target) statusT = fmaxf(statusT - step, target);
 }
 
+/* Room taken by the tab bar at the top of the card. */
+static float Status_TabH(float sh) { return sh * 0.058f; }
+static float Status_ContentOff(float sh) { return sh * 0.012f + Status_TabH(sh) + sh * 0.010f; }
+
+/* Card height: 36px shorter than the Details card at 1920x1080, scaled. */
+static float Status_CardHeight(float sh) {
+    return roundf(sh * 0.905f) - roundf(36.0f * sh / 1080.0f);
+}
+
 /* Rows that fit the list column; shared by the input and the draw code. */
 static int Status_Visible(void) {
     float sh = (float)GetScreenHeight();
-    int n = (int)((sh * 0.905f - sh * 0.06f) / (sh * 0.046f));
+    float top = sh * 0.047f + Status_ContentOff(sh);
+    float bot = sh * 0.047f + Status_CardHeight(sh) - sh * 0.018f;
+    int n = (int)((bot - top) / (sh * 0.046f));
     return n < 1 ? 1 : n;
 }
 
-static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack) {
+static bool Status_YPressed(void) {
+    return IsKeyPressed(KEY_Y) || padCDown
+        || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, NSO_BTN_Y));
+}
+
+static void Status_CycleTab(void) {
+    statusTab = (statusTab + 1) % STATUS_TAB_COUNT;
+    if (statusTab == STATUS_TAB_EMU) statusEmuNeedRefresh = 1;
+    Sfx_Play(SFX_PLUCK);
+}
+
+static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack,
+                               bool gpConfirm, bool gpLeft, bool gpRight) {
+    bool back = IsKeyPressed(KEY_B) || gpBack;
+    bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
+    bool up = IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP) || gpUp;
+    bool down = IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN) || gpDown;
+    bool left = IsKeyPressed(KEY_LEFT) || gpLeft;
+    bool right = IsKeyPressed(KEY_RIGHT) || gpRight;
+    bool y = Status_YPressed();
     if (!statusOpen) return;   /* sliding out */
-    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_S) || gpBack) {
+
+    if (gsOpen) {
+        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
+        GameSel_Input(up, down, ok, back, left);
+        return;
+    }
+    if (ScrapeMenu_Choosing()) {
+        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
+        if (ScrapeMenu_HandleChoice(ok, back, up || left, down || right)
+            && (ok || back || up || down || left || right))
+            Sfx_Play((ok || back) ? SFX_CLICK : SFX_PLUCK);
+        return;
+    }
+    if (scrapeBusy) {
+        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
+        if (back) { ScrapeMenu_Cancel(); Sfx_Play(SFX_CLICK); return; }
+        if (y) Status_CycleTab();
+        return;
+    }
+    if (back || IsKeyPressed(KEY_S)) {
         Status_Close();
         return;
     }
+    if (y) {
+        Status_CycleTab();
+        return;
+    }
+
+    if (statusTab == STATUS_TAB_EMU) {
+        int last = STATUS_EMU_N - 1;
+        if (statusEmuRomN > 0) last = STATUS_EMU_N - 1 + statusEmuRomN;
+        if (up && statusEmuRow > 0) { statusEmuRow--; Sfx_Play(SFX_PLUCK); }
+        if (down && statusEmuRow < last) { statusEmuRow++; Sfx_Play(SFX_PLUCK); }
+        if (ok) {
+            if (statusEmuRow == STATUS_EMU_ALL) {
+                Sfx_Play(SFX_CLICK);
+                ScrapeMenu_StartFromRoms(0);
+            } else if (statusEmuRow == STATUS_EMU_SELECT) {
+                Sfx_Play(SFX_CLICK);
+                GameSel_OpenRoms();
+            }
+        }
+        return;
+    }
+    if (statusTab != STATUS_TAB_STATS) return;
+
     int vis = Status_Visible(), maxTop = statusRowCount > vis ? statusRowCount - vis : 0;
     int d = 0;
-    if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN) || gpDown) d = 1;
-    if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP) || gpUp) d = -1;
+    if (down) d = 1;
+    if (up) d = -1;
     if (IsKeyPressed(KEY_PAGE_DOWN) || IsKeyPressedRepeat(KEY_PAGE_DOWN)) d = vis - 1;
     if (IsKeyPressed(KEY_PAGE_UP) || IsKeyPressedRepeat(KEY_PAGE_UP)) d = -(vis - 1);
     if (IsKeyPressed(KEY_HOME)) d = -statusRowCount;
@@ -119,26 +266,58 @@ static void Status_TextR(Font font, const char *text, float x, float y, float si
     DrawTextEx(font, text, (Vector2){ x - MeasureTextEx(font, text, s, 2.0f).x, y }, s, 2.0f, c);
 }
 
-static void Status_Draw(Font font) {
-    if (statusT <= 0.0f) return;
-    float a = statusT;
-    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
-    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 };
-    const Color light = { 128, 134, 136, 255 }, track = { 214, 220, 222, 255 };
-    const Color line = { 214, 220, 222, 255 }, inner = { 250, 252, 252, 255 };
-    Rectangle card;
-    float lw, rad;
-    Details_DrawFrame(a, &card, &lw, &rad);
+static void Status_ChoiceLabel(const char *file, char *dst, size_t n) {
+    char *dot;
+    if (!dst || n == 0) return;
+    snprintf(dst, n, "%s", file ? file : "");
+    dot = strrchr(dst, '.');
+    if (dot && (strcmp(dot, ".png") == 0 || strcmp(dot, ".jpg") == 0
+                || strcmp(dot, ".jpeg") == 0 || strcmp(dot, ".PNG") == 0))
+        *dot = '\0';
+}
 
-    /* Left column: heading, then one rounded card with headline, bar, legend. */
+static void Status_DrawTabs(Font font, Rectangle card, float lw, float a, Color ink, Color meta, Color line) {
+    static const StrId ids[STATUS_TAB_COUNT] = {
+        S_TAB_PORTS, S_TAB_DECOMPS, S_TAB_EMU, S_TAB_STATS
+    };
+    float sh = (float)GetScreenHeight();
+    float tabH = Status_TabH(sh);
+    float y = card.y + sh * 0.012f;
+    float inset = sh * 0.01f;
+    float x0 = card.x + lw + inset;
+    float barW = card.width - lw - 2.0f * inset;
+    float tabW = barW / (float)STATUS_TAB_COUNT;
+    float ts = sh * 0.024f;
+    for (int i = 0; i < STATUS_TAB_COUNT; i++) {
+        const char *lab = T(ids[i]);
+        float x = x0 + tabW * (float)i;
+        Color c = Fade(i == statusTab ? ink : meta, a);
+        float tw = MeasureTextEx(font, lab, ts, 1.0f).x;
+        float tx = x + (tabW - tw) * 0.5f;
+        DrawTextEx(font, lab, (Vector2){ tx, y + (tabH - ts) * 0.45f }, ts, 1.0f, c);
+        if (i == statusTab) {
+            float uw = fminf(tw + sh * 0.016f, tabW * 0.72f);
+            DrawRectangleRec((Rectangle){ x + (tabW - uw) * 0.5f, y + tabH - sh * 0.004f,
+                                          uw, sh * 0.0035f }, Fade(ink, a));
+        }
+    }
+    DrawLineEx((Vector2){ x0, y + tabH },
+               (Vector2){ x0 + barW, y + tabH },
+               1.0f, Fade(line, a));
+}
+
+static void Status_DrawStats(Font font, Rectangle card, float lw, float rad, float a,
+                             Color ink, Color meta, Color light, Color track, Color line, Color inner) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float content = Status_ContentOff(sh);
     float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
     char heading[96];
     if (statusSystemName[0])
         snprintf(heading, sizeof(heading), "%s %s", statusSystemName, Status_Word(0));
     else
         snprintf(heading, sizeof(heading), "%s", Status_Word(0));
-    Details_Text(font, heading, (Vector2){ lx, card.y + sh * 0.03f }, sh * 0.030f, lcw, Fade(meta, a));
-    float py = card.y + sh * 0.085f, pad = lcw * 0.055f;
+    Details_Text(font, heading, (Vector2){ lx, card.y + content }, sh * 0.030f, lcw, Fade(meta, a));
+    float py = card.y + content + sh * 0.055f, pad = lcw * 0.055f;
     float legendRow = sh * 0.062f;
     Rectangle pc = { lx, py, lcw, sh * 0.19f + legendRow * ST_COUNT };
     DrawRectangleRounded(pc, 2.0f * rad / pc.height * 2.0f, 12, Fade(inner, a));
@@ -153,7 +332,6 @@ static void Status_Draw(Font font) {
     float bw = MeasureTextEx(font, big, bs, 2.0f).x;
     DrawTextEx(font, rest, (Vector2){ ix + bw, y + bs - ss * 1.15f }, ss, 2.0f, Fade(light, a));
 
-    /* Segmented bar: gray track, one rounded segment per type, small gaps. */
     float by = y + bs + sh * 0.035f, bh = sh * 0.022f, gap = sh * 0.004f;
     Rectangle tr = { ix, by, iw, bh };
     DrawRectangleRounded(tr, 1.0f, 12, Fade(track, a));
@@ -167,7 +345,6 @@ static void Status_Draw(Font font) {
         x += w + gap;
     }
 
-    /* Legend: dot + name, "<count> (<x>% of total)" at the right, dividers. */
     float ly = by + bh + sh * 0.025f, ds = sh * 0.011f, ts = sh * 0.023f;
     for (int t = 0; t < ST_COUNT; t++) {
         float ry = ly + legendRow * (float)t, cy = ry + legendRow * 0.5f;
@@ -183,9 +360,8 @@ static void Status_Draw(Font font) {
             DrawLineEx((Vector2){ nx, ry + legendRow }, (Vector2){ ix + iw, ry + legendRow }, 1.0f, Fade(line, a));
     }
 
-    /* Right column: scrollable per-game list. */
     float rx = card.x + lw + sw * 0.025f, rr = card.x + card.width - sw * 0.025f;
-    float rowH = sh * 0.046f, top = card.y + sh * 0.03f, fs = sh * 0.026f;
+    float rowH = sh * 0.046f, top = card.y + content, fs = sh * 0.026f;
     int vis = Status_Visible();
     float typeX = rx + (rr - rx) * 0.60f;
     for (int k = 0; k < vis && statusTop + k < statusRowCount; k++) {
@@ -199,8 +375,200 @@ static void Status_Draw(Font font) {
         if (k < vis - 1)
             DrawLineEx((Vector2){ rx + fs * 1.1f, ry + rowH }, (Vector2){ rr, ry + rowH }, 1.0f, Fade(line, a * 0.7f));
     }
+}
 
-    DrawInfoBarEx(font, Status_Word(5), a, 0.0f);
+static void Status_DrawPlaceholder(Font font, Rectangle card, float lw, float a, Color ink, Color meta) {
+    float sh = (float)GetScreenHeight();
+    float content = Status_ContentOff(sh);
+    float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
+    const char *head = T(statusTab == STATUS_TAB_PORTS ? S_TAB_PORTS : S_TAB_DECOMPS);
+    Details_Text(font, head, (Vector2){ lx, card.y + content }, sh * 0.030f, lcw, Fade(meta, a));
+    Details_Text(font, T(S_TAB_PLACEHOLDER), (Vector2){ lx, card.y + content + sh * 0.055f },
+                 sh * 0.028f, card.width - lw * 0.14f, Fade(ink, a));
+}
+
+static void Status_DrawEmuPreview(Font font, Rectangle card, float lw, float a,
+                                 Color ink, Color inner, float artTop) {
+    float sh = (float)GetScreenHeight();
+    float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
+    float bot = card.y + card.height - sh * 0.018f;
+    int cat = Status_EmuFocusCatalog();
+    const char *title = NULL;
+    Texture2D tex;
+    float artH, pad;
+    Rectangle artBox;
+
+    artH = bot - artTop - sh * 0.070f;
+    if (artH < sh * 0.16f) artH = bot - artTop;
+    if (artH < 1.0f) return;
+    pad = lcw * 0.055f;
+    artBox = (Rectangle){ lx, artTop, lcw, artH };
+    DrawRectangleRounded(artBox, 0.04f, 12, Fade(inner, a));
+    tex = Status_EmuArt(cat);
+    if (tex.id != 0 && tex.width > 0 && tex.height > 0) {
+        float ox, oy, dw, dh;
+        Rectangle slot = { artBox.x + pad, artBox.y + pad,
+                           artBox.width - 2.0f * pad, artBox.height - 2.0f * pad };
+        CoverDestInSlot(slot, tex, 1.0f, 0.0f, &ox, &oy, &dw, &dh);
+        DrawTexturePro(tex,
+                       (Rectangle){ 0, 0, (float)tex.width, (float)tex.height },
+                       (Rectangle){ ox, oy, dw, dh },
+                       (Vector2){ 0, 0 }, 0.0f, Fade(WHITE, a));
+    }
+    if (cat >= 0 && cat < ActiveGameTotal() && ActiveGames()[cat].title)
+        title = ActiveGames()[cat].title;
+    if (title && title[0] && artTop + artH + sh * 0.036f < bot + sh * 0.004f)
+        Details_Text(font, title, (Vector2){ lx, artTop + artH + sh * 0.012f },
+                     sh * 0.024f, lcw, Fade(ink, a));
+}
+
+static void Status_DrawEmu(Font font, Rectangle card, float lw, float a,
+                           Color ink, Color meta, Color line, Color inner) {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    float content = Status_ContentOff(sh);
+    float top = card.y + content;
+    float bot = card.y + card.height - sh * 0.018f;
+    float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
+    float rx = card.x + lw + sw * 0.025f, rr = card.x + card.width - sw * 0.025f;
+    float rw = rr - rx;
+    int choosing = ScrapeMenu_Choosing();
+    float artTop;
+    static const StrId actions[STATUS_EMU_N] = { S_EMU_DOWNLOAD_ALL, S_GS_SELECT };
+    float rowH = sh * 0.070f, bh = sh * 0.056f;
+
+    if (scrapeBusy) statusEmuSawBusy = 1;
+    if ((statusEmuNeedRefresh || statusEmuSawBusy) && !scrapeBusy && !gsOpen) {
+        Status_EmuRefreshRoms();
+        Status_EmuUnloadPrev();
+        statusEmuNeedRefresh = 0;
+        statusEmuSawBusy = 0;
+    }
+
+    Details_Text(font, T(S_MANAGE_COVERS), (Vector2){ lx, top }, sh * 0.030f, lcw, Fade(meta, a));
+    artTop = top + sh * 0.055f;
+    if (!gsOpen && !choosing) {
+        int k;
+        char status[192] = "";
+        for (k = 0; k < STATUS_EMU_N; k++) {
+            float y = top + sh * 0.055f + rowH * (float)k;
+            bool cur = !scrapeBusy && statusEmuRow == k;
+            Rectangle box = { lx, y - bh * 0.5f, lcw, bh };
+            Color tc = Fade(cur ? (Color){ 255, 255, 255, 255 } : ink, a);
+            if (cur) DrawRectangleRounded(box, 0.3f, 6, Fade(ink, a));
+            else DrawRectangleRoundedLinesEx(box, 0.3f, 6, 1.5f, Fade(line, a));
+            Details_Text(font, T(actions[k]), (Vector2){ lx + sh * 0.018f, y - sh * 0.014f },
+                         sh * 0.026f, lcw - sh * 0.03f, tc);
+        }
+        artTop = top + sh * 0.055f + rowH * (float)STATUS_EMU_N + sh * 0.01f;
+        Msg_Format(&scrapeMsg, status, sizeof(status));
+        if (status[0]) {
+            Details_Text(font, status, (Vector2){ lx, artTop }, sh * 0.024f, lcw, Fade(meta, a));
+            artTop += sh * 0.040f;
+        }
+        artTop += sh * 0.012f;
+    }
+
+    Status_DrawEmuPreview(font, card, lw, a, ink, inner, artTop);
+
+    if (gsOpen) {
+        Rectangle area = { rx, top, rw, bot - top };
+        GameSel_DrawInCard(font, area, ink, meta, line, inner, ink, a);
+        return;
+    }
+
+    if (choosing) {
+        float fs = sh * 0.026f, row = sh * 0.052f;
+        int n = ScrapeMenu_ChoiceCount();
+        int cur = ScrapeMenu_ChoiceCur();
+        const char *title = ScrapeMenu_ChoiceTitle();
+        Details_Text(font, T(S_EMU_CHOOSE), (Vector2){ rx, top }, sh * 0.030f, rw, Fade(meta, a));
+        if (title && title[0])
+            Details_Text(font, title, (Vector2){ rx, top + sh * 0.040f }, sh * 0.026f, rw, Fade(ink, a));
+        for (int i = 0; i < n; i++) {
+            char lab[256];
+            float y = top + sh * 0.090f + row * (float)i;
+            bool on = (i == cur);
+            Rectangle box = { rx, y, rw, row * 0.88f };
+            Color tc = Fade(on ? (Color){ 255, 255, 255, 255 } : ink, a);
+            if (on) DrawRectangleRounded(box, 0.3f, 6, Fade(ink, a));
+            Status_ChoiceLabel(ScrapeMenu_ChoiceName(i), lab, sizeof(lab));
+            Details_Text(font, lab, (Vector2){ rx + sh * 0.016f, y + (row * 0.88f - fs) * 0.5f },
+                         fs, rw - sh * 0.03f, tc);
+        }
+        return;
+    }
+
+    {
+        float listY = top, thW;
+        int vis, k, focus;
+
+        if (statusEmuRomN == 0) {
+            char miss[192];
+            ScrapeMenu_NoRomsText(miss, sizeof(miss));
+            Details_Text(font, miss, (Vector2){ rx, listY + sh * 0.008f },
+                         sh * 0.026f, rw, Fade(meta, a));
+            return;
+        }
+
+        vis = (int)((bot - listY - sh * 0.01f) / rowH);
+        if (vis < 1) vis = 1;
+        focus = statusEmuRow - STATUS_EMU_N;
+        if (focus >= 0) {
+            if (focus < statusEmuListTop) statusEmuListTop = focus;
+            if (focus >= statusEmuListTop + vis) statusEmuListTop = focus - vis + 1;
+        }
+        if (statusEmuListTop < 0) statusEmuListTop = 0;
+        if (statusEmuRomN > vis && statusEmuListTop > statusEmuRomN - vis)
+            statusEmuListTop = statusEmuRomN - vis;
+
+        thW = bh * 0.72f;
+        for (k = 0; k < vis && statusEmuListTop + k < statusEmuRomN; k++) {
+            int idx = statusEmuRoms[statusEmuListTop + k];
+            float y = listY + sh * 0.036f + rowH * (float)k;
+            bool cur = !scrapeBusy && statusEmuRow == STATUS_EMU_N + statusEmuListTop + k;
+            Rectangle box = { rx, y - bh * 0.5f, rw, bh };
+            Color tc = Fade(cur ? (Color){ 255, 255, 255, 255 } : ink, a);
+            Texture2D tex;
+            const char *name = (idx >= 0 && idx < ActiveGameTotal() && ActiveGames()[idx].title)
+                               ? ActiveGames()[idx].title : "";
+            if (cur) DrawRectangleRounded(box, 0.3f, 6, Fade(ink, a));
+            else DrawRectangleRoundedLinesEx(box, 0.3f, 6, 1.5f, Fade(line, a));
+            tex = GetBoxart(idx);
+            if (tex.id != 0 && tex.width > 0 && tex.height > 0) {
+                float ox, oy, dw, dh;
+                Rectangle slot = { rx + sh * 0.010f, y - bh * 0.38f, thW, bh * 0.76f };
+                CoverDestInSlot(slot, tex, 1.0f, 0.0f, &ox, &oy, &dw, &dh);
+                DrawTexturePro(tex,
+                               (Rectangle){ 0, 0, (float)tex.width, (float)tex.height },
+                               (Rectangle){ ox, oy, dw, dh },
+                               (Vector2){ 0, 0 }, 0.0f, Fade(WHITE, a));
+            }
+            Details_Text(font, name,
+                         (Vector2){ rx + sh * 0.016f + thW, y - sh * 0.014f },
+                         sh * 0.026f, rw - thW - sh * 0.032f, tc);
+        }
+    }
+}
+
+static void Status_Draw(Font font) {
+    if (statusT <= 0.0f) return;
+    float a = statusT;
+    const Color ink = { 44, 49, 50, 255 }, meta = { 92, 97, 98, 255 };
+    const Color light = { 128, 134, 136, 255 }, track = { 214, 220, 222, 255 };
+    const Color line = { 214, 220, 222, 255 }, inner = { 250, 252, 252, 255 };
+    Rectangle card;
+    float lw, rad;
+    Details_DrawFrameH(a, &card, &lw, &rad, Status_CardHeight((float)GetScreenHeight()));
+    Status_DrawTabs(font, card, lw, a, ink, meta, line);
+
+    if (statusTab == STATUS_TAB_STATS)
+        Status_DrawStats(font, card, lw, rad, a, ink, meta, light, track, line, inner);
+    else if (statusTab == STATUS_TAB_EMU)
+        Status_DrawEmu(font, card, lw, a, ink, meta, line, inner);
+    else
+        Status_DrawPlaceholder(font, card, lw, a, ink, meta);
+
+    InfoBar_Draw(font);
 }
 
 #endif /* NSO_STATUSPANEL_H */

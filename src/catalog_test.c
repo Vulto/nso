@@ -14,6 +14,8 @@
 #include "systems/n64.h"
 #define GAMECUBE_IMPLEMENTATION
 #include "systems/gamecube.h"
+#define MEGADRIVE_IMPLEMENTATION
+#include "systems/megadrive.h"
 
 static int fails = 0;
 
@@ -44,6 +46,7 @@ int main(void)
     check("snes", snes_games, snes_game_count);
     check("n64", n64_games, n64_game_count);
     check("gamecube", gamecube_games, gamecube_game_count);
+    check("megadrive", megadrive_games, megadrive_game_count);
     if (fails) return 1;
     printf("catalog_test: ok\n");
     return 0;

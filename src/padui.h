@@ -1,6 +1,6 @@
-/* padui.h - Settings > Controller (NES, SNES and N64): the controller drawn in white line art
- * (raylib primitives, after the reference picture) with a lit white button for every
- * pressed control, and Mednafen-style sequential mapping. Included by main.c after the
+/* padui.h - Settings > Controller (NES, SNES, N64 and GameCube): NES, SNES and N64 are drawn in
+ * white line art (raylib primitives); GameCube uses the reference line-art image with a lit white
+ * button for every pressed control, and Mednafen-style sequential mapping. Included by main.c after the
  * scrape page; uses its statics. The screen is a third page below Image scraping:
  * the Settings page scrolls down to it like it does to the scrape rows.
  *
@@ -43,7 +43,7 @@
 #define PADUI_BLINK_HZ 3.0
 #define PADUI_HOLD_SEC 0.9         /* every hold on this screen: B back, A remap, ZR reset, skip a prompt */
 
-static NesPadMap nesPad, snesPad, n64Pad;    /* the map of each system (padmap.h) */
+static NesPadMap nesPad, snesPad, n64Pad, gcPad;    /* the map of each system (padmap.h) */
 static const PadSys *padSys = &PADSYS_NES;   /* the system whose screen is open */
 static PadSysMap *padMapP = &nesPad;
 #define PADCUR (*padMapP)
@@ -81,6 +81,7 @@ static void Pad_LoadMaps(void) {
     PadMap_Load(&PADSYS_NES, &nesPad, text);
     PadMap_Load(&PADSYS_SNES, &snesPad, text);
     PadMap_Load(&PADSYS_N64, &n64Pad, text);
+    PadMap_Load(&PADSYS_GC, &gcPad, text);
 }
 
 static void Pad_SaveMap(void) {
@@ -129,9 +130,9 @@ static void PadUi_Close(void) {
 }
 
 /* Entering the screen shows the live controller; "Map Controls" starts the mapping. */
-static void PadUi_Select(int kind) {   /* the system of a screen: 0 NES, 1 SNES, 2 N64 */
-    padSys = kind == 2 ? &PADSYS_N64 : kind == 1 ? &PADSYS_SNES : &PADSYS_NES;
-    padMapP = kind == 2 ? &n64Pad : kind == 1 ? &snesPad : &nesPad;
+static void PadUi_Select(int kind) {   /* the system of a screen: 0 NES, 1 SNES, 2 N64, 3 GameCube */
+    padSys = kind == 3 ? &PADSYS_GC : kind == 2 ? &PADSYS_N64 : kind == 1 ? &PADSYS_SNES : &PADSYS_NES;
+    padMapP = kind == 3 ? &gcPad : kind == 2 ? &n64Pad : kind == 1 ? &snesPad : &nesPad;
 }
 
 static void PadUi_Open(int kind) {
@@ -171,9 +172,34 @@ static bool PadUi_N64Analog(int btn) {
     }
 }
 
+/* GameCube: the main stick, the C-stick and the analog L / R triggers light from the axes. */
+static bool PadUi_GcAnalog(int btn) {
+    float lx, ly, rx, ry, lt, rt;
+    if (padSys != &PADSYS_GC || !IsGamepadAvailable(0)) return false;
+    lx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+    ly = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+    rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
+    ry = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+    lt = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_TRIGGER);
+    rt = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_TRIGGER);
+    switch (btn) {
+        case GC_BTN_SUP: return ly < -0.5f;
+        case GC_BTN_SDOWN: return ly > 0.5f;
+        case GC_BTN_SLEFT: return lx < -0.5f;
+        case GC_BTN_SRIGHT: return lx > 0.5f;
+        case GC_BTN_CUP: return ry < -0.5f;
+        case GC_BTN_CDOWN: return ry > 0.5f;
+        case GC_BTN_CLEFT: return rx < -0.5f;
+        case GC_BTN_CRIGHT: return rx > 0.5f;
+        case GC_BTN_LA: return lt > 0.25f;
+        case GC_BTN_RA: return rt > 0.25f;
+        default: return false;
+    }
+}
+
 static bool PadUi_Lit(int btn) {
     const PadBind *b = &PADCUR.b[btn];
-    return PadUi_N64Analog(btn) || (b->key && IsKeyDown(b->key))
+    return PadUi_N64Analog(btn) || PadUi_GcAnalog(btn) || (b->key && IsKeyDown(b->key))
         || (b->pad >= 0 && IsGamepadAvailable(0) && IsGamepadButtonDown(0, b->pad))
         || (b->jsKind != PAD_JS_NONE && JsPad_Down(b->jsKind, b->jsIdx));
 }
@@ -925,6 +951,280 @@ static void DrawN64Controller(float x, float y, float w, float th, const bool li
     }
 }
 
+/* ---- GameCube ---- */
+
+
+/* Map picture-pixel points of the GameCube reference into the view, then a filled fan
+ * (from the centroid, so a mild kidney still fills cleanly) and a closed outline. */
+static void PadGcMap(PadView v, const Vector2 *src, Vector2 *dst, int n) {
+    for (int i = 0; i < n; i++) dst[i] = PadV(v, src[i].x, src[i].y);
+}
+
+static void PadGcFill(const Vector2 *p, int n, Color c) {
+    float cx = 0.0f, cy = 0.0f;
+    Vector2 g;
+    for (int i = 0; i < n; i++) { cx += p[i].x; cy += p[i].y; }
+    g = (Vector2){ cx / (float)n, cy / (float)n };
+    for (int i = 0; i < n; i++) PadTri(g, p[i], p[(i + 1) % n], c);
+}
+
+
+/* Fill the lens between an open cap and the body edge under it. */
+static void PadGcFillBetween(PadView v, const Vector2 *cap, int nc, const Vector2 *under, int nu, Color c) {
+    Vector2 a[256], b[256];
+    float ld[256], total, t, u;
+    int i, j;
+    if (nc < 2 || nu < 2 || nc > 256 || nu > 256) return;
+    for (i = 0; i < nc; i++) a[i] = PadV(v, cap[i].x, cap[i].y);
+    ld[0] = 0.0f;
+    for (i = 1; i < nu; i++) {
+        Vector2 p = PadV(v, under[i - 1].x, under[i - 1].y), q = PadV(v, under[i].x, under[i].y);
+        ld[i] = ld[i - 1] + hypotf(q.x - p.x, q.y - p.y);
+    }
+    total = ld[nu - 1];
+    for (i = 0; i < nc; i++) {
+        t = total * (float)i / (float)(nc - 1);
+        j = 0;
+        while (j + 1 < nu - 1 && ld[j + 1] < t) j++;
+        u = (ld[j + 1] - ld[j] > 1e-6f) ? (t - ld[j]) / (ld[j + 1] - ld[j]) : 0.0f;
+        {
+            Vector2 p = PadV(v, under[j].x, under[j].y), q = PadV(v, under[j + 1].x, under[j + 1].y);
+            b[i] = (Vector2){ p.x + (q.x - p.x) * u, p.y + (q.y - p.y) * u };
+        }
+    }
+    for (i = 0; i + 1 < nc; i++) {
+        PadTri(a[i], a[i + 1], b[i + 1], c);
+        PadTri(a[i], b[i + 1], b[i], c);
+    }
+}
+
+
+
+
+/* GameCube: the original reference line art (white on transparent) is drawn as a
+ * texture into the same box the procedural outline used, with press/highlight
+ * fills, D-pad arrows, and moving stick rings on top, aligned to the picture.
+ * (x, y) is the box's top-left, w its width; lit[b] fills that control white. */
+#define PADGC_W 1141.0f
+#define PADGC_H 849.0f
+#define PADGC_OX 131.0f
+#define PADGC_OY 200.0f
+
+static const Vector2 gcKidneyY[121] = {
+    {988.3f, 335.3f}, {990.7f, 334.7f}, {993.2f, 334.2f}, {995.6f, 333.7f}, {998.1f, 333.4f}, {1000.6f, 333.1f},
+    {1003.1f, 332.8f}, {1005.6f, 332.6f}, {1008.1f, 332.5f}, {1010.6f, 332.4f}, {1013.1f, 332.5f}, {1015.6f, 332.6f},
+    {1018.1f, 332.8f}, {1020.5f, 333.0f}, {1023.0f, 333.2f}, {1025.5f, 333.5f}, {1028.0f, 333.9f}, {1030.4f, 334.5f},
+    {1032.8f, 335.3f}, {1035.1f, 336.3f}, {1037.3f, 337.5f}, {1039.4f, 338.7f}, {1041.5f, 340.1f}, {1043.6f, 341.5f},
+    {1045.5f, 343.1f}, {1047.4f, 344.8f}, {1049.1f, 346.6f}, {1050.6f, 348.6f}, {1051.9f, 350.7f}, {1052.8f, 353.0f},
+    {1053.6f, 355.4f}, {1054.1f, 357.9f}, {1054.3f, 360.4f}, {1054.4f, 362.9f}, {1054.2f, 365.4f}, {1053.9f, 367.8f},
+    {1053.5f, 370.3f}, {1052.9f, 372.7f}, {1052.1f, 375.1f}, {1051.3f, 377.4f}, {1050.3f, 379.7f}, {1049.1f, 381.9f},
+    {1047.7f, 384.0f}, {1046.0f, 385.9f}, {1044.2f, 387.5f}, {1042.1f, 389.0f}, {1039.9f, 390.0f}, {1037.4f, 390.6f},
+    {1035.0f, 391.0f}, {1032.5f, 391.2f}, {1030.0f, 391.4f}, {1027.5f, 391.6f}, {1025.0f, 391.8f}, {1022.5f, 392.0f},
+    {1020.0f, 392.3f}, {1017.6f, 392.7f}, {1015.1f, 393.3f}, {1012.7f, 393.9f}, {1010.3f, 394.6f}, {1007.9f, 395.4f},
+    {1005.5f, 396.1f}, {1003.2f, 396.9f}, {1000.8f, 397.7f}, {998.4f, 398.5f}, {996.1f, 399.3f}, {993.7f, 400.2f},
+    {991.4f, 401.0f}, {989.0f, 401.9f}, {986.7f, 402.8f}, {984.3f, 403.6f}, {982.0f, 404.4f}, {979.6f, 405.2f},
+    {977.2f, 406.0f}, {974.8f, 406.7f}, {972.4f, 407.5f}, {970.0f, 408.1f}, {967.6f, 408.7f}, {965.1f, 409.2f},
+    {962.6f, 409.3f}, {960.2f, 409.2f}, {957.7f, 408.7f}, {955.3f, 408.0f}, {953.0f, 407.0f}, {950.9f, 405.6f},
+    {949.0f, 404.0f}, {947.4f, 402.1f}, {946.2f, 399.9f}, {945.3f, 397.6f}, {944.5f, 395.2f}, {943.9f, 392.8f},
+    {943.5f, 390.3f}, {943.2f, 387.8f}, {943.2f, 385.3f}, {943.3f, 382.8f}, {943.5f, 380.3f}, {943.8f, 377.9f},
+    {944.2f, 375.4f}, {944.8f, 373.0f}, {945.4f, 370.5f}, {946.2f, 368.2f}, {947.0f, 365.8f}, {948.1f, 363.5f},
+    {949.3f, 361.3f}, {950.7f, 359.3f}, {952.2f, 357.3f}, {953.9f, 355.4f}, {955.6f, 353.7f}, {957.5f, 352.0f},
+    {959.4f, 350.4f}, {961.4f, 348.9f}, {963.4f, 347.4f}, {965.5f, 346.1f}, {967.7f, 344.8f}, {969.9f, 343.6f},
+    {972.1f, 342.4f}, {974.3f, 341.2f}, {976.5f, 340.1f}, {978.7f, 339.0f}, {981.0f, 338.0f}, {983.3f, 337.0f},
+    {985.7f, 336.1f}
+};
+
+static const Vector2 gcKidneyX[122] = {
+    {1131.2f, 405.1f}, {1133.5f, 404.1f}, {1135.9f, 403.4f}, {1138.3f, 402.7f}, {1140.7f, 402.2f}, {1143.2f, 401.9f},
+    {1145.7f, 401.8f}, {1148.2f, 401.8f}, {1150.7f, 402.0f}, {1153.2f, 402.2f}, {1155.7f, 402.6f}, {1158.1f, 403.1f},
+    {1160.5f, 403.8f}, {1162.9f, 404.5f}, {1165.2f, 405.5f}, {1167.5f, 406.6f}, {1169.6f, 407.9f}, {1171.6f, 409.4f},
+    {1173.4f, 411.1f}, {1175.2f, 412.8f}, {1177.0f, 414.6f}, {1178.6f, 416.5f}, {1180.2f, 418.4f}, {1181.7f, 420.4f},
+    {1183.2f, 422.4f}, {1184.6f, 424.5f}, {1185.9f, 426.6f}, {1187.2f, 428.8f}, {1188.4f, 430.9f}, {1189.6f, 433.1f},
+    {1190.7f, 435.4f}, {1191.6f, 437.7f}, {1192.3f, 440.1f}, {1192.9f, 442.5f}, {1193.4f, 445.0f}, {1193.9f, 447.4f},
+    {1194.2f, 449.9f}, {1194.5f, 452.4f}, {1194.7f, 454.9f}, {1194.8f, 457.4f}, {1194.8f, 459.9f}, {1194.7f, 462.4f},
+    {1194.6f, 464.9f}, {1194.4f, 467.4f}, {1194.1f, 469.8f}, {1193.7f, 472.3f}, {1193.3f, 474.8f}, {1192.9f, 477.2f},
+    {1192.4f, 479.7f}, {1191.8f, 482.1f}, {1191.2f, 484.5f}, {1190.5f, 486.9f}, {1189.8f, 489.3f}, {1189.0f, 491.7f},
+    {1188.2f, 494.1f}, {1187.2f, 496.4f}, {1186.1f, 498.6f}, {1184.8f, 500.8f}, {1183.4f, 502.8f}, {1181.9f, 504.8f},
+    {1180.2f, 506.7f}, {1178.4f, 508.3f}, {1176.4f, 509.8f}, {1174.3f, 511.2f}, {1172.2f, 512.5f}, {1169.9f, 513.7f},
+    {1167.6f, 514.6f}, {1165.2f, 515.3f}, {1162.8f, 515.8f}, {1160.3f, 516.2f}, {1157.8f, 516.3f}, {1155.3f, 516.2f},
+    {1152.9f, 515.6f}, {1150.6f, 514.7f}, {1148.4f, 513.5f}, {1146.3f, 512.1f}, {1144.4f, 510.5f}, {1142.6f, 508.8f},
+    {1140.9f, 506.9f}, {1139.5f, 504.8f}, {1138.4f, 502.6f}, {1137.6f, 500.3f}, {1136.9f, 497.9f}, {1136.3f, 495.4f},
+    {1135.8f, 493.0f}, {1135.3f, 490.5f}, {1135.0f, 488.1f}, {1134.7f, 485.6f}, {1134.5f, 483.1f}, {1134.4f, 480.6f},
+    {1134.1f, 478.1f}, {1133.8f, 475.6f}, {1133.6f, 473.1f}, {1133.3f, 470.6f}, {1132.9f, 468.2f}, {1132.3f, 465.7f},
+    {1131.5f, 463.4f}, {1130.5f, 461.1f}, {1129.4f, 458.9f}, {1128.2f, 456.6f}, {1127.2f, 454.4f}, {1126.0f, 452.2f},
+    {1124.9f, 449.9f}, {1123.8f, 447.7f}, {1122.7f, 445.4f}, {1121.9f, 443.1f}, {1121.1f, 440.7f}, {1120.3f, 438.3f},
+    {1119.7f, 435.9f}, {1119.2f, 433.5f}, {1118.9f, 431.0f}, {1118.9f, 428.5f}, {1119.1f, 426.0f}, {1119.5f, 423.5f},
+    {1120.0f, 421.1f}, {1120.7f, 418.7f}, {1121.5f, 416.3f}, {1122.4f, 414.0f}, {1123.6f, 411.8f}, {1125.1f, 409.8f},
+    {1126.8f, 408.0f}, {1128.8f, 406.5f}
+};
+
+static const Vector2 gcTabL[91] = {
+    {256.9f, 315.6f}, {256.5f, 312.0f}, {257.0f, 310.1f}, {257.5f, 308.1f}, {258.0f, 306.2f}, {258.5f, 304.2f},
+    {259.0f, 302.2f}, {259.5f, 300.3f}, {260.1f, 298.3f}, {260.9f, 297.0f}, {261.9f, 295.3f}, {262.9f, 293.5f},
+    {263.9f, 291.8f}, {264.9f, 290.0f}, {266.0f, 288.3f}, {267.0f, 286.6f}, {268.2f, 284.9f}, {269.3f, 283.2f},
+    {270.5f, 281.6f}, {271.6f, 279.9f}, {272.9f, 278.3f}, {274.1f, 276.7f}, {275.4f, 275.1f}, {276.7f, 273.6f},
+    {278.1f, 272.1f}, {279.4f, 270.6f}, {280.8f, 269.2f}, {282.3f, 267.7f}, {283.7f, 266.3f}, {285.2f, 265.0f},
+    {286.8f, 263.6f}, {288.3f, 262.4f}, {289.9f, 261.1f}, {291.5f, 259.9f}, {293.2f, 258.7f}, {294.8f, 257.6f},
+    {296.5f, 256.5f}, {298.3f, 255.4f}, {300.0f, 254.4f}, {301.8f, 253.4f}, {303.6f, 252.5f}, {305.4f, 251.6f},
+    {307.2f, 250.7f}, {309.0f, 249.9f}, {310.9f, 249.0f}, {312.8f, 248.3f}, {314.6f, 247.5f}, {316.5f, 246.8f},
+    {318.4f, 246.1f}, {320.4f, 245.5f}, {322.3f, 244.9f}, {324.2f, 244.3f}, {326.2f, 243.8f}, {328.2f, 243.3f},
+    {330.1f, 242.9f}, {332.1f, 242.4f}, {334.1f, 242.0f}, {336.1f, 241.7f}, {338.1f, 241.3f}, {340.1f, 241.0f},
+    {342.1f, 240.6f}, {344.1f, 240.4f}, {346.1f, 240.2f}, {348.1f, 240.0f}, {350.1f, 240.0f}, {352.1f, 240.0f},
+    {354.2f, 240.0f}, {356.2f, 240.1f}, {358.2f, 240.3f}, {360.2f, 240.5f}, {362.2f, 240.8f}, {364.2f, 241.1f},
+    {366.2f, 241.4f}, {368.2f, 241.8f}, {370.2f, 242.3f}, {372.1f, 242.8f}, {374.1f, 243.3f}, {376.0f, 243.8f},
+    {378.0f, 244.4f}, {379.9f, 245.0f}, {381.8f, 245.6f}, {383.8f, 246.2f}, {385.7f, 246.8f}, {386.9f, 247.2f},
+    {388.5f, 248.4f}, {390.1f, 249.7f}, {391.7f, 250.9f}, {393.3f, 252.2f}, {394.8f, 253.5f}, {396.4f, 254.7f},
+    {398.6f, 257.5f}
+};
+
+static const Vector2 gcTabR[97] = {
+    {986.3f, 256.6f}, {988.7f, 253.9f}, {990.4f, 252.9f}, {992.1f, 251.8f}, {993.8f, 250.8f}, {995.5f, 249.7f},
+    {997.3f, 248.7f}, {999.0f, 247.6f}, {1000.7f, 246.6f}, {1002.0f, 246.5f}, {1003.9f, 246.0f}, {1005.9f, 245.5f},
+    {1007.9f, 245.1f}, {1009.8f, 244.7f}, {1011.8f, 244.3f}, {1013.8f, 243.9f}, {1015.7f, 243.6f}, {1017.7f, 243.2f},
+    {1019.7f, 243.0f}, {1021.7f, 242.7f}, {1023.7f, 242.5f}, {1025.7f, 242.3f}, {1027.7f, 242.1f}, {1029.7f, 242.0f},
+    {1031.7f, 242.0f}, {1033.7f, 242.0f}, {1035.8f, 242.0f}, {1037.8f, 242.0f}, {1039.8f, 242.0f}, {1041.8f, 242.0f},
+    {1043.8f, 242.0f}, {1045.8f, 242.0f}, {1047.8f, 242.0f}, {1049.8f, 242.0f}, {1051.8f, 242.2f}, {1053.8f, 242.4f},
+    {1055.8f, 242.7f}, {1057.8f, 243.1f}, {1059.8f, 243.5f}, {1061.7f, 243.9f}, {1063.7f, 244.4f}, {1065.6f, 244.9f},
+    {1067.6f, 245.4f}, {1069.5f, 245.9f}, {1071.4f, 246.5f}, {1073.4f, 247.1f}, {1075.3f, 247.7f}, {1077.2f, 248.3f},
+    {1079.1f, 249.0f}, {1081.0f, 249.7f}, {1082.9f, 250.4f}, {1084.7f, 251.2f}, {1086.6f, 252.0f}, {1088.4f, 252.8f},
+    {1090.2f, 253.6f}, {1092.0f, 254.5f}, {1093.8f, 255.4f}, {1095.6f, 256.4f}, {1097.4f, 257.3f}, {1099.1f, 258.3f},
+    {1100.9f, 259.3f}, {1102.6f, 260.3f}, {1104.3f, 261.4f}, {1106.0f, 262.5f}, {1107.6f, 263.7f}, {1109.3f, 264.8f},
+    {1110.9f, 266.0f}, {1112.5f, 267.2f}, {1114.1f, 268.5f}, {1115.6f, 269.7f}, {1117.2f, 271.0f}, {1118.7f, 272.3f},
+    {1120.2f, 273.6f}, {1121.7f, 275.0f}, {1123.2f, 276.3f}, {1124.7f, 277.7f}, {1126.1f, 279.2f}, {1127.5f, 280.6f},
+    {1128.8f, 282.1f}, {1130.1f, 283.7f}, {1131.4f, 285.2f}, {1132.6f, 286.8f}, {1133.9f, 288.4f}, {1135.1f, 290.0f},
+    {1136.2f, 291.6f}, {1137.4f, 293.3f}, {1138.5f, 294.9f}, {1139.6f, 296.6f}, {1140.5f, 297.5f}, {1141.2f, 299.5f},
+    {1141.7f, 301.4f}, {1142.3f, 303.3f}, {1142.8f, 305.3f}, {1143.4f, 307.2f}, {1143.9f, 309.1f}, {1144.5f, 311.1f},
+    {1144.3f, 314.3f}
+};
+
+
+static const Vector2 gcUnderL[53] = {
+    {256.9f, 315.6f}, {259.3f, 314.1f}, {262.0f, 312.7f}, {264.7f, 311.4f}, {267.4f, 310.1f}, {270.1f, 308.9f},
+    {272.9f, 307.6f}, {275.6f, 306.4f}, {278.4f, 305.2f}, {281.2f, 304.1f}, {283.9f, 302.9f}, {286.7f, 301.8f},
+    {289.5f, 300.7f}, {292.3f, 299.6f}, {295.2f, 298.6f}, {298.0f, 297.6f}, {300.8f, 296.6f}, {303.7f, 295.7f},
+    {306.6f, 294.8f}, {309.5f, 294.0f}, {312.4f, 293.2f}, {315.3f, 292.4f}, {318.2f, 291.7f}, {321.1f, 291.1f},
+    {324.1f, 290.5f}, {327.0f, 289.9f}, {330.0f, 289.4f}, {333.0f, 288.8f}, {335.9f, 288.3f}, {338.9f, 287.7f},
+    {341.8f, 287.0f}, {344.7f, 286.2f}, {347.5f, 285.3f}, {350.3f, 284.0f}, {352.9f, 282.6f}, {355.5f, 281.1f},
+    {358.1f, 279.5f}, {360.7f, 278.0f}, {363.2f, 276.4f}, {365.8f, 274.8f}, {368.4f, 273.3f}, {371.0f, 271.9f},
+    {373.6f, 270.4f}, {376.3f, 269.0f}, {378.9f, 267.5f}, {381.6f, 266.1f}, {384.2f, 264.7f}, {386.9f, 263.3f},
+    {389.6f, 261.9f}, {392.2f, 260.5f}, {394.9f, 259.2f}, {397.7f, 257.9f}, {398.6f, 257.5f}
+};
+
+static const Vector2 gcUnderR[58] = {
+    {986.3f, 256.6f}, {989.1f, 257.8f}, {991.8f, 259.1f}, {994.5f, 260.4f}, {997.2f, 261.8f}, {999.9f, 263.1f},
+    {1002.6f, 264.5f}, {1005.3f, 265.8f}, {1008.0f, 267.1f}, {1010.7f, 268.4f}, {1013.4f, 269.7f}, {1016.1f, 271.0f},
+    {1018.8f, 272.4f}, {1021.4f, 273.9f}, {1024.0f, 275.4f}, {1026.5f, 277.0f}, {1029.1f, 278.6f}, {1031.6f, 280.3f},
+    {1034.1f, 281.9f}, {1036.7f, 283.5f}, {1039.4f, 284.7f}, {1042.2f, 285.7f}, {1045.2f, 286.3f}, {1048.2f, 286.7f},
+    {1051.2f, 287.0f}, {1054.2f, 287.2f}, {1057.1f, 287.5f}, {1060.1f, 287.9f}, {1063.1f, 288.3f}, {1066.1f, 288.7f},
+    {1069.1f, 289.2f}, {1072.0f, 289.7f}, {1075.0f, 290.3f}, {1077.9f, 290.9f}, {1080.9f, 291.5f}, {1083.8f, 292.2f},
+    {1086.7f, 292.9f}, {1089.6f, 293.6f}, {1092.5f, 294.4f}, {1095.4f, 295.2f}, {1098.3f, 296.1f}, {1101.2f, 297.0f},
+    {1104.0f, 297.9f}, {1106.9f, 298.9f}, {1109.7f, 299.9f}, {1112.5f, 300.9f}, {1115.3f, 302.0f}, {1118.1f, 303.1f},
+    {1120.9f, 304.3f}, {1123.7f, 305.4f}, {1126.5f, 306.6f}, {1129.2f, 307.7f}, {1132.0f, 308.9f}, {1134.8f, 310.0f},
+    {1137.6f, 311.2f}, {1140.4f, 312.3f}, {1143.1f, 313.6f}, {1144.3f, 314.3f}
+};
+
+
+static Texture2D gcLinesTex;
+static bool gcLinesTried;
+
+static void PadUi_LoadGcLines(void) {
+    Image img;
+    if (gcLinesTried) return;
+    gcLinesTried = true;
+    img = LoadImage(GetDataPath("assets/images/ui/gamecube-lines.png"));
+    if (!img.data) return;
+    gcLinesTex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    if (gcLinesTex.id) {
+        GenTextureMipmaps(&gcLinesTex);
+        SetTextureFilter(gcLinesTex, TEXTURE_FILTER_TRILINEAR);
+    }
+}
+
+static void DrawGamecubeController(float x, float y, float w, const bool lit[PAD_MAX_BTN], Color c) {
+    float s = w / PADGC_W;
+    float h = w * (PADGC_H / PADGC_W);
+    PadView v = { x + (70.0f - PADGC_OX) * s, y + (165.0f - PADGC_OY) * s, s };
+    float th = fmaxf(1.5f, 1.3f * w / 340.0f);
+    float thM = th * 0.8f, thL = fmaxf(1.0f, th * 0.55f);
+    Vector2 buf[256];
+
+    PadUi_LoadGcLines();
+    if (gcLinesTex.id) {
+        DrawTexturePro(gcLinesTex,
+                       (Rectangle){ 0, 0, (float)gcLinesTex.width, (float)gcLinesTex.height },
+                       (Rectangle){ x, y, w, h },
+                       (Vector2){ 0, 0 }, 0.0f, c);
+    }
+    /* True circle around the left-stick octagon (deliberate; the image's non-circular well was removed). */
+    PadCircle(PadV(v, 362.0f, 490.6f), 120.6f * s, 10.0f * s, c);
+
+    /* Shoulder, face-button and Start fills when pressed or blinking. The outlines are in the image. */
+    if (lit[GC_BTN_L] || lit[GC_BTN_LA])
+        PadGcFillBetween(v, gcTabL, (int)(sizeof gcTabL / sizeof gcTabL[0]),
+                         gcUnderL, (int)(sizeof gcUnderL / sizeof gcUnderL[0]), c);
+    if (lit[GC_BTN_R] || lit[GC_BTN_RA])
+        PadGcFillBetween(v, gcTabR, (int)(sizeof gcTabR / sizeof gcTabR[0]),
+                         gcUnderR, (int)(sizeof gcUnderR / sizeof gcUnderR[0]), c);
+
+    /* D-pad arrows (the plus itself is in the image), filled when that direction is lit. */
+    {
+        const float cx = 515.0f, cy = 732.0f, cxUD = 517.2f;   /* up/down sit on the image arm's horizontal mid */
+        static const int ddx[4] = { 0, 0, -1, 1 }, ddy[4] = { -1, 1, 0, 0 };
+        for (int d = 0; d < 4; d++) {
+            const float apex = 68.0f, base = 46.0f, half = 13.0f;
+            float ux = (float)ddx[d], uy = (float)ddy[d];
+            float tcx = (d < 2) ? cxUD : cx;
+            Vector2 tri[3] = {
+                PadV(v, tcx + ux * apex, cy + uy * apex),
+                PadV(v, tcx + ux * base - uy * half, cy + uy * base + ux * half),
+                PadV(v, tcx + ux * base + uy * half, cy + uy * base - ux * half) };
+            PadRoundPolyG(tri, 3, 3.5f * s, thM, lit[GC_BTN_UP + d], c);
+        }
+    }
+
+    {
+        Vector2 sc = PadV(v, 699.0f, 492.0f);
+        Vector2 bc = PadV(v, 915.68f, 549.66f), ac = PadV(v, 1040.18f, 489.20f);
+        float sr = 32.0f * s, br = 42.2f * s, ar = 65.6f * s;
+        if (lit[GC_BTN_START]) DrawCircleV(sc, fmaxf(0.0f, sr - 5.0f * s), c);
+        /* A/B fills use the image rings' exact centres and mid-radii, up to the outline. */
+        if (lit[GC_BTN_B]) DrawCircleV(bc, br, c);
+        if (lit[GC_BTN_A]) DrawCircleV(ac, ar, c);
+    }
+
+    if (lit[GC_BTN_Y]) {
+        PadGcMap(v, gcKidneyY, buf, (int)(sizeof gcKidneyY / sizeof gcKidneyY[0]));
+        PadGcFill(buf, (int)(sizeof gcKidneyY / sizeof gcKidneyY[0]), c);
+    }
+    if (lit[GC_BTN_X]) {
+        PadGcMap(v, gcKidneyX, buf, (int)(sizeof gcKidneyX / sizeof gcKidneyX[0]));
+        PadGcFill(buf, (int)(sizeof gcKidneyX / sizeof gcKidneyX[0]), c);
+    }
+
+    /* Main stick and C-stick: the octagon gates stay in the image; the inner circles move with tilt and are not filled. */
+    {
+        const float cx = 362.0f, cy = 490.0f;
+        float tx = (float)(lit[GC_BTN_SRIGHT] - lit[GC_BTN_SLEFT]);
+        float ty = (float)(lit[GC_BTN_SDOWN] - lit[GC_BTN_SUP]);
+        float tl = hypotf(tx, ty), amt = 14.0f;
+        Vector2 mc = PadV(v, cx, cy);
+        if (tl > 0.0f) { mc.x += tx / tl * amt * s; mc.y += ty / tl * amt * s; }
+        PadCircle(mc, 64.2f * s, thL, c);
+        PadCircle(mc, 39.6f * s, thL, c);
+        PadCircle(mc, 17.7f * s, thM, c);
+    }
+    {
+        const float cx = 884.0f, cy = 734.0f;
+        float tx = (float)(lit[GC_BTN_CRIGHT] - lit[GC_BTN_CLEFT]);
+        float ty = (float)(lit[GC_BTN_CDOWN] - lit[GC_BTN_CUP]);
+        float tl = hypotf(tx, ty), amt = 10.0f;
+        Vector2 mc = PadV(v, cx, cy);
+        if (tl > 0.0f) { mc.x += tx / tl * amt * s; mc.y += ty / tl * amt * s; }
+        PadCircle(mc, 50.5f * s, thM, c);
+    }
+}
+
 /* The prompt's name of the step-th button of the open system. */
 static StrId PadUi_Label(int step) {
     static const StrId nes[NES_BTN_COUNT] = { S_PC_UP, S_PC_DOWN, S_PC_LEFT, S_PC_RIGHT, S_PC_SELECT, S_PC_START, S_PC_B, S_PC_A };
@@ -933,7 +1233,12 @@ static StrId PadUi_Label(int step) {
     static const StrId n64[N64_BTN_COUNT] = { S_PC_DP_UP, S_PC_DP_DOWN, S_PC_DP_LEFT, S_PC_DP_RIGHT, S_PC_ST_UP, S_PC_ST_DOWN,
                                               S_PC_ST_LEFT, S_PC_ST_RIGHT, S_PC_START, S_PC_A, S_PC_B, S_PC_Z, S_PC_L, S_PC_R,
                                               S_PC_C_UP, S_PC_C_DOWN, S_PC_C_LEFT, S_PC_C_RIGHT };
-    return padSys == &PADSYS_N64 ? n64[step] : padSys == &PADSYS_SNES ? snes[step] : nes[step];
+    static const StrId gc[GC_BTN_COUNT] = { S_PC_DP_UP, S_PC_DP_DOWN, S_PC_DP_LEFT, S_PC_DP_RIGHT, S_PC_ST_UP, S_PC_ST_DOWN,
+                                            S_PC_ST_LEFT, S_PC_ST_RIGHT, S_PC_START, S_PC_A, S_PC_B, S_PC_X, S_PC_Y, S_PC_Z,
+                                            S_PC_L, S_PC_R, S_PC_L_ANALOG, S_PC_R_ANALOG,
+                                            S_PC_CS_UP, S_PC_CS_DOWN, S_PC_CS_LEFT, S_PC_CS_RIGHT };
+    return padSys == &PADSYS_GC ? gc[step] : padSys == &PADSYS_N64 ? n64[step]
+         : padSys == &PADSYS_SNES ? snes[step] : nes[step];
 }
 
 /* The drawing is rendered PADUI_SS times larger into a transparent texture, mipmapped and drawn down
@@ -946,12 +1251,24 @@ static int padRTW = 0, padRTH = 0;
 static unsigned padRTKey = 0xffffffffu;
 static bool padLit[PAD_MAX_BTN];
 
+static void PadUi_Unload(void) {
+    if (gcLinesTex.id) { UnloadTexture(gcLinesTex); gcLinesTex = (Texture2D){ 0 }; }
+    gcLinesTried = false;
+    if (padRT.id) { UnloadRenderTexture(padRT); padRT = (RenderTexture2D){ 0 }; }
+    padRTW = 0;
+    padRTH = 0;
+    padRTKey = 0xffffffffu;
+}
+
 /* Where the drawing goes: its width, the box's height, the left edge and the centre line. */
 static void PadUi_Geom(float *bw, float *boxH, float *bx, float *cy) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float full = sw * 0.387f;   /* the NES / SNES width; the N64's box is narrower (it is tall), same centre */
     *bw = padSys == &PADSYS_N64 ? sw * 0.30f : full;
-    *boxH = padSys == &PADSYS_N64 ? PADN64_H * *bw / PADN64_W : padSys == &PADSYS_SNES ? PADSNES_H * *bw / PADSNES_W : 149.0f * *bw / 340.0f;
+    if (padSys == &PADSYS_N64) *boxH = PADN64_H * *bw / PADN64_W;
+    else if (padSys == &PADSYS_SNES) *boxH = PADSNES_H * *bw / PADSNES_W;
+    else if (padSys == &PADSYS_GC) *boxH = PADGC_H * *bw / PADGC_W;
+    else *boxH = 149.0f * *bw / 340.0f;
     *bx = sw * 0.485f + (full - *bw) * 0.5f;
     *cy = sh * PADUI_PAGE_Y + sh * 0.5f;   /* the controller sits in the middle of the page */
 }
@@ -963,7 +1280,7 @@ static void PadUi_Prepare(void) {
     unsigned key = 0;
     int W, H;
     if (!padOpen) {   /* the page is leaving: it keeps showing the current system's pad, nothing lit */
-        PadUi_Select(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
+        PadUi_Select(PadUi_KindOf(currentSystem));
     }
     snes = padSys == &PADSYS_SNES;
     PadUi_Geom(&bw, &boxH, &bx, &cy);
@@ -973,7 +1290,7 @@ static void PadUi_Prepare(void) {
     /* Only a button's own bindings light it. The controls that hold to remap / go back (the pad's A / B,
      * Enter, the A / B keys) are NSO's, not the game's: with a remapped pad they are other buttons' controls. */
     for (int i = 0; i < PAD_MAX_BTN; i++) if (padLit[i]) key |= 1u << i;
-    key |= (unsigned)(padSys == &PADSYS_N64 ? 2 : snes ? 1 : 0) << 20;
+    key |= (unsigned)(padSys == &PADSYS_GC ? 3 : padSys == &PADSYS_N64 ? 2 : snes ? 1 : 0) << 20;
     W = (int)ceilf(bw) + 2 * (int)PADUI_MARGIN;
     H = (int)ceilf(boxH) + 2 * (int)PADUI_MARGIN;
     if (!padRT.id || W != padRTW || H != padRTH) {
@@ -990,6 +1307,8 @@ static void PadUi_Prepare(void) {
     if (padSys == &PADSYS_N64)   /* the same line weight as the NES controller's */
         DrawN64Controller(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS,
                           fmaxf(1.5f, 1.3f * (float)GetScreenWidth() * 0.387f * PADUI_SS / 340.0f), padLit, WHITE);
+    else if (padSys == &PADSYS_GC)
+        DrawGamecubeController(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS, padLit, WHITE);
     else if (snes) DrawSnesController(PADUI_MARGIN * PADUI_SS, PADUI_MARGIN * PADUI_SS, bw * PADUI_SS, padLit, WHITE);
     else {   /* the NES body's top-left is the reference (71, 166), the origin (70, 165) */
         float sc = bw * PADUI_SS / 340.0f;
@@ -1006,7 +1325,9 @@ static void PadUi_Draw(Font font, Color bg) {
     float oy = sh * PADUI_PAGE_Y;
     (void)bg;
     PadUi_Geom(&bw, &boxH, &bx, &cy);
-    DrawFitText(font, T(padSys == &PADSYS_N64 ? S_PC_ENTRY_N64 : padSys == &PADSYS_SNES ? S_PC_ENTRY_SNES : S_PC_ENTRY), (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
+    DrawFitText(font, T(padSys == &PADSYS_GC ? S_PC_ENTRY_GC : padSys == &PADSYS_N64 ? S_PC_ENTRY_N64
+                         : padSys == &PADSYS_SNES ? S_PC_ENTRY_SNES : S_PC_ENTRY),
+                (Vector2){ hx, oy + sh * 0.092f }, (float)font.baseSize * 0.85f, sw - hx, WHITE);
     if (padRT.id) {
         float ts = (float)padRT.texture.width, th = (float)padRT.texture.height;
         DrawTexturePro(padRT.texture, (Rectangle){ 0, 0, ts, -th },   /* RT is upside down */

@@ -17,11 +17,15 @@
 #include "launch.h"
 #include "raylib.h"
 #include "rlgl.h"   /* blend factors: erase inside the sidebar icon texture */
+#ifdef NSO_RELEASE
+#include "assetpack.h"
+#endif
 
 #define SCRAPE_IMPLEMENTATION
 #include "scrape.h"
 #define GAMESEL_IMPLEMENTATION
 #include "gamesel.h"
+#include "sneslist.h"
 
 #define SAVESTATE_IMPLEMENTATION
 #include "savestate.h"
@@ -29,12 +33,6 @@
 #include "lang.h"
 #define REPOS_IMPLEMENTATION
 #include "repos.h"
-#define ORDER_IMPLEMENTATION
-#include "order.h"
-#define SORT_IMPLEMENTATION
-#include "sort.h"
-#define HIDE_IMPLEMENTATION
-#include "hide.h"
 #define COVERS_IMPLEMENTATION
 #include "covers.h"
 #include <time.h>
@@ -49,6 +47,8 @@
 #include "systems/n64.h"
 #define GAMECUBE_IMPLEMENTATION
 #include "systems/gamecube.h"
+#define MEGADRIVE_IMPLEMENTATION
+#include "systems/megadrive.h"
 #define SFX_IMPLEMENTATION
 #include "sfx.h"
 #define ENTERANIM_IMPLEMENTATION
@@ -64,8 +64,29 @@
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
-#define MAX_GAMES 400
 #define FPS 60
+
+/* Grid capacity, derived from the catalogs: every static entry plus the
+ * wiki-live display rows one system can add (SYSLIST_MAX). Adding games to a
+ * system header raises this automatically. */
+#define NSO_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+#define MAX_GAMES ((int)(NSO_COUNT(nes_games) + NSO_COUNT(snes_games) \
+                       + NSO_COUNT(n64_games) + NSO_COUNT(gamecube_games) \
+                       + NSO_COUNT(megadrive_games) + SYSLIST_MAX))
+
+#define ORDER_IMPLEMENTATION
+#include "order.h"
+#include "gridlayout.h"
+#define SORT_IMPLEMENTATION
+#include "sort.h"
+#define HIDE_IMPLEMENTATION
+#include "hide.h"
+#define SYSSTATUS_IMPLEMENTATION
+#include "sysstatus.h"
+#define FAV_IMPLEMENTATION
+#include "fav.h"
+#define VERSION_IMPLEMENTATION
+#include "version.h"
 
 typedef struct {
     PlatformEntry *platform;
@@ -78,15 +99,21 @@ static System systems[] = {
     { &snes_platform,     snes_games,     &snes_game_count },
     { &n64_platform,      n64_games,      &n64_game_count },
     { &gamecube_platform, gamecube_games, &gamecube_game_count },
+    { &megadrive_platform, megadrive_games, &megadrive_game_count },
 };
 
 static const int SYSTEM_COUNT = (int)(sizeof(systems) / sizeof(systems[0]));
 
-/* Hide unplayable (hide.h, per system): the games array keeps every title with
- * the playable ones first; while hideOn, only the first hideShown are shown. */
+/* Hide unplayable / Favorites filter (hide.h, fav.h, per system): the games
+ * array keeps every title; hidden ones are moved to the back and only the
+ * first hideShown are shown while hideReady (a filter is on). */
 static bool hideOn[sizeof(systems) / sizeof(systems[0])];
 static bool hideReady[sizeof(systems) / sizeof(systems[0])];
 static int hideShown[sizeof(systems) / sizeof(systems[0])];
+static bool favOn[sizeof(systems) / sizeof(systems[0])];
+static char *favText[sizeof(systems) / sizeof(systems[0])];
+static bool showHidden[sizeof(systems) / sizeof(systems[0])];
+static char *hiddenText[sizeof(systems) / sizeof(systems[0])];
 static void Hide_Toggle(void);
 static void Hide_Resync(bool live);
 
@@ -94,6 +121,20 @@ static Texture2D gameBoxarts[MAX_GAMES];
 /* Cached even after the GPU texture is unloaded, so the mosaic does not jump. */
 static float boxartMetaW[MAX_GAMES];
 static float boxartMetaH[MAX_GAMES];
+/* Covers are keyed by game/group, not by slot index, so a hide or filter
+ * rebuild can move textures and size metadata with their titles. */
+static char coverSlotKey[MAX_GAMES][COVER_KEY_MAX];
+static int coverSlotN;
+
+static void Cover_RememberGame(int index, const GameEntry *g)
+{
+    if (index < 0 || index >= MAX_GAMES) return;
+    Covers_Key(g ? g->title : NULL, g ? g->boxartPath : NULL, g ? g->rom : NULL,
+               coverSlotKey[index], sizeof(coverSlotKey[index]));
+    if (coverSlotN <= index) coverSlotN = index + 1;
+}
+
+static void CoverSize_Note(int index, int w, int h);
 
 static void BoxartMetaRemember(int index, int w, int h)
 {
@@ -101,6 +142,7 @@ static void BoxartMetaRemember(int index, int w, int h)
     if (w > 0 && h > 0) {
         boxartMetaW[index] = (float)w;
         boxartMetaH[index] = (float)h;
+        CoverSize_Note(index, w, h);
     }
 }
 
@@ -110,9 +152,10 @@ static const float SLIDE_SPEED = 100.0f;
 static const float SIDEBAR_RAIL_FRAC = 0.06f; // side bar size 
 static const float SIDEBAR_OPEN_FRAC = 0.385f;   /* video: ~38.6% */
 static const float SIDEBAR_OVERSHOOT = 0.08f; /* past target, then settle */
-static const float SIDEBAR_WIDTH_LERP = 0.22f;
+static const float SIDEBAR_WIDTH_LERP = 0.44f;
 /* 3 full rows + ~10% of a fourth so the user sees more games below */
 static const float MOSAIC_VISIBLE_ROWS = 3.1f;
+static const float MOSAIC_GAP = 1.0f; /* px between covers, and between grid and sidebar */
 static const float MOSAIC_GROW_DELAY_SEC = 0.3f;
 static const float INFO_BAR_FADE_SEC = 0.4f;
 static const float INFO_BAR_SLIDE_PX = 13.0f;
@@ -145,6 +188,7 @@ typedef struct {
     Rectangle slots[MAX_GAMES];
     Rectangle items[MAX_GAMES];
     int itemRows[MAX_GAMES];
+    float selectScale[MAX_GAMES]; /* selected grow target (1.18, or full size if larger) */
     int rowCount;
 } GridLayout;
 
@@ -168,10 +212,11 @@ static int ActiveGameTotal(void) {
     return *ActiveSystem()->gameCount;
 }
 
-/* Titles in the grid: all of them, or the playable ones (a prefix). */
+/* Titles in the grid: all of them, or the filtered prefix (hide unplayable
+ * and/or Favorites). */
 static int ActiveGameCount(void) {
     int s = (int)(ActiveSystem() - systems);
-    return hideOn[s] && hideReady[s] ? hideShown[s] : ActiveGameTotal();
+    return hideReady[s] ? hideShown[s] : ActiveGameTotal();
 }
 
 static GameEntry *ActiveGames(void) {
@@ -205,57 +250,141 @@ static void FitAspectInCell(float cellW, float cellH, float aspect,
     }
 }
 
-static float GridItemAspect(int index) {
-    if (index >= 0 && index < MAX_GAMES
-        && boxartMetaW[index] > 0.0f && boxartMetaH[index] > 0.0f) {
+/* Cover sizes read from file headers (no decode) by a background thread at
+ * startup, for every system's covers, at the size the loader will give them.
+ * So a grid is laid out with each cover's real shape on its first frame and
+ * slots do not jump as textures arrive. Keyed by full path; the table is
+ * built on the main thread before the thread starts, the thread only fills
+ * sizes (state 0 -> 1/2). */
+#define COVER_SIZE_CAP 8192
+static struct {
+    char *path[COVER_SIZE_CAP];
+    int w[COVER_SIZE_CAP], h[COVER_SIZE_CAP];
+    atomic_int state[COVER_SIZE_CAP];   /* 0 pending, 1 sized, 2 no header */
+    int hash[COVER_SIZE_CAP * 2];       /* index + 1, 0 = empty */
+    int n;
+    pthread_t thread;
+    bool running;
+    atomic_bool cancel;
+} coverSize;
+
+static unsigned CoverSize_Hash(const char *p)
+{
+    unsigned h = 2166136261u;
+    while (*p) { h ^= (unsigned char)*p++; h *= 16777619u; }
+    return h;
+}
+
+static int CoverSize_Find(const char *path, int add)
+{
+    if (!path || !path[0]) return -1;
+    unsigned m = COVER_SIZE_CAP * 2 - 1, k = CoverSize_Hash(path) & m;
+    for (;;) {
+        int e = coverSize.hash[k];
+        if (e == 0) break;
+        if (strcmp(coverSize.path[e - 1], path) == 0) return e - 1;
+        k = (k + 1) & m;
+    }
+    if (!add || coverSize.n >= COVER_SIZE_CAP) return -1;
+    char *dup = strdup(path);
+    if (!dup) return -1;
+    int i = coverSize.n++;
+    coverSize.path[i] = dup;
+    coverSize.hash[k] = i + 1;
+    return i;
+}
+
+static void *CoverSizeThread(void *arg)
+{
+    (void)arg;
+    static unsigned char head[65536];
+    for (int i = 0; i < coverSize.n; i++) {
+        if (atomic_load(&coverSize.cancel)) break;
+        int w = 0, h = 0, ok = 0;
+        FILE *f = fopen(coverSize.path[i], "rb");
+        if (f) {
+            size_t n = fread(head, 1, 32, f);
+            if (n >= 2 && head[0] == 0xFF && head[1] == 0xD8) {
+                n += fread(head + n, 1, sizeof(head) - n, f);
+            }
+            fclose(f);
+            ok = Grid_ImageHeaderSize(head, n, &w, &h);
+        }
+        if (ok) {
+            Grid_BoxartFitSize(w, h, ASSET_MAX_BOXART_W, ASSET_MAX_BOXART_H,
+                               &coverSize.w[i], &coverSize.h[i]);
+        }
+        atomic_store(&coverSize.state[i], ok ? 1 : 2);
+    }
+    return NULL;
+}
+
+static void CoverSize_Start(void)
+{
+    for (int s = 0; s < SYSTEM_COUNT; s++) {
+        const GameEntry *games = systems[s].games;
+        int count = systems[s].gameCount ? *systems[s].gameCount : 0;
+        if (count > MAX_GAMES) count = MAX_GAMES;
+        for (int i = 0; games && i < count; i++) {
+            const char *rel = games[i].boxartPath;
+            if (rel && rel[0]) CoverSize_Find(GetDataPath(rel), 1);
+        }
+    }
+    atomic_store(&coverSize.cancel, false);
+    coverSize.running = pthread_create(&coverSize.thread, NULL, CoverSizeThread, NULL) == 0;
+}
+
+static void CoverSize_Stop(void)
+{
+    atomic_store(&coverSize.cancel, true);
+    if (coverSize.running) {
+        pthread_join(coverSize.thread, NULL);
+        coverSize.running = false;
+    }
+    for (int i = 0; i < coverSize.n; i++) { free(coverSize.path[i]); coverSize.path[i] = NULL; }
+    memset(coverSize.hash, 0, sizeof coverSize.hash);
+    coverSize.n = 0;
+}
+
+/* A cover was loaded (or replaced on disk): keep its header size current so
+ * the next visit lays it out at this size. Main thread; entries the size
+ * thread has not reached yet (state 0) are left to it. */
+static void CoverSize_Note(int index, int w, int h)
+{
+    if (index < 0 || index >= ActiveGameCount()) return;
+    const char *rel = ActiveGames()[index].boxartPath;
+    int c = (rel && rel[0]) ? CoverSize_Find(GetDataPath(rel), 0) : -1;
+    if (c < 0 || atomic_load(&coverSize.state[c]) == 0) return;
+    coverSize.w[c] = w;
+    coverSize.h[c] = h;
+    atomic_store(&coverSize.state[c], 1);
+}
+
+/* Known cover aspect: loaded size, else the header size; 0 = not known yet.
+ * meta -1 = no header size (texture size arrives with the cover). */
+static float GridItemKnownAspect(int index) {
+    if (index < 0 || index >= MAX_GAMES) return 0.0f;
+    if (boxartMetaW[index] == 0.0f && index < ActiveGameCount()) {
+        const char *rel = ActiveGames()[index].boxartPath;
+        int c = (rel && rel[0]) ? CoverSize_Find(GetDataPath(rel), 0) : -1;
+        int st = c >= 0 ? atomic_load(&coverSize.state[c]) : 2;
+        if (st == 1) BoxartMetaRemember(index, coverSize.w[c], coverSize.h[c]);
+        else if (st == 2) { boxartMetaW[index] = -1.0f; boxartMetaH[index] = -1.0f; }
+    }
+    if (boxartMetaW[index] > 0.0f && boxartMetaH[index] > 0.0f) {
         return boxartMetaW[index] / boxartMetaH[index];
     }
-    if (index >= 0 && index < MAX_GAMES
-        && gameBoxarts[index].id != 0
+    if (gameBoxarts[index].id != 0
         && gameBoxarts[index].width > 0
         && gameBoxarts[index].height > 0) {
         return (float)gameBoxarts[index].width / (float)gameBoxarts[index].height;
     }
-    return Nso_OrientAspect(GameOrientAt(index));
+    return 0.0f;
 }
 
-static float GridUSAAspect(void) {
-    int count = ActiveGameCount();
-    if (count > MAX_GAMES) count = MAX_GAMES;
-    for (int i = 0; i < count; i++) {
-        if (GameOrientAt(i) == SLOT_ORIENT_USA) return GridItemAspect(i);
-    }
-    return Nso_OrientAspect(SLOT_ORIENT_USA);
-}
-
-static float GridItemNativeHeight(int index) {
-    if (index >= 0 && index < MAX_GAMES && boxartMetaH[index] > 0.0f) {
-        return boxartMetaH[index];
-    }
-    if (index >= 0 && index < MAX_GAMES
-        && gameBoxarts[index].id != 0
-        && gameBoxarts[index].height > 0) {
-        return (float)gameBoxarts[index].height;
-    }
-    return (float)ASSET_MAX_BOXART_H;
-}
-
-static float GridNativeHeight(void) {
-    int count = ActiveGameCount();
-    if (count > MAX_GAMES) count = MAX_GAMES;
-    float total = 0.0f;
-    int loaded = 0;
-    for (int i = 0; i < count; i++) {
-        float h = 0.0f;
-        if (boxartMetaH[i] > 0.0f) h = boxartMetaH[i];
-        else if (gameBoxarts[i].id != 0 && gameBoxarts[i].height > 0)
-            h = (float)gameBoxarts[i].height;
-        if (h > 0.0f) {
-            total += h;
-            loaded++;
-        }
-    }
-    return loaded > 0 ? total / (float)loaded : (float)ASSET_MAX_BOXART_H;
+static float GridItemAspect(int index) {
+    float a = GridItemKnownAspect(index);
+    return a > 0.0f ? a : Nso_OrientAspect(GameOrientAt(index));
 }
 
 GridLayout GetGridLayout(void) {
@@ -275,96 +404,31 @@ GridLayout GetGridLayout(void) {
         return g;
     }
 
-    /* USA uses two horizontal units and JAPAN one. The unit budget follows
-     * the screen width; each row's height is derived from its actual art. */
-    float usaAspect = GridUSAAspect();
-    float idealH = fminf((float)g.screenH / MOSAIC_VISIBLE_ROWS,
-                         GridNativeHeight());
-    float idealW = idealH * usaAspect;
-    if (idealW < 1.0f) idealW = 1.0f;
-    int usaCols = (int)((float)g.contentW / idealW);
-    if (usaCols < 1) usaCols = 1;
-    for (;;) {
-        float usaCellW = (float)g.contentW / (float)usaCols;
-        float usaCellH = usaCellW / usaAspect;
-        if (usaCellH < 1.0f) usaCellH = 1.0f;
-        float visibleRows = (float)g.screenH / usaCellH;
-        if (visibleRows + 0.001f >= MOSAIC_VISIBLE_ROWS || usaCols >= g.contentW) break;
-        usaCols++;
+    /* Per-system base slot, ±10% flex to the cover aspect, 1px MOSAIC_GAP
+     * between covers and between the grid and the sidebar. Full rows fill
+     * the width; a short last row stays at the standard scale. */
+    const char *sysId = (ActiveSystem()->platform && ActiveSystem()->platform->id)
+        ? ActiveSystem()->platform->id : "";
+    float aspects[MAX_GAMES];
+    GridLaidItem laid[MAX_GAMES];
+    /* A cover not sized yet takes the system's base shape (Grid_Pack's
+     * fallback), not a 4:3 guess; SNES keeps the per-game orientation. */
+    int mixSys = Grid_Lookup(sysId)->mix;
+    for (int i = 0; i < count; i++) {
+        aspects[i] = mixSys ? GridItemAspect(i) : GridItemKnownAspect(i);
     }
-
-    int rowCapacity = usaCols * 2;
-    float targetAspect = (float)g.contentW / idealH;
-    if (targetAspect < 0.01f) targetAspect = 0.01f;
-    float y = 0.0f;
-    int first = 0;
-    int row = 0;
-    while (first < count) {
-        int usedUnits = 0;
-        int end = first;
-        float rowAspect = 0.0f;
-        float bestDiff = INFINITY;
-        int bestEnd = first;
-        float bestAspect = 0.0f;
-        while (end < count) {
-            int units = GameOrientAt(end) == SLOT_ORIENT_JAPAN ? 1 : 2;
-            if (end > first && usedUnits + units > rowCapacity) break;
-            if (units > rowCapacity) break;
-            usedUnits += units;
-            rowAspect += GridItemAspect(end);
-            end++;
-
-            float diff = fabsf(rowAspect - targetAspect);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                bestEnd = end;
-                bestAspect = rowAspect;
-            } else if (rowAspect >= targetAspect) {
-                break;
-            }
-        }
-        if (bestEnd == first) {
-            bestEnd = first + 1;
-            bestAspect = GridItemAspect(first);
-        }
-
-        /* Keep a short final row at the target display height. It remains
-         * tightly packed; only the unused tail of the row is left empty. */
-        float remainingAspect = 0.0f;
-        int remainingUnits = 0;
-        for (int i = first; i < count; i++) {
-            remainingAspect += GridItemAspect(i);
-            remainingUnits += GameOrientAt(i) == SLOT_ORIENT_JAPAN ? 1 : 2;
-        }
-        bool shortFinalRow = remainingUnits <= rowCapacity
-            && remainingAspect < targetAspect;
-        if (shortFinalRow) {
-            bestEnd = count;
-            bestAspect = remainingAspect;
-        }
-
-        float maxNativeHeight = GridItemNativeHeight(first);
-        for (int i = first + 1; i < bestEnd; i++) {
-            float nativeHeight = GridItemNativeHeight(i);
-            if (nativeHeight < maxNativeHeight) maxNativeHeight = nativeHeight;
-        }
-        float rowH = shortFinalRow ? idealH : (float)g.contentW / bestAspect;
-        rowH = fminf(rowH, maxNativeHeight);
-        float x = (float)g.originX;
-        for (int i = first; i < bestEnd; i++) {
-            float itemW = GridItemAspect(i) * rowH;
-            Rectangle slot = { x, y, itemW, rowH };
-            g.slots[i] = slot;
-            g.itemRows[i] = row;
-            g.items[i] = slot;
-            x += itemW;
-        }
-        first = bestEnd;
-        y += rowH;
-        row++;
+    Grid_Pack(sysId, g.screenW, g.screenH, g.originX, g.contentW,
+              aspects, count, MOSAIC_GAP, MOSAIC_VISIBLE_ROWS,
+              laid, MAX_GAMES, &g.totalH, &g.rowCount);
+    for (int i = 0; i < count; i++) {
+        Rectangle slot = { laid[i].x, laid[i].y, laid[i].w, laid[i].h };
+        g.slots[i] = slot;
+        g.items[i] = slot;
+        g.itemRows[i] = laid[i].row;
+        float target = MOSAIC_SELECT_SCALE;
+        if (laid[i].fullScale > target) target = laid[i].fullScale;
+        g.selectScale[i] = target;
     }
-    g.rowCount = row;
-    g.totalH = y;
     return g;
 }
 
@@ -394,7 +458,7 @@ float GridTargetViewportY(const GridLayout *g, int selectedIndex, int itemCount,
 static int GridNavigate(const GridLayout *g, int idx, int count, OrderNav dir) {
     if (!g || count <= 0 || idx < 0 || idx >= count) return idx;
     int row = g->itemRows[idx];
-    if (dir == ORDER_NAV_LEFT) return idx > 0 && g->itemRows[idx - 1] == row ? idx - 1 : idx;
+    if (dir == ORDER_NAV_LEFT) return idx > 0 ? idx - 1 : idx;
     if (dir == ORDER_NAV_RIGHT) return idx + 1 < count ? idx + 1 : idx;
     if (g->rowCount <= 1) return idx;
     int targetRow = dir == ORDER_NAV_UP ? (row + g->rowCount - 1) % g->rowCount
@@ -494,6 +558,7 @@ static Image LoadBoxartImage(const char *path);
 static bool CoverLoader_Owns(int gameIdx);
 static bool coverLoaderHasWork(void);
 static void CoverReload_Stamp(const char *ev);
+void UnloadBoxart(int gameIdx);
 
 Texture2D GetBoxart(int gameIdx) {
     int count = ActiveGameCount();
@@ -502,7 +567,15 @@ Texture2D GetBoxart(int gameIdx) {
     }
 
     if (gameBoxarts[gameIdx].id != 0) {
-        return gameBoxarts[gameIdx];
+        char now[COVER_KEY_MAX];
+        const GameEntry *g = &ActiveGames()[gameIdx];
+        Covers_Key(g->title, g->boxartPath, g->rom, now, sizeof(now));
+        if (coverSlotKey[gameIdx][0] && strcmp(coverSlotKey[gameIdx], now) != 0) {
+            UnloadBoxart(gameIdx);
+        } else {
+            Cover_RememberGame(gameIdx, g);
+            return gameBoxarts[gameIdx];
+        }
     }
 
     /* The background loader owns this slot; wait for CoverLoader_Poll. */
@@ -510,13 +583,19 @@ Texture2D GetBoxart(int gameIdx) {
         return (Texture2D){0};
     }
 
-    Image img = LoadBoxartImage(GetDataPath(ActiveGames()[gameIdx].boxartPath));
+    const char *rel = ActiveGames()[gameIdx].boxartPath;
+    Image img;
+    if (!rel || !rel[0]) {
+        return (Texture2D){0};
+    }
+    img = LoadBoxartImage(GetDataPath(rel));
     if (!img.data) {
         return (Texture2D){0};
     }
 
     gameBoxarts[gameIdx] = LoadTextureFromImage(img);
     BoxartMetaRemember(gameIdx, img.width, img.height);
+    Cover_RememberGame(gameIdx, &ActiveGames()[gameIdx]);
     UnloadImage(img);
 
     return gameBoxarts[gameIdx];
@@ -528,7 +607,7 @@ static Image LoadBoxartImage(const char *path) {
         return (Image){0};
     }
 
-    if (!FileExists(path)) {   /* quiet: missing covers are retried every frame */
+    if (!FileExists(path) || DirectoryExists(path)) {   /* quiet: missing covers are retried every frame */
         return (Image){0};
     }
     Image img = LoadImage(path);
@@ -536,17 +615,10 @@ static Image LoadBoxartImage(const char *path) {
         return img;
     }
 
-    if (img.width > ASSET_MAX_BOXART_W || img.height > ASSET_MAX_BOXART_H) {
-        float sx = (float)ASSET_MAX_BOXART_W / (float)img.width;
-        float sy = (float)ASSET_MAX_BOXART_H / (float)img.height;
-        float s = fminf(sx, sy);
-        if (s < 1.0f) {
-            int nw = (int)(img.width * s + 0.5f);
-            int nh = (int)(img.height * s + 0.5f);
-            if (nw < 1) nw = 1;
-            if (nh < 1) nh = 1;
-            ImageResize(&img, nw, nh);
-        }
+    int nw, nh;
+    Grid_BoxartFitSize(img.width, img.height, ASSET_MAX_BOXART_W, ASSET_MAX_BOXART_H, &nw, &nh);
+    if (nw != img.width || nh != img.height) {
+        ImageResize(&img, nw, nh);
     }
     return img;
 }
@@ -563,7 +635,11 @@ void UnloadBoxart(int gameIdx) {
 void UnloadAllBoxarts(void) {
     for (int i = 0; i < MAX_GAMES; i++) {
         UnloadBoxart(i);
+        coverSlotKey[i][0] = '\0';
+        boxartMetaW[i] = 0.0f;
+        boxartMetaH[i] = 0.0f;
     }
+    coverSlotN = 0;
 }
 
 /* Safety net for the visible screen only. While the reload worker is running
@@ -613,7 +689,10 @@ static struct {
     Image images[MAX_GAMES];
     atomic_int ready[MAX_GAMES];  /* 1 = images[i] decoded (maybe empty) */
     bool uploaded[MAX_GAMES];
+    char keys[MAX_GAMES][COVER_KEY_MAX];
     atomic_bool cancel;
+    atomic_uint gen;               /* bumped on cancel/stop; stale work must not apply */
+    unsigned batchGen;             /* generation of the in-flight batch */
 } coverLoader;
 
 static bool coverLoaderHasWork(void)
@@ -692,26 +771,35 @@ static void CoverLoader_BuildOrder(int count)
 
 static void *CoverLoaderThread(void *arg) {
     (void)arg;
+    unsigned gen = coverLoader.batchGen;
     int walkN = coverLoader.orderN > 0 ? coverLoader.orderN : coverLoader.count;
     for (int k = 0; k < walkN; k++) {
-        if (atomic_load(&coverLoader.cancel)) break;
+        if (atomic_load(&coverLoader.cancel) || atomic_load(&coverLoader.gen) != gen) break;
         int i = (coverLoader.orderN > 0) ? coverLoader.order[k] : k;
         if (i < 0 || i >= coverLoader.count) continue;
         if (coverLoader.uploaded[i] || atomic_load(&coverLoader.ready[i])) continue;
         if (!coverLoader.paths[i]) {
+            if (atomic_load(&coverLoader.gen) != gen) break;
             atomic_store(&coverLoader.ready[i], 1);
             continue;
         }
-        coverLoader.images[i] = LoadBoxartImage(coverLoader.paths[i]);
+        Image img = LoadBoxartImage(coverLoader.paths[i]);
+        if (atomic_load(&coverLoader.gen) != gen) {
+            if (img.data) UnloadImage(img);
+            break;
+        }
+        coverLoader.images[i] = img;
         atomic_store(&coverLoader.ready[i], 1);
     }
     return NULL;
 }
 
-/* Join the worker and free anything not handed to the GPU. */
+/* Cancel, bump the generation so stale decodes are ignored, join, and free
+ * anything not handed to the GPU. */
 static void CoverLoader_Stop(void) {
+    atomic_fetch_add(&coverLoader.gen, 1);
+    atomic_store(&coverLoader.cancel, true);
     if (coverLoader.running) {
-        atomic_store(&coverLoader.cancel, true);
         pthread_join(coverLoader.thread, NULL);
         coverLoader.running = false;
     }
@@ -736,18 +824,22 @@ static void CoverLoader_Start(void) {
     CoverLoader_BuildOrder(count);
     for (int i = 0; i < count; i++) {
         coverLoader.images[i] = (Image){0};
+        Cover_RememberGame(i, &ActiveGames()[i]);
+        memcpy(coverLoader.keys[i], coverSlotKey[i], sizeof(coverLoader.keys[i]));
         if (gameBoxarts[i].id != 0) {
             /* Already on the GPU (kept through a game, or still loaded). */
             coverLoader.paths[i] = NULL;
             atomic_store(&coverLoader.ready[i], 1);
             coverLoader.uploaded[i] = true;
         } else {
-            coverLoader.paths[i] = strdup(GetDataPath(ActiveGames()[i].boxartPath));
+            const char *rel = ActiveGames()[i].boxartPath;
+            coverLoader.paths[i] = (rel && rel[0]) ? strdup(GetDataPath(rel)) : NULL;
             atomic_store(&coverLoader.ready[i], 0);
             coverLoader.uploaded[i] = false;
         }
     }
     coverLoader.count = count;
+    coverLoader.batchGen = atomic_load(&coverLoader.gen);
     atomic_store(&coverLoader.cancel, false);
     coverLoader.running = pthread_create(&coverLoader.thread, NULL,
                                          CoverLoaderThread, NULL) == 0;
@@ -782,6 +874,14 @@ static void CoverReload_Stamp(const char *ev)
 /* Set when a grid is about to be shown (splash, or return from a game);
  * cleared once the visible screen's covers are on the GPU. */
 static bool mosaicRevealWait = false;
+/* Frozen blurred snapshot of the grid as it was before a hide/filter re-list.
+ * The new list and covers are built behind it; the grid is shown once ready. */
+static bool mosaicBlurHeld = false;
+static void MosaicBlur_HoldBegin(void);
+static void MosaicBlur_HoldEnd(void)
+{
+    mosaicBlurHeld = false;
+}
 
 /* True once every cover of the screen the user will see is on the GPU (or
  * has no file). The grid is not revealed before this: the exit animation /
@@ -818,14 +918,18 @@ static bool CoverLoader_VisibleReady(void)
         int i = vis[k];
         if (i < 0 || i >= count) continue;
         if (gameBoxarts[i].id != 0) continue;
-        const char *path = GetDataPath(ActiveGames()[i].boxartPath);
-        if (path && path[0] && FileExists(path)) return false;
+        const char *rel = ActiveGames()[i].boxartPath;
+        const char *path;
+        if (!rel || !rel[0]) continue;
+        path = GetDataPath(rel);
+        if (path && path[0] && FileExists(path) && !DirectoryExists(path)) return false;
     }
     return true;
 }
 
 static bool CoverLoader_Poll(void) {
     if (coverLoader.count <= 0) return true;
+    if (atomic_load(&coverLoader.gen) != coverLoader.batchGen) return false;
     int visLeft = 0, prefLeft = 0;
     int walkN = coverLoader.orderN > 0 ? coverLoader.orderN : coverLoader.count;
     for (int k = 0; k < walkN; k++) {
@@ -850,11 +954,35 @@ static bool CoverLoader_Poll(void) {
         if (coverLoader.uploaded[i]) continue;
         if (!atomic_load(&coverLoader.ready[i])) { done = false; continue; }
         if (budget <= 0) { done = false; break; }
-        if (coverLoader.images[i].data) {
-            if (gameBoxarts[i].id != 0) UnloadTexture(gameBoxarts[i]);
-            gameBoxarts[i] = LoadTextureFromImage(coverLoader.images[i]);
-            BoxartMetaRemember(i, coverLoader.images[i].width, coverLoader.images[i].height);
-            UnloadImage(coverLoader.images[i]);
+        if (atomic_load(&coverLoader.gen) != coverLoader.batchGen) return false;
+        {
+            int dest = i, n = ActiveGameTotal(), shown = ActiveGameCount(), j;
+            char now[COVER_KEY_MAX];
+            if (n > MAX_GAMES) n = MAX_GAMES;
+            dest = -1;
+            for (j = 0; j < n; j++) {
+                const GameEntry *g = &ActiveGames()[j];
+                Covers_Key(g->title, g->boxartPath, g->rom, now, sizeof(now));
+                if (coverLoader.keys[i][0] && strcmp(now, coverLoader.keys[i]) == 0) {
+                    dest = j;
+                    break;
+                }
+            }
+            if (dest < 0) dest = i;
+            if (dest >= shown) {
+                if (coverLoader.images[i].data) UnloadImage(coverLoader.images[i]);
+                coverLoader.images[i] = (Image){0};
+                coverLoader.uploaded[i] = true;
+                budget--;
+                continue;
+            }
+            if (coverLoader.images[i].data) {
+                if (gameBoxarts[dest].id != 0) UnloadTexture(gameBoxarts[dest]);
+                gameBoxarts[dest] = LoadTextureFromImage(coverLoader.images[i]);
+                BoxartMetaRemember(dest, coverLoader.images[i].width, coverLoader.images[i].height);
+                Cover_RememberGame(dest, &ActiveGames()[dest]);
+                UnloadImage(coverLoader.images[i]);
+            }
         }
         coverLoader.images[i] = (Image){0};
         coverLoader.uploaded[i] = true;
@@ -867,10 +995,197 @@ static bool CoverLoader_Poll(void) {
     return done;
 }
 
+/* Writable catalog plus display-only rows for wiki titles whose covers have
+ * been scraped into assets/images/systems/<id>/. The static *_games[] arrays
+ * cannot grow, and those titles are not in them. Used by SNES and GameCube. */
+typedef struct {
+    const char *id;
+    const char *titlesRel;
+    GameEntry *srcGames;
+    const int *srcCount;
+    GameEntry liveGames[MAX_GAMES];
+    char liveTitle[MAX_GAMES][SYSLIST_NAME];
+    char livePath[MAX_GAMES][256];
+    int liveCount;
+    int catalogCount;
+    int liveSys; /* index in systems[], or -1 if not installed */
+} WikiLive;
+
+static WikiLive wikiSnes;
+static WikiLive wikiGc;
+static WikiLive wikiMd;
+
+static void WikiLive_Setup(WikiLive *w, const char *id, const char *titlesRel,
+                           GameEntry *src, const int *srcCount)
+{
+    if (!w) return;
+    w->id = id;
+    w->titlesRel = titlesRel;
+    w->srcGames = src;
+    w->srcCount = srcCount;
+    w->liveSys = -1;
+    w->liveCount = 0;
+    w->catalogCount = 0;
+}
+
+static WikiLive *WikiLive_ById(const char *id)
+{
+    if (id && strcmp(id, "snes") == 0) return &wikiSnes;
+    if (id && strcmp(id, "gamecube") == 0) return &wikiGc;
+    if (id && strcmp(id, "megadrive") == 0) return &wikiMd;
+    return NULL;
+}
+
+static int WikiLive_SysIndex(const WikiLive *w)
+{
+    if (!w || !w->id) return -1;
+    for (int i = 0; i < SYSTEM_COUNT; i++)
+        if (strcmp(systems[i].platform->id, w->id) == 0) return i;
+    return -1;
+}
+
+static void WikiLive_Install(WikiLive *w)
+{
+    int s, n;
+    if (!w || !w->srcGames || !w->srcCount) return;
+    s = WikiLive_SysIndex(w);
+    if (s < 0 || w->liveSys >= 0) return;
+    n = *w->srcCount;
+    if (n > MAX_GAMES) n = MAX_GAMES;
+    memcpy(w->liveGames, w->srcGames, sizeof(GameEntry) * (size_t)n);
+    w->liveCount = n;
+    w->catalogCount = n;
+    w->liveSys = s;
+    systems[s].games = w->liveGames;
+    systems[s].gameCount = &w->liveCount;
+}
+
+static int WikiLive_FindTitle(const WikiLive *w, const char *title)
+{
+    if (!w || !title || !title[0]) return -1;
+    for (int i = 0; i < w->liveCount; i++)
+        if (w->liveGames[i].title && strcmp(w->liveGames[i].title, title) == 0)
+            return i;
+    return -1;
+}
+
+static int WikiLive_CatalogOf(const WikiLive *w, const char *title, const char *alias)
+{
+    const GameEntry *games;
+    int n;
+    char nt[256], na[256], ng[256];
+    if (!w) return -1;
+    games = w->liveSys >= 0 ? w->liveGames : w->srcGames;
+    n = w->catalogCount > 0 ? w->catalogCount : (w->srcCount ? *w->srcCount : 0);
+    if (!games) return -1;
+    Gs_Norm(title ? title : "", nt, sizeof(nt));
+    if (alias && alias[0]) Gs_Norm(alias, na, sizeof(na));
+    else na[0] = '\0';
+    for (int i = 0; i < n; i++) {
+        if (!games[i].title) continue;
+        if (title && strcmp(games[i].title, title) == 0) return i;
+        if (alias && alias[0] && strcmp(games[i].title, alias) == 0) return i;
+        Gs_Norm(games[i].title, ng, sizeof(ng));
+        if (nt[0] && strcmp(ng, nt) == 0) return i;
+        if (na[0] && strcmp(ng, na) == 0) return i;
+    }
+    return -1;
+}
+
+static void WikiLive_CoverDest(WikiLive *w, const SysListGame *g, char *dst, size_t n)
+{
+    int cat;
+    GameEntry *games;
+    char slug[SYSLIST_NAME];
+    if (!dst || n == 0) return;
+    dst[0] = '\0';
+    if (!w) return;
+    cat = WikiLive_CatalogOf(w, g ? g->title : NULL, g && g->alias[0] ? g->alias : NULL);
+    games = w->liveSys >= 0 ? w->liveGames : w->srcGames;
+    if (cat >= 0 && games) {
+        const char *rel = games[cat].boxartPath;
+        if (rel && rel[0]) { snprintf(dst, n, "%s", rel); return; }
+    }
+    SysList_Slug(g && g->title[0] ? g->title : "untitled", slug, sizeof(slug));
+    if (!slug[0]) snprintf(slug, sizeof(slug), "untitled");
+    snprintf(dst, n, "assets/images/systems/%s/%s.png", w->id ? w->id : "snes", slug);
+}
+
+static void Version_InstallAll(void);
+static void Version_Refresh(int sys);
+
+/* Display-only mosaic row: cover exists, no ROM / pipeline. */
+static int Wiki_AddCover(const char *sysId, const char *title, const char *alias,
+                         const char *rel)
+{
+    WikiLive *w = WikiLive_ById(sysId);
+    char full[2304];
+    int i;
+    if (!w) return -1;
+    if (w->liveSys < 0) WikiLive_Install(w);
+    if (w->liveSys < 0 || !title || !title[0] || !rel || !rel[0]) return -1;
+    i = WikiLive_FindTitle(w, title);
+    if (i >= 0) return i;
+    /* Same game already in the catalog under a close spelling, or under the
+     * other region's name (wiki "Aero Fighters", catalog "Sonic Wings"). */
+    i = WikiLive_CatalogOf(w, title, alias);
+    if (i >= 0) return i;
+    if (w->liveCount >= MAX_GAMES) return -1;
+    if (strlen(rel) >= sizeof(w->livePath[0])) return -1;
+    snprintf(full, sizeof(full), "%s/%s", GetBaseDirectory(), rel);
+    if (!FileExists(full) || GetFileLength(full) <= 0) return -1;
+    i = w->liveCount;
+    snprintf(w->liveTitle[i], sizeof(w->liveTitle[0]), "%s", title);
+    snprintf(w->livePath[i], sizeof(w->livePath[0]), "%s", rel);
+    memset(&w->liveGames[i], 0, sizeof(w->liveGames[i]));
+    w->liveGames[i].title = w->liveTitle[i];
+    w->liveGames[i].boxartPath = w->livePath[i];
+    w->liveGames[i].orient = SLOT_ORIENT_INHERIT;
+    w->liveCount++;
+    if (w->liveSys >= 0) Version_Refresh(w->liveSys);
+    return i;
+}
+
+static void WikiLive_LoadScrapedCovers(WikiLive *w)
+{
+    char path[2112];
+    char *text;
+    SysListGame *list;
+    int n, i;
+    if (!w || !w->titlesRel) return;
+    WikiLive_Install(w);
+    if (w->liveSys < 0) return;
+    snprintf(path, sizeof(path), "%s", GetDataPath(w->titlesRel));
+    text = FileExists(path) ? LoadFileText(path) : NULL;
+    if (!text) return;
+    list = calloc((size_t)SYSLIST_MAX, sizeof(*list));
+    if (!list) { UnloadFileText(text); return; }
+    n = SysList_Parse(text, list, SYSLIST_MAX);
+    UnloadFileText(text);
+    if (n < 0) n = 0;
+    for (i = 0; i < n && w->liveCount < MAX_GAMES; i++) {
+        char dest[256];
+        WikiLive_CoverDest(w, &list[i], dest, sizeof(dest));
+        Wiki_AddCover(w->id, list[i].title,
+                      list[i].alias[0] ? list[i].alias : NULL, dest);
+    }
+    free(list);
+}
+
 static void InitSystems(void) {
+    WikiLive_Setup(&wikiSnes, "snes", "assets/data/snes-titles.txt",
+                   snes_games, &snes_game_count);
+    WikiLive_Setup(&wikiGc, "gamecube", "assets/data/gamecube-titles.txt",
+                   gamecube_games, &gamecube_game_count);
+    WikiLive_Setup(&wikiMd, "megadrive", "assets/data/megadrive-titles.txt",
+                   megadrive_games, &megadrive_game_count);
     for (int i = 0; i < SYSTEM_COUNT; i++) {
         Nso_PlatformInit(systems[i].platform);
     }
+    WikiLive_LoadScrapedCovers(&wikiSnes);
+    WikiLive_LoadScrapedCovers(&wikiGc);
+    WikiLive_LoadScrapedCovers(&wikiMd);
+    Version_InstallAll();
 }
 
 static void UnloadSystems(void) {
@@ -884,7 +1199,6 @@ typedef enum State {
     SPLASH,     /* full-screen system art fading in before the game grid */
     SYSTEMS,
     MOSAIC,
-    MANAGE,     /* O: repository download + language */
     EMBED,      /* in-process game drawn in this window (embed.h) */
 } State;
 
@@ -907,6 +1221,26 @@ static const float MOVE_OTHERS_SCALE = 0.80f;        /* other covers in move mod
 static const float MOVE_RAIL_SLIDE_SEC = 0.14f;
 static const float MOVE_GLIDE_SEC = 0.15f;
 static float railSlideT = 0.0f;   /* 0 = rail in place, 1 = slid off to the left */
+
+/* Keyboard Y, gamepad Y, and C-Down on the games grid: hold this long
+ * (same 0.9 s convention as PADUI_HOLD_SEC / EMBED_CRT_HOLD_SEC) to open
+ * the sort panel; a shorter tap starts Move. */
+#define SORT_HOLD_SEC 0.9f
+#define SORT_Y_HINT_CP 0x1F168  /* 🅨 in the mosaic action bar */
+static bool sortYHeld = false;
+static bool sortYConsumed = false;
+static double sortYT0 = 0.0;
+static bool padCDownHeld = false;    /* right-stick / C-Down held past the deadzone */
+
+static float SortHold_Progress(bool held, double t0) {
+    if (!held) return 0.0f;
+    float p = (float)((GetTime() - t0) / (double)SORT_HOLD_SEC);
+    if (p < 0.0f) return 0.0f;
+    if (p > 1.0f) return 1.0f;
+    return p;
+}
+
+static float SortY_Progress(void) { return SortHold_Progress(sortYHeld, sortYT0); }
 
 /* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
@@ -956,6 +1290,8 @@ typedef enum {
     SCRAPE_INDEX,
     SCRAPE_FILE,
     SCRAPE_DATES,   /* release year + month files, then done */
+    SCRAPE_SCAN,    /* walk the title list without a curl in flight */
+    SCRAPE_CHOOSE,  /* 2+ box-art candidates: wait for the user to pick one */
 } ScrapePhase;
 
 static ScrapePhase scrapePhase = SCRAPE_IDLE;
@@ -973,9 +1309,22 @@ static char scrapePart[2200];
 static char scrapePart2[2200];   /* second download of the dates phase */
 static bool scrapeIndexNext;     /* covers follow the dates phase */
 static char scrapeDest[2200];
+static int scrapeAliasHops = 0;   /* Named_Boxarts text alias follow, per file */
 static NsoMsg scrapeMsg = { -1, 0, "" };
 static bool scrapeOnly[MAX_GAMES];   /* with scrapeOnlyOn: covers of these games only (Select games) */
 static bool scrapeOnlyOn = false;
+static bool scrapeRomOnly = false;     /* next Start() is scoped to ROMs in roms/<System>/ */
+enum { SCRAPE_CHOICE_MAX = 16 };
+static int scrapeChoiceN = 0;
+static int scrapeChoiceCur = 0;
+static const char *scrapeChoices[SCRAPE_CHOICE_MAX];
+static char scrapeChoiceTitle[160];
+/* Select games (SNES region list): scrape these titles instead of the catalog. */
+static char scrapeListTitle[SNESLIST_MAX][SNESLIST_NAME];
+static char scrapeListAlias[SNESLIST_MAX][SNESLIST_NAME];
+static char scrapeListDest[SNESLIST_MAX][256];
+static char scrapeListFile[SNESLIST_MAX][SNESLIST_NAME]; /* exact Named_Boxarts filename */
+static int scrapeListCount = 0;
 
 /* Settings-icon spin / highlight morph from sidebar width progress (rail→open maps to 0→1). */
 static float gearSpinAngle = 0.0f;
@@ -1074,7 +1423,6 @@ static bool Live_Busy(void) { return waitingForGame && !live.parked; }
 typedef enum {
     HOME_RET_NONE = 0,
     HOME_RET_SYSTEMS,
-    HOME_RET_MANAGE,
     HOME_RET_SIDEBAR,
     HOME_RET_DETAILS,
     HOME_RET_STATUS,
@@ -1364,6 +1712,7 @@ typedef enum {
     INFO_BAR_NONE = 0,
     INFO_BAR_MOSAIC,
     INFO_BAR_SIDEBAR,
+    INFO_BAR_STATUS,
     /* future: INFO_BAR_ORG, INFO_BAR_DETAILS, ... */
     INFO_BAR_COUNT
 } InfoBarId;
@@ -1446,6 +1795,7 @@ static const char *InfoBar_Text(InfoBarId id) {
         case INFO_BAR_SIDEBAR:
             if (PadUi_BarText()) return PadUi_BarText();
             return scrapeBusy ? T(S_INFO_CANCEL) : T(S_SIDEBAR_INFO);
+        case INFO_BAR_STATUS:  return T(S_STATUS_LEGEND);
         default: return NULL;
     }
 }
@@ -1472,9 +1822,18 @@ static bool UpdateAnimScaleToward(float *scale, float target, float dt) {
  */
 static bool UpdateMosaicItemScales(int gameCount, float dt, bool growSelected) {
     bool selectedDone = (gameCount <= 0);
+    GridLayout laid = GetGridLayout();
     for (int i = 0; i < gameCount; i++) {
-        float target = (i == GameIdx && growSelected)
-            ? (gridLifted ? MOSAIC_LIFT_SCALE : MOSAIC_SELECT_SCALE) : 1.0f;
+        float target = 1.0f;
+        if (i == GameIdx && growSelected) {
+            if (gridLifted) {
+                target = MOSAIC_LIFT_SCALE;
+            } else if (i < MAX_GAMES && laid.selectScale[i] > 0.0f) {
+                target = laid.selectScale[i];
+            } else {
+                target = MOSAIC_SELECT_SCALE;
+            }
+        }
         bool done = UpdateAnimScaleToward(&animScales[i], target, dt);
         if (i == GameIdx) {
             selectedDone = done;
@@ -1520,21 +1879,300 @@ static int slideDirection = 0; /* -1 enter mosaic, +1 back to systems */
  * and whether the main menu has already replaced the games grid behind the layer. */
 static float leaveT = 0.0f;
 static bool leaveSwitched = false;
+/* Fade-in clock of the leave-to-main-menu veil; -1 while fading out or holding
+ * black until the system-card textures are loaded. */
+static float leaveFadeInT = -1.0f;
+/* Fade-to-black of that leave, in the spirit of SIDEBAR_WIDTH_LERP 0.44f
+ * (snappy settle). Fade-in keeps ENTER_FADE_SEC. */
+static const float LEAVE_FADE_OUT_SEC = 0.12f;
 
 
-static Color MenuGlow(void) {
-    float pulse = 0.5f + 0.5f * sinf((float)GetTime() * 3.0f);
-    return ColorLerp((Color){ 80, 200, 255, 255 }, (Color){ 160, 110, 255, 255 }, pulse);
+/* Shared select-indicator metrics: a black gap, then a pastel gradient ring
+ * (same MenuBarRingGrad / GetTime()*3 cycle as the bar cursor). */
+static void MenuSelectRingParams(float size, float *gapT, float *ringT)
+{
+    *gapT = size * 0.015f;
+    *ringT = size * 0.02f;
+}
+
+/* Bar-icon cursor (Switch home): a filled disc slightly lighter than the
+ * pill (#4a4a4a) and a thin ring with a soft pastel gradient around the
+ * circumference. The gradient rotates at the same GetTime()*3 rate as
+ * MenuGlow. Diameter is computed from the bar height so the circle sits
+ * fully inside the pill with a small equal top/bottom margin. Ring width
+ * is 2.5% of the diameter plus 3px inward (outer radius stays put; the
+ * fill shrinks). */
+static const float MENU_BAR_CURSOR_MARGIN = 4.5f;   /* px at 1920, times kHud */
+static const float MENU_BAR_CURSOR_RING = 0.025f;   /* fraction of diameter */
+static const float MENU_BAR_CURSOR_RING_ADD = 3.0f; /* extra thickness toward center, px at 1920 */
+static const Color MENU_BAR_CURSOR_FILL = { 74, 74, 74, 255 };     /* #4a4a4a */
+static const Color MENU_BAR_LABEL_COL = { 94, 200, 240, 255 };     /* #5ec8f0 */
+
+/* Pastel stops (Y-down UVs): BR mint, BL violet, TL pink/lavender, TR periwinkle. */
+static const Color MENU_BAR_RING_COL[4] = {
+    { 184, 232, 224, 255 },
+    { 204, 180, 228, 255 },
+    { 236, 204, 224, 255 },
+    { 184, 204, 242, 255 },
+};
+
+static Image menuBarCursorImg;
+static Texture2D menuBarCursorTex;
+static Color *menuBarCursorPix;
+static int menuBarCursorSize;
+
+static void MenuBarCursorTex_Unload(void)
+{
+    if (menuBarCursorTex.id) UnloadTexture(menuBarCursorTex);
+    menuBarCursorTex = (Texture2D){ 0 };
+    /* Image.data is the same buffer; UnloadImage would free it. */
+    if (menuBarCursorPix) {
+        RL_FREE(menuBarCursorPix);
+        menuBarCursorPix = NULL;
+    }
+    menuBarCursorImg = (Image){ 0 };
+    menuBarCursorSize = 0;
+}
+
+static bool MenuBarCursorTex_Ensure(int size)
+{
+    if (size < 2) size = 2;
+    if (menuBarCursorTex.id && menuBarCursorSize == size && menuBarCursorPix) return true;
+    MenuBarCursorTex_Unload();
+    menuBarCursorPix = (Color *)RL_CALLOC((size_t)size * (size_t)size, sizeof(Color));
+    if (!menuBarCursorPix) return false;
+    menuBarCursorImg = (Image){
+        .data = menuBarCursorPix,
+        .width = size,
+        .height = size,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    };
+    menuBarCursorTex = LoadTextureFromImage(menuBarCursorImg);
+    if (!menuBarCursorTex.id) {
+        MenuBarCursorTex_Unload();
+        return false;
+    }
+    SetTextureFilter(menuBarCursorTex, TEXTURE_FILTER_BILINEAR);
+    menuBarCursorSize = size;
+    return true;
+}
+
+static float MenuBarSmoothstep(float e0, float e1, float x)
+{
+    float t;
+    if (e1 <= e0) return (x >= e1) ? 1.0f : 0.0f;
+    t = (x - e0) / (e1 - e0);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static Color MenuBarRingGrad(float ang)
+{
+    /* Y-down: BR mint 0.125, BL violet 0.375, TL pink 0.625, TR periwinkle 0.875. */
+    float t = ang * (0.5f / 3.14159265f);
+    t -= floorf(t);
+    const Color *c = MENU_BAR_RING_COL;
+    int i0;
+    float u;
+    if (t >= 0.125f && t < 0.375f) { i0 = 0; u = (t - 0.125f) / 0.25f; }
+    else if (t >= 0.375f && t < 0.625f) { i0 = 1; u = (t - 0.375f) / 0.25f; }
+    else if (t >= 0.625f && t < 0.875f) { i0 = 2; u = (t - 0.625f) / 0.25f; }
+    else {
+        i0 = 3;
+        u = ((t >= 0.875f) ? (t - 0.875f) : (t + 0.125f)) / 0.25f;
+    }
+    Color a = c[i0], b = c[(i0 + 1) & 3];
+    return (Color){
+        (unsigned char)(a.r + (int)((float)(b.r - a.r) * u + 0.5f)),
+        (unsigned char)(a.g + (int)((float)(b.g - a.g) * u + 0.5f)),
+        (unsigned char)(a.b + (int)((float)(b.b - a.b) * u + 0.5f)),
+        255
+    };
+}
+
+/* One vertex of the card select ring: same pastel angular gradient, in sync
+ * with the bar cursor (GetTime()*3, Y-down atan2). */
+static void MenuSelectRingVert(float x, float y, float cx, float cy, float ang0,
+                               Rectangle src, float texW, float texH, float u, float v)
+{
+    Color col = MenuBarRingGrad(atan2f(y - cy, x - cx) + ang0);
+    rlColor4ub(col.r, col.g, col.b, col.a);
+    rlTexCoord2f((src.x + src.width * u) / texW, (src.y + src.height * v) / texH);
+    rlVertex2f(x, y);
+}
+
+/* A stroke strip along one edge, subdivided so the gradient stays smooth.
+ * (x0,y0)->(x1,y1) is the first side of the quad (raylib's first two verts
+ * of DrawRectangleRoundedLinesEx); (x2,y2)->(x3,y3) is the opposite side. */
+static void MenuSelectRingStrip(float x0, float y0, float x1, float y1,
+                                float x2, float y2, float x3, float y3,
+                                float cx, float cy, float ang0,
+                                Rectangle src, float tw, float th, int n)
+{
+    if (n < 1) n = 1;
+    for (int i = 0; i < n; i++) {
+        float t0 = (float)i / (float)n, t1 = (float)(i + 1) / (float)n;
+        float ax0 = x0 + (x1 - x0) * t0, ay0 = y0 + (y1 - y0) * t0;
+        float ax1 = x0 + (x1 - x0) * t1, ay1 = y0 + (y1 - y0) * t1;
+        float bx0 = x3 + (x2 - x3) * t0, by0 = y3 + (y2 - y3) * t0;
+        float bx1 = x3 + (x2 - x3) * t1, by1 = y3 + (y2 - y3) * t1;
+        MenuSelectRingVert(ax0, ay0, cx, cy, ang0, src, tw, th, 0.0f, 0.0f);
+        MenuSelectRingVert(bx0, by0, cx, cy, ang0, src, tw, th, 0.0f, 1.0f);
+        MenuSelectRingVert(bx1, by1, cx, cy, ang0, src, tw, th, 1.0f, 1.0f);
+        MenuSelectRingVert(ax1, ay1, cx, cy, ang0, src, tw, th, 1.0f, 0.0f);
+    }
+}
+
+/* Same geometry as DrawRectangleRoundedLinesEx (stroke inward from rec,
+ * 16 corner segments); only the color is the rotating pastel gradient. */
+static void DrawMenuSelectRing(Rectangle rec, float roundness, int segments, float thick)
+{
+    float radius, outerRadius, innerRadius, stepLength, ang0;
+    float x0, x1, x2, x3, x4, x5, y0, y1, y2, y3, y4, y5, cx, cy;
+    Texture2D tex;
+    Rectangle src;
+    float tw, th;
+    const float angles[4] = { 180.0f, 270.0f, 0.0f, 90.0f };
+    Vector2 centers[4];
+    int k, i, sideN;
+
+    if (roundness <= 0.0f || thick <= 0.0f) return;
+    if (roundness >= 1.0f) roundness = 1.0f;
+    if (segments < 1) segments = 16;
+    radius = (rec.width > rec.height) ? (rec.height * roundness) / 2.0f
+                                      : (rec.width * roundness) / 2.0f;
+    if (radius <= 0.0f) return;
+    outerRadius = radius;
+    innerRadius = outerRadius - thick;
+    if (innerRadius < 0.0f) innerRadius = 0.0f;
+
+    stepLength = 90.0f / (float)segments;
+    x0 = rec.x + outerRadius;
+    x1 = (rec.x + rec.width) - outerRadius;
+    x2 = rec.x + rec.width;
+    x3 = rec.x;
+    x4 = (rec.x + rec.width) - thick;
+    x5 = rec.x + thick;
+    y0 = rec.y;
+    y1 = rec.y + outerRadius;
+    y2 = (rec.y + rec.height) - outerRadius;
+    y3 = rec.y + rec.height;
+    y4 = rec.y + thick;
+    y5 = (rec.y + rec.height) - thick;
+    centers[0] = (Vector2){ x0, y1 };
+    centers[1] = (Vector2){ x1, y1 };
+    centers[2] = (Vector2){ x1, y2 };
+    centers[3] = (Vector2){ x0, y2 };
+    cx = rec.x + rec.width * 0.5f;
+    cy = rec.y + rec.height * 0.5f;
+    ang0 = (float)GetTime() * 3.0f;
+    tex = GetShapesTexture();
+    src = GetShapesTextureRectangle();
+    tw = (float)tex.width;
+    th = (float)tex.height;
+    if (tw < 1.0f) tw = 1.0f;
+    if (th < 1.0f) th = 1.0f;
+    sideN = 16;
+
+    rlSetTexture(tex.id);
+    rlBegin(RL_QUADS);
+    for (k = 0; k < 4; k++) {
+        float angle = angles[k];
+        Vector2 center = centers[k];
+        for (i = 0; i < segments; i++) {
+            float a0 = angle, a1 = angle + stepLength;
+            float c0 = cosf(DEG2RAD * a0), s0 = sinf(DEG2RAD * a0);
+            float c1 = cosf(DEG2RAD * a1), s1 = sinf(DEG2RAD * a1);
+            /* Same vertex order as raylib: inner, inner, outer, outer. */
+            MenuSelectRingVert(center.x + c0 * innerRadius, center.y + s0 * innerRadius,
+                               cx, cy, ang0, src, tw, th, 0.0f, 0.0f);
+            MenuSelectRingVert(center.x + c1 * innerRadius, center.y + s1 * innerRadius,
+                               cx, cy, ang0, src, tw, th, 1.0f, 0.0f);
+            MenuSelectRingVert(center.x + c1 * outerRadius, center.y + s1 * outerRadius,
+                               cx, cy, ang0, src, tw, th, 1.0f, 1.0f);
+            MenuSelectRingVert(center.x + c0 * outerRadius, center.y + s0 * outerRadius,
+                               cx, cy, ang0, src, tw, th, 0.0f, 1.0f);
+            angle += stepLength;
+        }
+    }
+    /* Sides: same edges as raylib's four side quads, split for a smooth grad. */
+    MenuSelectRingStrip(x0, y0, x1, y0, x1, y4, x0, y4, cx, cy, ang0, src, tw, th, sideN); /* top: P0-P1, P9-P8 */
+    MenuSelectRingStrip(x2, y1, x2, y2, x4, y2, x4, y1, cx, cy, ang0, src, tw, th, sideN); /* right: P2-P3, P11-P10 */
+    MenuSelectRingStrip(x0, y5, x1, y5, x1, y3, x0, y3, cx, cy, ang0, src, tw, th, sideN); /* lower: P13-P12, P4-P5 */
+    MenuSelectRingStrip(x5, y1, x5, y2, x3, y2, x3, y1, cx, cy, ang0, src, tw, th, sideN); /* left: P15-P14, P6-P7 */
+    rlEnd();
+    rlSetTexture(0);
+}
+
+static void DrawMenuBarCursor(Vector2 c, float diam, float ringW)
+{
+    float pad = 2.0f;
+    float side = diam + 2.0f * pad;
+    int size = (int)ceilf(side);
+    float cx, cy, outer, inner, angle, aa;
+    if (!MenuBarCursorTex_Ensure(size)) return;
+    cx = (float)size * 0.5f;
+    cy = (float)size * 0.5f;
+    outer = diam * 0.5f;
+    inner = fmaxf(0.0f, outer - ringW);
+    angle = (float)GetTime() * 3.0f;
+    aa = 0.75f;   /* ~1px analytical AA */
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            float px = (float)x + 0.5f - cx;
+            float py = (float)y + 0.5f - cy;
+            float d = sqrtf(px * px + py * py);
+            float fillA = 1.0f - MenuBarSmoothstep(inner - aa, inner + aa, d);
+            float ringA = MenuBarSmoothstep(inner - aa, inner + aa, d)
+                        * (1.0f - MenuBarSmoothstep(outer - aa, outer + aa, d));
+            float a = fillA + ringA;
+            Color out = { 0, 0, 0, 0 };
+            if (a > 0.001f) {
+                Color fill = MENU_BAR_CURSOR_FILL;
+                Color rg = MenuBarRingGrad(atan2f(py, px) + angle);
+                float rf = (fill.r * fillA + rg.r * ringA) / a;
+                float gf = (fill.g * fillA + rg.g * ringA) / a;
+                float bf = (fill.b * fillA + rg.b * ringA) / a;
+                if (a > 1.0f) a = 1.0f;
+                out = (Color){
+                    (unsigned char)(rf + 0.5f),
+                    (unsigned char)(gf + 0.5f),
+                    (unsigned char)(bf + 0.5f),
+                    (unsigned char)(a * 255.0f + 0.5f)
+                };
+            }
+            menuBarCursorPix[y * size + x] = out;
+        }
+    }
+    UpdateTexture(menuBarCursorTex, menuBarCursorPix);
+    /* Default shader only: a custom shader on the backbuffer left later
+     * textured draws in the same frame (icons, label, HUD) invisible. */
+    DrawTexturePro(menuBarCursorTex,
+                   (Rectangle){ 0, 0, (float)size, (float)size },
+                   (Rectangle){ c.x - (float)size * 0.5f, c.y - (float)size * 0.5f,
+                                (float)size, (float)size },
+                   (Vector2){ 0, 0 }, 0.0f, WHITE);
 }
 
 /* Draw the systems menu shifted by offsetX (used by the mosaic slide). The cards and the
  * selection ring are laid out by SystemRow below. */
 static Font slotFont;   /* menu font, defined (and set in main) below */
-/* Nerd Font (Symbols Only): N64 C-Up / C-Down marks only. */
+/* Nerd Font (Symbols Only): N64 C-Up / C-Down, and the status-legend Y. */
 #define HINT_NERD_CUP   0xF0062  /* md-arrow_up_drop_circle */
 #define HINT_NERD_CDOWN 0xF004A  /* md-arrow_down_drop_circle */
+/* nf-md-alpha_y_circle: this font maps it to U+F0C34 (U+F0B8C is md-dns_outline). */
+#define HINT_NERD_Y_CIRCLE 0xF0C34
 static Font hintNerdFont;
 static bool hintNerdLoaded;
+static bool hintYNerdLoaded;
+#define FAV_HEART   0xF004  /* nf-fa-heart */
+#define FAV_HEART_O 0xF08A  /* nf-fa-heart_o */
+#define HIDE_BLOCK  0xF00AD /* nf-md-block_helper */
+static Font favNerdFont;
+static bool favNerdLoaded;
+static bool hideNerdLoaded;
 
 
 /* Main-menu system cards: twice the original size. The original row was laid out in a box of half
@@ -1560,6 +2198,358 @@ static Rectangle SystemTileRect(int i, float *radius) {
     SystemRowLayout L = SystemRow((float)GetScreenWidth(), (float)GetScreenHeight());
     if (radius) *radius = L.card * MENU_CARD_ROUNDNESS * 0.5f;
     return (Rectangle){ L.x0 + (float)i * (L.card + L.gap), L.y, L.card, L.card };
+}
+
+/* Switch-home HUD on the system carousel only. Layout is 1:1 at 1920x1080
+ * (measured from a 4K capture of the reference, then divided by 2). */
+#define STATUS_NERD_WIFI      0xF05A9  /* md-wifi */
+#define STATUS_NERD_WIFI_OFF  0xF05AA  /* md-wifi-off */
+#define STATUS_NERD_WIFI_DISC 0xF092F  /* md-wifi-strength-outline */
+#define STATUS_NERD_BAT_FULL  0xF240   /* fa-battery-full */
+#define STATUS_NERD_BAT_75    0xF241
+#define STATUS_NERD_BAT_50    0xF242
+#define STATUS_NERD_BAT_25    0xF243
+#define STATUS_NERD_BAT_0     0xF244
+#define STATUS_NERD_BOLT      0xF0E7   /* fa-bolt, shown when charging */
+#define STATUS_NERD_CIRCLE_PLUS 0xF055 /* nf-fa-circle_plus */
+#define STATUS_A_GLYPH        0x1F150  /* 🅐, same glyph as the games-menu legend */
+#define MENU_BAR_DOWNLOAD     0xF019   /* nf-fa-download */
+#define MENU_BAR_POWER        0xF0425  /* nf-md-power */
+#define MENU_BAR_ICON_COUNT   2
+static Font statusNerdFont;
+static bool statusNerdLoaded;
+static Font menuBarFont;
+static bool menuBarFontLoaded;
+static int menuBarFocus = -1;     /* -1 = system cards, 0 = download, 1 = power */
+static bool powerDialogOpen = false;
+static int powerDialogRow = 2;    /* Cancel is the default */
+static Texture2D statusPadN64;
+static bool statusPadN64Loaded;
+
+static const Color STATUS_INK     = { 227, 229, 228, 255 };
+static const Color STATUS_DIM     = { 129, 131, 130, 255 };
+static const Color STATUS_LED_ON  = { 156, 217,  79, 255 };
+static const Color STATUS_LED_OFF = { 129, 131, 130, 255 };
+
+static float StatusHudK(float sw, float sh)
+{
+    float k = sw / 1920.0f;
+    float ky = sh / 1080.0f;
+    if (ky < k) k = ky;
+    if (k < 0.01f) k = 1.0f;
+    return k;
+}
+
+static void StatusCpUtf8(int cp, char out[5])
+{
+    if (cp < 0x80) {
+        out[0] = (char)cp; out[1] = 0;
+    } else if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        out[2] = 0;
+    } else if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        out[3] = 0;
+    } else {
+        out[0] = (char)(0xF0 | (cp >> 18));
+        out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+        out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[3] = (char)(0x80 | (cp & 0x3F));
+        out[4] = 0;
+    }
+}
+
+static Vector2 StatusMeasureCp(Font font, int cp, float size)
+{
+    char u[5];
+    StatusCpUtf8(cp, u);
+    return MeasureTextEx(font, u, size, 0.0f);
+}
+
+static float StatusDrawCp(Font font, int cp, float x, float midY, float size, Color c)
+{
+    Vector2 m = StatusMeasureCp(font, cp, size);
+    if (m.x <= 1.0f) return 0.0f;
+    DrawTextCodepoint(font, cp, (Vector2){ x, midY - m.y * 0.5f }, size, c);
+    return m.x;
+}
+
+static float StatusGlyphInkH(Font font, int cp, float size)
+{
+    int i = GetGlyphIndex(font, cp);
+    if (i < 0 || font.recs[i].height <= 0.0f) return 0.0f;
+    return font.recs[i].height * (size / (float)font.baseSize);
+}
+
+static float StatusGlyphOffY(Font font, int cp, float size)
+{
+    int i = GetGlyphIndex(font, cp);
+    if (i < 0) return 0.0f;
+    return (float)font.glyphs[i].offsetY * (size / (float)font.baseSize);
+}
+
+/* Draw cp so its ink is the same height as inkH and vertically centred on midY. */
+static float StatusDrawCpMatched(Font font, int cp, float x, float midY,
+                                 float size, float inkH, Color c)
+{
+    Vector2 m = StatusMeasureCp(font, cp, size);
+    float offY = StatusGlyphOffY(font, cp, size);
+    if (m.x <= 1.0f) return 0.0f;
+    DrawTextCodepoint(font, cp, (Vector2){ x, midY - offY - inkH * 0.5f }, size, c);
+    return m.x;
+}
+
+static void StatusDrawText(Font font, const char *s, float x, float midY, float size, Color c)
+{
+    Vector2 m = MeasureTextEx(font, s, size, 0.0f);
+    DrawTextEx(font, s, (Vector2){ x, midY - m.y * 0.5f }, size, 0.0f, c);
+}
+
+static int StatusBatteryGlyph(int cap)
+{
+    if (cap >= 90) return STATUS_NERD_BAT_FULL;
+    if (cap >= 65) return STATUS_NERD_BAT_75;
+    if (cap >= 40) return STATUS_NERD_BAT_50;
+    if (cap >= 15) return STATUS_NERD_BAT_25;
+    return STATUS_NERD_BAT_0;
+}
+
+static int StatusWifiGlyph(int wifi)
+{
+    if (wifi == SYSSTATUS_WIFI_ON) return STATUS_NERD_WIFI;
+    if (wifi == SYSSTATUS_WIFI_DISCONNECTED) return STATUS_NERD_WIFI_DISC;
+    return STATUS_NERD_WIFI_OFF;
+}
+
+static int Pad_N64Index(void);
+static NsoPadLink Pad_LinkNow(void);
+
+static void DrawSystemMenuHud(float offsetX, float sw, float sh)
+{
+    const float k = StatusHudK(sw, sh);
+    const float fs = 44.0f * k;
+    const float midTop = 113.5f * k;
+    Font textFont = (slotFont.texture.id != 0) ? slotFont : GetFontDefault();
+    SysStatus st;
+    float x, gapTw, gapWp, gapPb, iconWifi, iconBat;
+    char percent[8];
+    Vector2 timeM, pctM, optM, startM, aM, plusM;
+    float iconHint, midBot, startX, aX, optX, plusX, plusH, aH0, aSize;
+    float bodyW, bodyH, bodyCx, bodyBot, bodyY, sq, gapSq, ledY, led0;
+
+    SysStatus_Poll(&st, GetTime());
+
+    /* Top right: time, Wi-Fi, [percent + battery]. Right-aligned to sw-72. */
+    timeM = MeasureTextEx(textFont, st.time, fs, 0.0f);
+    gapTw = 29.0f * k;
+    gapWp = 31.0f * k;
+    gapPb = 22.0f * k;
+    iconWifi = 32.0f * k;
+    iconBat = 36.0f * k;
+    x = sw - 72.0f * k;
+    if (st.hasBattery && statusNerdLoaded) {
+        int bcp = StatusBatteryGlyph(st.capacity);
+        Vector2 bm = StatusMeasureCp(statusNerdFont, bcp, iconBat);
+        Vector2 boltM = { 0 };
+        if (st.charging) boltM = StatusMeasureCp(statusNerdFont, STATUS_NERD_BOLT, iconBat * 0.72f);
+        if (st.charging && boltM.x > 1.0f) {
+            x -= boltM.x;
+            StatusDrawCp(statusNerdFont, STATUS_NERD_BOLT, x, midTop, iconBat * 0.72f, STATUS_INK);
+            x -= 6.0f * k;
+        }
+        x -= bm.x;
+        StatusDrawCp(statusNerdFont, bcp, x, midTop, iconBat, STATUS_INK);
+        x -= gapPb;
+        snprintf(percent, sizeof(percent), "%d%%", st.capacity);
+        pctM = MeasureTextEx(textFont, percent, fs, 0.0f);
+        x -= pctM.x;
+        StatusDrawText(textFont, percent, x, midTop, fs, STATUS_INK);
+        x -= gapWp;
+    }
+    if (statusNerdLoaded) {
+        int wcp = StatusWifiGlyph(st.wifi);
+        Vector2 wm = StatusMeasureCp(statusNerdFont, wcp, iconWifi);
+        Color wc = (st.wifi == SYSSTATUS_WIFI_ON) ? STATUS_INK : STATUS_DIM;
+        x -= wm.x;
+        StatusDrawCp(statusNerdFont, wcp, x, midTop, iconWifi, wc);
+        x -= gapTw;
+    }
+    StatusDrawText(textFont, st.time, x - timeM.x, midTop, fs, STATUS_INK);
+
+    /* Bottom right: (circle-plus) Options   (🅐) Start — no key binds.
+     * A is the same 🅐 glyph as the games-menu legend, scaled so its ink
+     * height and vertical alignment match nf-fa-circle_plus. */
+    midBot = sh - 61.0f * k;
+    iconHint = 36.0f * k;
+    startM = MeasureTextEx(textFont, "Start", fs, 0.0f);
+    optM = MeasureTextEx(textFont, "Options", fs, 0.0f);
+    plusH = (statusNerdLoaded
+             ? StatusGlyphInkH(statusNerdFont, STATUS_NERD_CIRCLE_PLUS, iconHint)
+             : iconHint);
+    aH0 = StatusGlyphInkH(textFont, STATUS_A_GLYPH, iconHint);
+    aSize = (aH0 > 0.1f && plusH > 0.1f) ? iconHint * (plusH / aH0) : iconHint;
+    aM = StatusMeasureCp(textFont, STATUS_A_GLYPH, aSize);
+    plusM = statusNerdLoaded ? StatusMeasureCp(statusNerdFont, STATUS_NERD_CIRCLE_PLUS, iconHint)
+                             : (Vector2){ 0 };
+    if (menuBarFocus >= 0) {
+        Vector2 okM = MeasureTextEx(textFont, "OK", fs, 0.0f);
+        float okX = sw - 97.0f * k - okM.x;
+        aX = okX - 15.0f * k - aM.x;
+        StatusDrawCpMatched(textFont, STATUS_A_GLYPH, aX, midBot, aSize, plusH, STATUS_INK);
+        StatusDrawText(textFont, "OK", okX, midBot, fs, STATUS_INK);
+    } else {
+        startX = sw - 97.0f * k - startM.x;
+        aX = startX - 15.0f * k - aM.x;
+        optX = aX - 43.0f * k - optM.x;
+        plusX = optX - 16.0f * k - plusM.x;
+        if (statusNerdLoaded)
+            StatusDrawCpMatched(statusNerdFont, STATUS_NERD_CIRCLE_PLUS, plusX, midBot,
+                                iconHint, plusH, STATUS_INK);
+        StatusDrawText(textFont, "Options", optX, midBot, fs, STATUS_INK);
+        StatusDrawCpMatched(textFont, STATUS_A_GLYPH, aX, midBot, aSize, plusH, STATUS_INK);
+        StatusDrawText(textFont, "Start", startX, midBot, fs, STATUS_INK);
+    }
+
+    /* Bottom left: N64 icon + P1–P4 squares, only when a real pad is present.
+     * Same filter as the input layer (raylib slot with an N64 name, or an
+     * N64 entry in /proc/bus/input/devices). Do not use bare IsGamepadAvailable:
+     * the cluster used to draw even with every slot empty. */
+    if (Pad_N64Index() >= 0 || Pad_LinkNow() != NSO_PAD_LINK_NONE) {
+        int player = Nso_PadPlayerFromIndex(Pad_N64Index());
+        bodyCx = offsetX + 131.5f * k;
+        bodyBot = sh - 36.5f * k;
+        if (statusPadN64Loaded) {
+            bodyH = (float)statusPadN64.height * k;
+            bodyW = (float)statusPadN64.width * k;
+            bodyY = bodyBot - bodyH;
+            DrawTexturePro(statusPadN64,
+                           (Rectangle){ 0, 0, (float)statusPadN64.width, (float)statusPadN64.height },
+                           (Rectangle){ bodyCx - bodyW * 0.5f, bodyY, bodyW, bodyH },
+                           (Vector2){ 0 }, 0.0f, WHITE);
+        } else {
+            bodyH = 72.0f * k;
+            bodyY = bodyBot - bodyH;
+        }
+        sq = 12.0f * k;
+        gapSq = 5.0f * k;
+        ledY = bodyY - 10.0f * k - sq;
+        led0 = bodyCx - (4.0f * sq + 3.0f * gapSq) * 0.5f;
+        for (int i = 0; i < 4; i++) {
+            Color led = Nso_PadPlayerLedOn(player, i + 1) ? STATUS_LED_ON : STATUS_LED_OFF;
+            DrawRectangleRec((Rectangle){ led0 + (float)i * (sq + gapSq), ledY, sq, sq }, led);
+        }
+    }
+}
+
+
+/* Pill under the system cards (Switch-home dock). Sizes are 1:1 at 1920x1080,
+ * then scaled slightly down. Width follows the items (slots + equal end pads)
+ * and the bar is centred horizontally. Vertically it sits in the middle of the
+ * space between the cards and the bottom Options/Start legend, so both gaps match. */
+static const Color MENU_BAR_FILL = { 58, 58, 58, 255 };     /* #3a3a3a */
+static const Color MENU_BAR_ICON_COL = { 192, 192, 192, 255 }; /* #c0c0c0 */
+static const float MENU_BAR_H = 140.0f;
+static const float MENU_BAR_ICON = 84.0f;
+static const float MENU_BAR_END_PAD = 5.0f;      /* circle edge to bar end, px at 1920 */
+static const float MENU_BAR_CIRCLE_GAP = 20.0f;  /* gap between cursor circles, px at 1920 */
+static const float MENU_BAR_SCALE = 0.85f;
+
+static void DrawSystemMenuBar(float offsetX, float sw, float sh, SystemRowLayout L)
+{
+    const float kHud = StatusHudK(sw, sh);
+    const float k = kHud * MENU_BAR_SCALE;
+    float margin = MENU_BAR_CURSOR_MARGIN * kHud;
+    float endPad = MENU_BAR_END_PAD * kHud;
+    float gap = MENU_BAR_CIRCLE_GAP * kHud;
+    float bh = MENU_BAR_H * k;
+    float diam = fmaxf(1.0f, bh - 2.0f * margin);
+    /* Horizontal: 5px end pad (circle edge to bar edge) and 20px gap
+     * between the two cursor circles, at 1920x1080. Vertical margin and
+     * circle size are unchanged. */
+    float span = diam + gap;
+    float pad = endPad + diam * 0.5f;
+    float bw = diam + 2.0f * endPad + (float)(MENU_BAR_ICON_COUNT - 1) * span;
+    Font textFont = (slotFont.texture.id != 0) ? slotFont : GetFontDefault();
+    float fs = 44.0f * kHud, midBot = sh - 61.0f * kHud, plusH, textH, legendTop, cardsBot;
+    float bx, by, midY, icon, firstCx;
+    textH = MeasureTextEx(textFont, "Start", fs, 0.0f).y;
+    plusH = statusNerdLoaded
+          ? StatusGlyphInkH(statusNerdFont, STATUS_NERD_CIRCLE_PLUS, 36.0f * kHud)
+          : 36.0f * kHud;
+    legendTop = midBot - fmaxf(textH, plusH) * 0.5f;
+    cardsBot = L.y + L.card;
+    bx = offsetX + (sw - bw) * 0.5f;
+    by = cardsBot + (legendTop - cardsBot - bh) * 0.5f;
+    midY = by + bh * 0.5f;
+    icon = MENU_BAR_ICON * k;
+    firstCx = bx + pad;
+    const int cps[MENU_BAR_ICON_COUNT] = { MENU_BAR_DOWNLOAD, MENU_BAR_POWER };
+    Rectangle bar = { bx, by, bw, bh };
+
+    DrawRectangleRounded(bar, 1.0f, 64, MENU_BAR_FILL);
+    if (!menuBarFontLoaded) return;
+    {
+        float ringW = diam * MENU_BAR_CURSOR_RING + MENU_BAR_CURSOR_RING_ADD * kHud;
+        for (int i = 0; i < MENU_BAR_ICON_COUNT; i++) {
+            float cx = firstCx + (float)i * span;
+            bool sel = (menuBarFocus == i);
+            Vector2 m;
+            if (sel) {
+                DrawMenuBarCursor((Vector2){ cx, midY }, diam, ringW);
+            }
+            m = StatusMeasureCp(menuBarFont, cps[i], icon);
+            StatusDrawCp(menuBarFont, cps[i], cx - m.x * 0.5f, midY, icon,
+                         sel ? WHITE : MENU_BAR_ICON_COL);
+            if (sel) {
+                const char *lab = T(i == 1 ? S_BAR_SHUTDOWN : S_BAR_DOWNLOADS);
+                float lfs = 36.0f * kHud;
+                Vector2 lm = MeasureTextEx(textFont, lab, lfs, 0.0f);
+                float ly = midY + diam * 0.5f + 10.0f * kHud;
+                DrawTextEx(textFont, lab, (Vector2){ cx - lm.x * 0.5f, ly }, lfs, 0.0f,
+                           MENU_BAR_LABEL_COL);
+            }
+        }
+    }
+}
+
+static void DrawPowerDialog(float sw, float sh)
+{
+    const float k = StatusHudK(sw, sh);
+    Font font = (slotFont.texture.id != 0) ? slotFont : GetFontDefault();
+    const float fs = 44.0f * k, rowH = 72.0f * k, pad = 28.0f * k;
+    const float pw = 560.0f * k, ph = pad * 2.0f + rowH * 3.0f;
+    float px = (sw - pw) * 0.5f, py = (sh - ph) * 0.5f;
+    static const StrId labels[3] = { S_PWR_SHUTDOWN, S_PWR_CLOSE, S_PWR_CANCEL };
+
+    DrawRectangle(0, 0, (int)sw, (int)sh, Fade(BLACK, 0.45f));
+    DrawRectangleRounded((Rectangle){ px, py, pw, ph }, 0.12f, 16, MENU_BG);
+    for (int i = 0; i < 3; i++) {
+        float y = py + pad + rowH * (float)i;
+        bool sel = (powerDialogRow == i);
+        const char *s = T(labels[i]);
+        Vector2 m;
+        if (sel) {
+            DrawRectangleRounded((Rectangle){ px + pad * 0.4f, y, pw - pad * 0.8f, rowH },
+                                 0.35f, 12, MENU_BAR_FILL);
+        }
+        m = MeasureTextEx(font, s, fs, 0.0f);
+        DrawTextEx(font, s, (Vector2){ px + (pw - m.x) * 0.5f, y + (rowH - m.y) * 0.5f },
+                   fs, 0.0f, sel ? WHITE : MENU_BAR_ICON_COL);
+    }
+}
+
+static void Power_ShutDown(void)
+{
+#ifndef _WIN32
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("doas", "doas", "poweroff", (char *)NULL);
+        _exit(127);
+    }
+#endif
 }
 
 static void DrawSystemMenu(float offsetX) {
@@ -1603,16 +2593,21 @@ static void DrawSystemMenu(float offsetX) {
                            (Vector2){ 0 }, 0.0f, WHITE);
         }
 
-        if (i == currentSystem) {
-            /* Black gap, then a glowing ring that pulses cyan <-> violet. */
-            float gapT = card * 0.015f;
-            float ringT = card * 0.02f;
-            Color glow = MenuGlow();
-            Rectangle outer = { dst.x - gapT, dst.y - gapT, card + 2.0f * gapT, card + 2.0f * gapT };
+        if (i == currentSystem && menuBarFocus < 0) {
+            /* Black gap, then a pastel gradient ring in sync with the bar cursor.
+             * Hidden while the dock bar is focused, so only one indicator is on screen. */
+            float gapT, ringT;
+            Rectangle outer;
+            MenuSelectRingParams(card, &gapT, &ringT);
+            outer = (Rectangle){ dst.x - gapT, dst.y - gapT, card + 2.0f * gapT, card + 2.0f * gapT };
             DrawRectangleRoundedLinesEx(dst, MENU_CARD_ROUNDNESS, 16, gapT, BLACK);
-            DrawRectangleRoundedLinesEx(outer, 2.0f * (r + gapT) / outer.width, 16, ringT, glow);
+            DrawMenuSelectRing(outer, 2.0f * (r + gapT) / outer.width, 16, ringT);
         }
     }
+
+    DrawSystemMenuBar(offsetX, sw, sh, L);
+    DrawSystemMenuHud(offsetX, sw, sh);
+    if (powerDialogOpen) DrawPowerDialog(sw, sh);
 }
 
 /* Live pad profile + the existing info-bar close/open (INFO_BAR_FADE_SEC /
@@ -1803,7 +2798,28 @@ static float Hint_GlyphHeight(Font font, int cp, float fontSize) {
     return font.recs[index].height * scale;
 }
 
-/* N64 bar: same string as default, but 🅧/🅨 are drawn from hintNerdFont. */
+/* Scale the status-legend Y so its ink height matches 🅐 (and 🅑). */
+static float Hint_YCircleSize(Font ui, float fontSize) {
+    float aH = Hint_GlyphHeight(ui, 0x1F150, fontSize);
+    float yH = Hint_GlyphHeight(hintNerdFont, HINT_NERD_Y_CIRCLE, fontSize);
+    if (aH <= 0.0f || yH <= 0.0f) return fontSize;
+    return fontSize * (aH / yH);
+}
+
+static int Hint_TextHasCp(const char *text, int want) {
+    const char *p = text;
+    if (!p) return 0;
+    while (*p) {
+        int sz = 0, cp = GetCodepointNext(p, &sz);
+        p += sz;
+        if (cp == want) return 1;
+    }
+    return 0;
+}
+
+/* N64 bar: same string as default, but 🅧/🅨 are drawn from hintNerdFont.
+ * The status-legend Y (nf-md-alpha_y_circle) is also drawn from that font,
+ * scaled and aligned to the 🅐/🅑 glyphs. */
 static float Hint_N64Width(Font font, const char *text, float fontSize, float spacing) {
     float w = 0.0f;
     const char *p = text;
@@ -1811,6 +2827,11 @@ static float Hint_N64Width(Font font, const char *text, float fontSize, float sp
         int sz = 0;
         int cp = GetCodepointNext(p, &sz);
         p += sz;
+        if (cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded) {
+            float ys = Hint_YCircleSize(font, fontSize);
+            w += Hint_GlyphAdvance(hintNerdFont, HINT_NERD_Y_CIRCLE, ys) + spacing;
+            continue;
+        }
         int nerd = Hint_N64NerdCodepoint(cp);
         Font f = nerd ? hintNerdFont : font;
         int drawcp = nerd ? nerd : cp;
@@ -1827,6 +2848,17 @@ static void Hint_N64Draw(Font font, const char *text, Vector2 pos, float fontSiz
         int sz = 0;
         int cp = GetCodepointNext(p, &sz);
         p += sz;
+        if (cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded) {
+            float ys = Hint_YCircleSize(font, fontSize);
+            float aOff = StatusGlyphOffY(font, 0x1F150, fontSize);
+            float yOff = StatusGlyphOffY(hintNerdFont, HINT_NERD_Y_CIRCLE, ys);
+            float aH = Hint_GlyphHeight(font, 0x1F150, fontSize);
+            float yH = Hint_GlyphHeight(hintNerdFont, HINT_NERD_Y_CIRCLE, ys);
+            float y = pos.y + aOff - yOff + (aH - yH) * 0.5f;
+            DrawTextCodepoint(hintNerdFont, HINT_NERD_Y_CIRCLE, (Vector2){ x, y }, ys, tint);
+            x += Hint_GlyphAdvance(hintNerdFont, HINT_NERD_Y_CIRCLE, ys) + spacing;
+            continue;
+        }
         int nerd = Hint_N64NerdCodepoint(cp);
         Font f = nerd ? hintNerdFont : font;
         int drawcp = nerd ? nerd : cp;
@@ -1855,11 +2887,16 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
     bool padBar = (text == PadUi_BarText());   /* the controller screen's bar: rings round its A / B glyphs */
     bool n64Hints = !padBar && (Pad_ActiveProfile() == NSO_PAD_PROFILE_N64) && hintNerdLoaded;
+    bool yHint = !padBar && hintYNerdLoaded && Hint_TextHasCp(draw, HINT_NERD_Y_CIRCLE);
+    bool mixedHints = n64Hints || yHint;
+    const char *mix = n64Hints ? text : draw;
     float glyphGap = 0.0f, glyphGapZ = 0.0f;
     Vector2 textSize;
-    if (n64Hints) {
-        textSize.x = Hint_N64Width(font, text, fontSize, spacing);
-        textSize.y = MeasureTextEx(font, text, fontSize, spacing).y;
+    if (mixedHints) {
+        textSize.x = Hint_N64Width(font, mix, fontSize, spacing);
+        textSize.y = MeasureTextEx(font, n64Hints ? text : draw, fontSize, spacing).y;
+        if (yHint)
+            textSize.y = MeasureTextEx(font, "🅐", fontSize, spacing).y;
     } else {
         textSize = MeasureTextEx(font, draw, fontSize, spacing);
     }
@@ -1931,8 +2968,8 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
             }
             x += adv + spacing;
         }
-    } else if (n64Hints) {
-        Hint_N64Draw(font, text, textPosition, fontSize, spacing, textSize.y, Fade(WHITE, opacity));
+    } else if (mixedHints) {
+        Hint_N64Draw(font, mix, textPosition, fontSize, spacing, textSize.y, Fade(WHITE, opacity));
     } else {
         DrawTextEx(font,
                    draw,
@@ -1940,6 +2977,30 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
                    fontSize,
                    spacing,
                    Fade(WHITE, opacity));
+    }
+
+    /* Charging arc around the existing 🅨 while Y is held. Layout unchanged. */
+    float holdY = padBar ? 0.0f : SortY_Progress();
+    if (holdY > 0.001f) {
+        const char *walk = n64Hints ? text : draw;
+        float x = textPosition.x;
+        for (const char *p = walk; p && *p; ) {
+            int sz = 0, cp = GetCodepointNext(p, &sz);
+            p += sz;
+            int nerd = n64Hints ? Hint_N64NerdCodepoint(cp) : 0;
+            Font f = nerd ? hintNerdFont : font;
+            int drawcp = nerd ? nerd : cp;
+            float adv = Hint_GlyphAdvance(f, drawcp, fontSize);
+            if (cp == SORT_Y_HINT_CP) {
+                float th = fmaxf(2.0f, fontSize * 0.07f);
+                float r = adv * 0.62f;
+                Vector2 c = { x + adv * 0.5f, textPosition.y + textSize.y * 0.5f };
+                DrawRing(c, r - th * 0.5f, r + th * 0.5f, -90.0f, -90.0f + 360.0f * holdY, 48,
+                         Fade(WHITE, opacity));
+                break;
+            }
+            x += adv + spacing;
+        }
     }
 }
 
@@ -2144,6 +3205,7 @@ static void ScrapeMenu_Idle(int status)
     scrapeBusy = false;
     scrapeCancel = false;
     scrapePart[0] = '\0';
+    scrapeAliasHops = 0;
     if (status >= 0) Msg_Set(&scrapeMsg, status, 0, NULL);
 }
 
@@ -2218,7 +3280,7 @@ static bool ScrapeMenu_StartDates(void)
         return false;
     }
     scrapePhase = SCRAPE_DATES;
-    Msg_Set(&scrapeMsg, S_SCRAPE_INDEX, 0, NULL);
+    Msg_Set(&scrapeMsg, S_SCRAPE_STEP_DATES, 0, NULL);
     return true;
 }
 
@@ -2237,7 +3299,7 @@ static void ScrapeMenu_StartIndex(void)
     }
     scrapeBusy = true;
     scrapePhase = SCRAPE_INDEX;
-    Msg_Set(&scrapeMsg, S_SCRAPE_INDEX, 0, NULL);
+    Msg_Set(&scrapeMsg, S_SCRAPE_STEP_INDEX, 0, NULL);
     if (!ScrapeMenu_SpawnCurl(url, indexPath)) {
         scrapeBusy = false;
         scrapePhase = SCRAPE_IDLE;
@@ -2247,43 +3309,112 @@ static void ScrapeMenu_StartIndex(void)
 
 static void ScrapeMenu_Advance(void)
 {
-    int count = ActiveGameTotal();   /* hidden titles get their covers too */
+    int count = scrapeListCount > 0 ? scrapeListCount : ActiveGameTotal();   /* hidden titles get their covers too */
     GameEntry *games = ActiveGames();
     const char *playlist = Scrape_Playlist(scrapeId);
 
+    int work = 0;
+    scrapePhase = SCRAPE_SCAN;
     while (scrapeGame < count) {
-        GameEntry *game = &games[scrapeGame];
         char dest[2048];
         char part[2064];
         char url[2048];
         const char *file;
+        const char *title;
+        const char *rel;
+        const char *alias = NULL;
         int present;
+        enum { SCRAPE_SCAN_BURST = 8 };
+
+        if (scrapeListCount > 0) {
+            title = scrapeListTitle[scrapeGame];
+            rel = scrapeListDest[scrapeGame];
+            alias = scrapeListAlias[scrapeGame][0] ? scrapeListAlias[scrapeGame] : NULL;
+        } else {
+            GameEntry *game = &games[scrapeGame];
+            title = game->title ? game->title : "";
+            rel = game->boxartPath;
+            if (!rel || rel[0] == '\0'
+                || (scrapeOnlyOn && (scrapeGame >= MAX_GAMES || !scrapeOnly[scrapeGame]))) {
+                scrapeGame++;
+                continue;
+            }
+        }
 
         {
             char prog[160];
-            snprintf(prog, sizeof(prog), "%s  %d/%d", game->title ? game->title : "", scrapeGame + 1, count);
+            snprintf(prog, sizeof(prog), "%s  %d/%d", title, scrapeGame + 1, count);
             Msg_Set(&scrapeMsg, S_RAW, 0, prog);
         }
-        if (!game->boxartPath || game->boxartPath[0] == '\0'
-            || (scrapeOnlyOn && (scrapeGame >= MAX_GAMES || !scrapeOnly[scrapeGame]))) {
+        if (!rel || rel[0] == '\0') {
             scrapeGame++;
             continue;
         }
-        snprintf(dest, sizeof(dest), "%s", GetDataPath(game->boxartPath));
-        present = FileExists(dest) && GetFileLength(dest) > 0;
+        snprintf(dest, sizeof(dest), "%s", GetDataPath(rel));
+        present = FileExists(dest) && Scrape_LooksLikeImage(dest);
         if (!scrapeReplace && present) {
             scrapeGame++;
+            if (++work >= SCRAPE_SCAN_BURST) return;
             continue;
         }
-        file = Scrape_MatchLoose(game->title, (const char **)scrapeNames, scrapeNameCount);
+        if (scrapeListCount > 0) {
+            file = scrapeListFile[scrapeGame][0] ? scrapeListFile[scrapeGame] : NULL;
+            if (file && scrapeNameCount > 0) {
+                int found = 0, ni;
+                for (ni = 0; ni < scrapeNameCount; ni++) {
+                    if (scrapeNames[ni] && strcmp(scrapeNames[ni], file) == 0) { found = 1; break; }
+                }
+                if (!found) file = NULL;
+            }
+        } else {
+            file = NULL;
+        }
+        if (!file) {
+            file = Scrape_MatchLoose(title, (const char **)scrapeNames, scrapeNameCount);
+            if (!file && alias)
+                file = Scrape_MatchLoose(alias, (const char **)scrapeNames, scrapeNameCount);
+        }
+        /* Same-game region/revision box arts: pause for a choice when there
+         * are two or more. An exact filename from Select games is already a
+         * pick, so it skips the picker. */
+        if (file && !(scrapeListCount > 0 && scrapeListFile[scrapeGame][0])) {
+            const char *cands[SCRAPE_CHOICE_MAX];
+            const char *q = title;
+            int cn = Scrape_CollectMatches(q, (const char **)scrapeNames,
+                                           scrapeNameCount, cands, SCRAPE_CHOICE_MAX);
+            if (cn <= 0 && alias) {
+                q = alias;
+                cn = Scrape_CollectMatches(q, (const char **)scrapeNames,
+                                           scrapeNameCount, cands, SCRAPE_CHOICE_MAX);
+            }
+            if (cn >= 2) {
+                int ci;
+                scrapeChoiceN = cn;
+                scrapeChoiceCur = 0;
+                for (ci = 0; ci < cn; ci++) {
+                    scrapeChoices[ci] = cands[ci];
+                    if (file && cands[ci] && strcmp(cands[ci], file) == 0)
+                        scrapeChoiceCur = ci;
+                }
+                snprintf(scrapeChoiceTitle, sizeof(scrapeChoiceTitle), "%s", title);
+                snprintf(scrapeDest, sizeof(scrapeDest), "%s", dest);
+                scrapeActive = scrapeGame;
+                scrapeAliasHops = 0;
+                scrapePhase = SCRAPE_CHOOSE;
+                return;
+            }
+            if (cn == 1) file = cands[0];
+        }
         if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {
             scrapeMisses++;
             scrapeGame++;
+            if (++work >= SCRAPE_SCAN_BURST) return;
             continue;
         }
         snprintf(part, sizeof(part), "%s.part", dest);
         snprintf(scrapeDest, sizeof(scrapeDest), "%s", dest);
         scrapeActive = scrapeGame;
+        scrapeAliasHops = 0;
         scrapePhase = SCRAPE_FILE;
         if (!ScrapeMenu_SpawnCurl(url, part)) {
             scrapeMisses++;
@@ -2296,6 +3427,199 @@ static void ScrapeMenu_Advance(void)
     ScrapeMenu_Finish();
 }
 
+/* On-disk folder for the current system (NES, SNES, ...), same names
+ * the games menu uses. GameCube has no Gs_RomFolder, so "GameCube". */
+static const char *ScrapeMenu_RomFolder(void)
+{
+    const char *id, *folder;
+    if (!ActiveSystem() || !ActiveSystem()->platform) return NULL;
+    id = ActiveSystem()->platform->id;
+    folder = Gs_RomFolder(id);
+    if (!folder && id && strcmp(id, "gamecube") == 0) folder = "GameCube";
+    return folder;
+}
+
+static void ScrapeMenu_NoRomsText(char *dst, size_t n)
+{
+    const char *folder = ScrapeMenu_RomFolder();
+    snprintf(dst, n, T(S_EMU_NO_ROMS), folder ? folder : "");
+}
+
+/* Catalog indices of titles that have a ROM in roms/<System>/.
+ * Uses the same listing as the games menu (loose files and one level of
+ * per-game folders). Read only: does not touch scrapeOnly or write files. */
+static int ScrapeMenu_ListRoms(int *dst, int max)
+{
+    enum { SCRAPE_ROM_FILES = 1024 };
+    static char baseBuf[SCRAPE_ROM_FILES][256];
+    const char *bases[SCRAPE_ROM_FILES];
+    const char *titles[MAX_GAMES];
+    int matched[SCRAPE_ROM_FILES];
+    unsigned char has[MAX_GAMES];
+    int total = ActiveGameTotal();
+    int n = 0, i, cap, nfiles = 0;
+    const char *folder;
+    char dir[2400];
+    GameEntry *games = ActiveGames();
+    VersionScanItem *items;
+    int nscan, j;
+
+    memset(has, 0, sizeof has);
+    cap = total < MAX_GAMES ? total : MAX_GAMES;
+    for (i = 0; i < cap; i++) {
+        titles[i] = games[i].title ? games[i].title : "";
+        if (games[i].rom && games[i].rom[0]) {
+            char path[2400];
+            snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), games[i].rom);
+            if (FileExists(path) && !DirectoryExists(path)) has[i] = 1;
+            else if (strncmp(games[i].rom, "repos/roms/", 11) == 0) {
+                snprintf(path, sizeof(path), "%s/%s/%s", GetBaseDirectory(),
+                         Gs_RomRoot(), games[i].rom + 11);
+                if (FileExists(path) && !DirectoryExists(path)) has[i] = 1;
+            }
+        }
+    }
+    folder = ScrapeMenu_RomFolder();
+    if (folder) {
+        snprintf(dir, sizeof(dir), "%s/%s/%s", GetBaseDirectory(), Gs_RomRoot(), folder);
+        items = (VersionScanItem *)calloc((size_t)MAX_GAMES, sizeof(*items));
+        if (items) {
+            nscan = Version_ScanDir(dir, folder, items, MAX_GAMES);
+            for (j = 0; j < nscan; j++) {
+                const char *rel, *name;
+                if (items[j].isPatch) continue;
+                rel = items[j].rel;
+                name = items[j].name;
+                if (nfiles < SCRAPE_ROM_FILES) {
+                    Gs_RomBase(name, baseBuf[nfiles], sizeof(baseBuf[0]));
+                    bases[nfiles] = baseBuf[nfiles];
+                    nfiles++;
+                }
+                for (i = 0; i < cap; i++) {
+                    const char *bn;
+                    if (has[i]) continue;
+                    if (games[i].rom && games[i].rom[0] && strcmp(games[i].rom, rel) == 0) {
+                        has[i] = 1;
+                        continue;
+                    }
+                    if (!games[i].rom || !games[i].rom[0] || !name || !name[0]) continue;
+                    bn = GetFileName(games[i].rom);
+                    if (bn && strcmp(bn, name) == 0) has[i] = 1;
+                }
+            }
+            if (nfiles > 0) {
+                Gs_MatchAll(bases, nfiles, titles, cap, matched);
+                for (i = 0; i < nfiles; i++) {
+                    int ti = matched[i];
+                    if (ti >= 0 && ti < cap) has[ti] = 1;
+                }
+            }
+            free(items);
+        }
+    }
+    for (i = 0; i < cap; i++) {
+        if (!has[i]) continue;
+        if (dst && n < max) dst[n] = i;
+        n++;
+    }
+    if (dst && n > max) n = max;
+    return n;
+}
+
+static int ScrapeMenu_MarkRoms(void)
+{
+    int idx[MAX_GAMES], n, i;
+    memset(scrapeOnly, 0, sizeof scrapeOnly);
+    n = ScrapeMenu_ListRoms(idx, MAX_GAMES);
+    for (i = 0; i < n; i++) scrapeOnly[idx[i]] = true;
+    return n;
+}
+
+static void ScrapeMenu_Start(int replace);
+
+static void ScrapeMenu_StartFromRoms(int replace)
+{
+    scrapeRomOnly = true;
+    ScrapeMenu_Start(replace);
+}
+
+static int ScrapeMenu_Choosing(void)
+{
+    return scrapeBusy && scrapePhase == SCRAPE_CHOOSE;
+}
+
+static const char *ScrapeMenu_ChoiceTitle(void)
+{
+    return scrapeChoiceTitle;
+}
+
+static int ScrapeMenu_ChoiceCount(void)
+{
+    return scrapeChoiceN;
+}
+
+static int ScrapeMenu_ChoiceCur(void)
+{
+    return scrapeChoiceCur;
+}
+
+
+static int ScrapeMenu_ChoiceGame(void)
+{
+    return scrapeActive >= 0 ? scrapeActive : scrapeGame;
+}
+
+static const char *ScrapeMenu_ChoiceName(int i)
+{
+    if (i < 0 || i >= scrapeChoiceN || !scrapeChoices[i]) return "";
+    return scrapeChoices[i];
+}
+
+static void ScrapeMenu_StartChosenFile(const char *file)
+{
+    const char *playlist = Scrape_Playlist(scrapeId);
+    char url[2048], part[2304];
+    if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {
+        scrapeMisses++;
+        scrapeGame++;
+        scrapeChoiceN = 0;
+        scrapePhase = SCRAPE_SCAN;
+        return;
+    }
+    snprintf(part, sizeof(part), "%s.part", scrapeDest);
+    scrapeActive = scrapeGame;
+    scrapeAliasHops = 0;
+    scrapeChoiceN = 0;
+    scrapePhase = SCRAPE_FILE;
+    if (!ScrapeMenu_SpawnCurl(url, part)) {
+        scrapeMisses++;
+        scrapeGame++;
+        scrapePhase = SCRAPE_SCAN;
+    }
+}
+
+/* 1 if the picker consumed the input. accept/back/prev/next are edge flags. */
+static int ScrapeMenu_HandleChoice(int accept, int back, int prev, int next)
+{
+    if (!ScrapeMenu_Choosing()) return 0;
+    if (prev && scrapeChoiceN > 0)
+        scrapeChoiceCur = (scrapeChoiceCur + scrapeChoiceN - 1) % scrapeChoiceN;
+    if (next && scrapeChoiceN > 0)
+        scrapeChoiceCur = (scrapeChoiceCur + 1) % scrapeChoiceN;
+    if (accept && scrapeChoiceN > 0 && scrapeChoices[scrapeChoiceCur]) {
+        ScrapeMenu_StartChosenFile(scrapeChoices[scrapeChoiceCur]);
+        return 1;
+    }
+    if (back) {
+        scrapeMisses++;
+        scrapeGame++;
+        scrapeChoiceN = 0;
+        scrapePhase = SCRAPE_SCAN;
+        return 1;
+    }
+    return 1;
+}
+
 static void ScrapeMenu_Start(int replace)
 {
     const char *playlist;
@@ -2303,19 +3627,31 @@ static void ScrapeMenu_Start(int replace)
     int need = 0;
 
     if (scrapeBusy) return;
+    if (scrapeRomOnly) {
+        scrapeRomOnly = false;
+        scrapeListCount = 0;
+        if (ScrapeMenu_MarkRoms() == 0) {
+            scrapeOnlyOn = false;
+            Msg_Set(&scrapeMsg, S_EMU_NO_ROMS, 0, ScrapeMenu_RomFolder() ? ScrapeMenu_RomFolder() : "");
+            return;
+        }
+        scrapeOnlyOn = true;
+    }
     playlist = Scrape_Playlist(ActiveSystem()->platform->id);
     if (!playlist) {
         Msg_Set(&scrapeMsg, S_SCRAPE_NO_SOURCE, 0, NULL);
         return;
     }
-    count = ActiveGameTotal();
+    count = scrapeListCount > 0 ? scrapeListCount : ActiveGameTotal();
     if (!replace) {
         for (int i = 0; i < count; i++) {
-            const char *rel = ActiveGames()[i].boxartPath;
-            char path[2048];
-            if (!rel || rel[0] == '\0' || (scrapeOnlyOn && (i >= MAX_GAMES || !scrapeOnly[i]))) continue;
-            snprintf(path, sizeof(path), "%s", GetDataPath(rel));
-            if (!FileExists(path) || GetFileLength(path) <= 0) need = 1;
+            const char *rel = scrapeListCount > 0 ? scrapeListDest[i] : ActiveGames()[i].boxartPath;
+            char path[2304];
+            if (!rel || rel[0] == '\0') continue;
+            if (scrapeListCount == 0 && scrapeOnlyOn && (i >= MAX_GAMES || !scrapeOnly[i])) continue;
+            if (strlen(rel) >= 1024) continue;
+            snprintf(path, sizeof(path), "%s/%s", GetBaseDirectory(), rel);
+            if (!FileExists(path) || !Scrape_LooksLikeImage(path)) need = 1;
         }
     }
     snprintf(scrapeId, sizeof(scrapeId), "%s", ActiveSystem()->platform->id);
@@ -2350,6 +3686,11 @@ static void ScrapeMenu_Poll(void)
         ScrapeMenu_Idle(S_SCRAPE_CANCELLED);
         return;
     }
+    if (scrapePhase == SCRAPE_SCAN) {
+        ScrapeMenu_Advance();
+        return;
+    }
+    if (scrapePhase == SCRAPE_CHOOSE) return;
     if (!NsoProcOk(scrapeProc) || !NsoSpawnExited(&scrapeProc, &code)) return;
 
     if (scrapePhase == SCRAPE_INDEX) {
@@ -2395,7 +3736,27 @@ static void ScrapeMenu_Poll(void)
 
     if (scrapePhase == SCRAPE_FILE) {
         int ok = code == 0 && FileExists(scrapePart) && GetFileLength(scrapePart) > 0;
-        if (ok) {
+        if (ok && scrapeAliasHops < 2) {
+            char alias[256];
+            if (Scrape_AliasTarget(scrapePart, alias, sizeof(alias))) {
+                char url[2048];
+                char part[2200];
+                const char *playlist = Scrape_Playlist(scrapeId);
+                snprintf(part, sizeof(part), "%s", scrapePart);
+                FileRemove(scrapePart);
+                scrapePart[0] = '\0';
+                scrapeAliasHops++;
+                if (playlist && Scrape_ImageUrl(url, sizeof(url), playlist, alias) == 0
+                    && ScrapeMenu_SpawnCurl(url, part))
+                    return;
+                scrapeMisses++;
+                scrapeAliasHops = 0;
+                scrapeGame++;
+                ScrapeMenu_Advance();
+                return;
+            }
+        }
+        if (ok && Scrape_LooksLikeImage(scrapePart)) {
             FileRemove(scrapeDest);
             if (FileMove(scrapePart, scrapeDest) != 0) {
                 FileRemove(scrapePart);
@@ -2409,6 +3770,7 @@ static void ScrapeMenu_Poll(void)
             scrapeMisses++;
         }
         scrapePart[0] = '\0';
+        scrapeAliasHops = 0;
         scrapeGame++;
         ScrapeMenu_Advance();
         return;
@@ -2778,175 +4140,8 @@ static void Repo_BadgeDraw(Font font, Rectangle tile) {
     DrawTextEx(font, t, (Vector2){ b.x + 7.0f, b.y + 3.0f }, fs, 1.0f, WHITE);
 }
 
-/* Repos of the active system, in list order. */
-static int Manage_Repos(int *out, int max) {
-    int n = 0;
-    for (int i = 0; i < nso_repo_count && n < max; i++) {
-        if (strcmp(nso_repos[i].system, ActiveSystem()->platform->id) == 0) out[n++] = i;
-    }
-    return n;
-}
-
-static int manageRow = 0;
-static int manageReturnSystem = 0;
-
-/* Rows: one per repo of the system, "all from this system" (if it has
- * any), the global "all repositories" row, then Language. */
-static int Manage_RowCount(void) {
-    int idx[REPO_MAX];
-    int n = Manage_Repos(idx, REPO_MAX);
-    return n + (n > 0 ? 1 : 0) + 2;
-}
-
 static void Lang_ConfigPath(char *dst, size_t n) {
     snprintf(dst, n, "%s/config/nso.cfg", GetBaseDirectory());
-}
-
-static void Manage_Open(void) {
-    manageReturnSystem = currentSystem;
-    manageRow = 0;
-    Repo_RefreshLocal();
-    currentState = MANAGE;
-    introFrames = 0;   /* same short fade-in as app open */
-    introOpacity = 1.0f;
-}
-
-static void Manage_Close(void) {
-    currentSystem = manageReturnSystem;
-    currentState = SYSTEMS;
-    introFrames = 0;
-    introOpacity = 1.0f;
-}
-
-static void Manage_Activate(void) {
-    int idx[REPO_MAX];
-    int n = Manage_Repos(idx, REPO_MAX);
-    if (manageRow < n) {
-        int i = idx[manageRow];
-        Repo_Enqueue(i, Repo_Offer(i));   /* "Ready to install": build only */
-    } else if (n > 0 && manageRow == n) {
-        for (int k = 0; k < n; k++) Repo_Enqueue(idx[k], false);
-    } else if (manageRow == Manage_RowCount() - 2) {
-        for (int k = 0; k < nso_repo_count; k++) Repo_Enqueue(k, false);   /* all systems */
-    } else {
-        char dir[2048], cfg[2112];
-        Lang_Set(Lang_Get() == LANG_EN ? LANG_PT : LANG_EN);
-        snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
-        MakeDirectory(dir);
-        Lang_ConfigPath(cfg, sizeof(cfg));
-        if (!Lang_Save(cfg, Lang_Get())) fprintf(stderr, "NSO: cannot save %s\n", cfg);
-    }
-}
-
-/* Gear screen scroll: long repo lists (static recompilations) do not fit,
- * so the page follows the selected row. Content-space y of that row. */
-static float manageScroll = 0.0f;
-static float manageSelY = 0.0f;
-
-static void Manage_DrawRow(Font font, Rectangle sec, float *y, int row, const char *left,
-                           const char *right) {
-    float size = (float)font.baseSize;
-    float rowH = 54.0f;
-    float x = sec.x + 28.0f;
-    Color fg = WHITE;
-    if (row == manageRow) {
-        manageSelY = *y;
-        DrawRectangleRounded((Rectangle){ x - 14.0f, *y - 6.0f, sec.width - 28.0f, rowH },
-                             0.35f, 8, WHITE);
-        fg = BLACK;
-    }
-    DrawTextEx(font, left, (Vector2){ x, *y + 4.0f }, size, 2.0f, fg);
-    if (right && right[0]) {
-        float rs = size * 0.72f;
-        Vector2 m = MeasureTextEx(font, right, rs, 2.0f);
-        DrawTextEx(font, right, (Vector2){ sec.x + sec.width - 28.0f - m.x, *y + 4.0f + (size - rs) * 0.5f },
-                   rs, 2.0f, row == manageRow ? DARKGRAY : LIGHTGRAY);
-    }
-    *y += rowH + 8.0f;
-}
-
-/* Full-screen repository/language screen: system tabs, then the rounded sections. */
-static void Manage_Draw(Font font) {
-    const Color panel = { 52, 52, 52, 255 };
-    float sw = (float)GetScreenWidth();
-    float sh = (float)GetScreenHeight();
-    float size = (float)font.baseSize;
-    float small = size * 0.72f;
-    float w = sw * 0.5f;
-    float x0 = (sw - w) * 0.5f;
-    float y = sh * 0.08f;
-    int idx[REPO_MAX];
-    int n = Manage_Repos(idx, REPO_MAX);
-
-    ClearBackground(MENU_BG);
-    rlPushMatrix();
-    rlTranslatef(0.0f, -manageScroll, 0.0f);
-
-    /* System tabs (Left / Right). */
-    float tabGap = 14.0f, tabW = (w - tabGap * (SYSTEM_COUNT - 1)) / SYSTEM_COUNT, tabH = 54.0f;
-    for (int i = 0; i < SYSTEM_COUNT; i++) {
-        Rectangle t = { x0 + (float)i * (tabW + tabGap), y, tabW, tabH };
-        bool on = i == currentSystem;
-        DrawRectangleRounded(t, 0.5f, 12, on ? WHITE : panel);
-        const char *nm = systems[i].platform->name;
-        Vector2 m = MeasureTextEx(font, nm, size, 2.0f);
-        DrawTextEx(font, nm, (Vector2){ t.x + (t.width - m.x) * 0.5f, t.y + (tabH - m.y) * 0.5f },
-                   size, 2.0f, on ? BLACK : WHITE);
-    }
-    y += tabH + 32.0f;
-
-    /* Repository download. */
-    int rows = (n > 0 ? n + 1 : 0) + 1;
-    float h2 = 28.0f + size + 18.0f + (float)rows * 62.0f + (n == 0 ? small + 16.0f : 0.0f) + 20.0f;
-    Rectangle s2 = { x0, y, w, h2 };
-    DrawRectangleRounded(s2, 40.0f / h2, 16, panel);
-    float ry = y + 28.0f;
-    DrawTextEx(font, T(S_MANAGE_REPOS), (Vector2){ x0 + 28.0f, ry }, size, 2.0f, GRAY);
-    ry += size + 18.0f;
-    if (n == 0) {
-        DrawTextEx(font, T(S_MANAGE_NO_REPOS), (Vector2){ x0 + 28.0f, ry }, small, 2.0f, WHITE);
-        ry += small + 16.0f;
-    }
-    for (int k = 0; k < n; k++) {
-        char st[192];
-        Msg_Format(&repoMsg[idx[k]], st, sizeof(st));
-        if (idx[k] == repoRunning) strncat(st, "...", sizeof(st) - strlen(st) - 1);
-        Manage_DrawRow(font, s2, &ry, k, nso_repos[idx[k]].name, st);
-    }
-    if (n > 0) {
-        char lbl[96];
-        snprintf(lbl, sizeof(lbl), T(S_MANAGE_ALL_SYSTEM), ActiveSystem()->platform->name);
-        Manage_DrawRow(font, s2, &ry, n, lbl, NULL);
-    }
-    {
-        char st[64] = "";
-        int pending = repoQueueLen + (repoRunning >= 0 ? 1 : 0);
-        if (pending > 0) snprintf(st, sizeof(st), T(S_MANAGE_QUEUED_N), pending);
-        Manage_DrawRow(font, s2, &ry, n + (n > 0 ? 1 : 0), T(S_MANAGE_ALL), st);
-    }
-    y += h2 + 24.0f;
-
-    /* Settings: language (A toggles, saved to config/nso.cfg). */
-    float h3 = 28.0f + size + 18.0f + 62.0f + 20.0f;
-    Rectangle s3 = { x0, y, w, h3 };
-    DrawRectangleRounded(s3, 40.0f / h3, 16, panel);
-    ry = y + 28.0f;
-    DrawTextEx(font, T(S_MANAGE_SETTINGS), (Vector2){ x0 + 28.0f, ry }, size, 2.0f, GRAY);
-    ry += size + 18.0f;
-    Manage_DrawRow(font, s3, &ry, Manage_RowCount() - 1, T(S_MANAGE_LANGUAGE), T(S_LANG_NAME));
-    y += h3;
-    rlPopMatrix();
-
-    /* Keep the selected row between the top margin and the info bar. */
-    float top = sh * 0.08f, bottom = sh - 100.0f, rowH = 62.0f;
-    if (manageRow == 0) manageScroll = 0.0f;
-    if (manageSelY - manageScroll < top) manageScroll = manageSelY - top;
-    if (manageSelY + rowH - manageScroll > bottom) manageScroll = manageSelY + rowH - bottom;
-    float maxScroll = y + 24.0f - bottom;
-    if (manageScroll > maxScroll) manageScroll = maxScroll;
-    if (manageScroll < 0.0f) manageScroll = 0.0f;
-
-    DrawInfoBarEx(font, T(S_MANAGE_INFO), 1.0f, 0.0f);
 }
 
 /* ---- In-system sidebar (grid rail + B/O menu), as in the reference video:
@@ -2957,9 +4152,8 @@ static void Manage_Draw(Font font) {
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_CRTGEOM,
-       SB_SET_COVERS_MISSING, SB_SET_COVERS_REPLACE, SB_SET_GAMES, SB_SET_HIDE, SB_SET_PAD,
-       SB_SET_COUNT };   /* COVERS_*, GAMES: box-art scrape of this system; HIDE: Hide unplayable;
-                          * PAD: the controller screen (NES only, padui.h);
+       SB_SET_PAD,
+       SB_SET_COUNT };   /* PAD: the controller screen (NES/SNES/N64/GameCube);
                           * CRTGEOM: N64/GameCube only (NES/SNES have it as SB_RETRO_CRTGEOM) */
 
 /* Stored per system in config/nso.cfg ("<id>.versions", "<id>.rumble",
@@ -2981,6 +4175,8 @@ typedef struct {
 static const char *const SCREEN_MODE_KEYS[3] = { "4:3", "pixel", "crt" };
 static SysSettings sysSettings[sizeof(systems) / sizeof(systems[0])];
 
+static bool SysIdIsRetro(const char *id);
+
 static void SysSettings_LoadAll(void) {
     char cfg[2112], text[4096], v[32];
     size_t n = 0;
@@ -3000,8 +4196,9 @@ static void SysSettings_LoadAll(void) {
         if (Cfg_Get(text, key, v, sizeof(v))) s.rumble = strcmp(v, "0") != 0;
         snprintf(key, sizeof(key), "%s.show_controls", id);
         if (Cfg_Get(text, key, v, sizeof(v))) s.showControls = strcmp(v, "0") != 0;
-        if (strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0) {
-            if (Cfg_RetroScreenLoad(text, id, &s.pixel, &s.scanlines))
+        if (SysIdIsRetro(id)) {
+            if (Cfg_RetroScreenLoad(text, id, &s.pixel, &s.scanlines)
+                && strcmp(id, "megadrive") != 0)
                 retroReset = true;
         } else {
             snprintf(key, sizeof(key), "%s.screen", id);
@@ -3039,7 +4236,7 @@ static void SysSettings_Save(int sys) {
     ok &= Cfg_SaveKey(cfg, key, s->rumble ? "1" : "0");
     snprintf(key, sizeof(key), "%s.show_controls", id);
     ok &= Cfg_SaveKey(cfg, key, s->showControls ? "1" : "0");
-    if (strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0) {
+    if (SysIdIsRetro(id)) {
         snprintf(key, sizeof(key), "%s.pixel", id);
         ok &= Cfg_SaveKey(cfg, key, s->pixel ? "1" : "0");
         snprintf(key, sizeof(key), "%s.scanlines", id);
@@ -3061,12 +4258,34 @@ static bool SysIsSnes(int sys) {
 static bool SysIsN64(int sys) {
     return strcmp(systems[sys].platform->id, "n64") == 0;
 }
-/* The systems with a controller screen (padui.h): NES, SNES and N64. */
-static bool SysHasPad(int sys) { return SysIsNes(sys) || SysIsSnes(sys) || SysIsN64(sys); }
-static StrId PadEntryLabel(int sys) { return SysIsN64(sys) ? S_PC_ENTRY_N64 : SysIsSnes(sys) ? S_PC_ENTRY_SNES : S_PC_ENTRY; }
+static bool SysIsGamecube(int sys) {
+    return strcmp(systems[sys].platform->id, "gamecube") == 0;
+}
+static bool SysIdIsRetro(const char *id) {
+    return id && (strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0
+                  || strcmp(id, "megadrive") == 0);
+}
+/* The systems with a controller screen (padui.h): NES, SNES, N64 and GameCube. */
+static bool SysHasPad(int sys) {
+    return SysIsNes(sys) || SysIsSnes(sys) || SysIsN64(sys) || SysIsGamecube(sys);
+}
+static StrId PadEntryLabel(int sys) {
+    return SysIsGamecube(sys) ? S_PC_ENTRY_GC : SysIsN64(sys) ? S_PC_ENTRY_N64
+         : SysIsSnes(sys) ? S_PC_ENTRY_SNES : S_PC_ENTRY;
+}
+/* 0 NES, 1 SNES, 2 N64, 3 GameCube — the PadUi_Open / PadUi_Select kind. */
+static int PadUi_KindOf(int sys) {
+    if (SysIsGamecube(sys)) return 3;
+    if (SysIsN64(sys)) return 2;
+    if (SysIsSnes(sys)) return 1;
+    return 0;
+}
 
-/* The last Settings row of the current system: the controller entry exists for NES, SNES and N64. */
-static int SetRowLast(void) { return SysHasPad(currentSystem) ? SB_SET_PAD : SB_SET_HIDE; }
+/* The last Settings row of the current system: the controller entry exists for NES, SNES, N64 and GameCube. */
+static int SetRowLast(void) {
+    if (SysHasPad(currentSystem)) return SB_SET_PAD;
+    return SysIdIsRetro(systems[currentSystem].platform->id) ? SB_SET_CONTROLS : SB_SET_CRTGEOM;
+}
 
 static int sidebarItem = SB_ITEM_SINGLE;
 static bool sidebarPanelFocus = false;   /* Settings: focus in the right panel */
@@ -3279,8 +4498,7 @@ static void DrawFitText(Font font, const char *text, Vector2 at, float size, flo
  * "Control Display". N64 keeps SidebarPanel_Draw as is. ---- */
 enum { SB_RETRO_PIXEL = 0, SB_RETRO_SCANLINES = 1, SB_RETRO_CRTGEOM = 2 };
 static bool SysIsRetro(int sys) {
-    const char *id = systems[sys].platform->id;
-    return strcmp(id, "nes") == 0 || strcmp(id, "snes") == 0;
+    return SysIdIsRetro(systems[sys].platform->id);
 }
 
 static EmbedScreen ActiveEmbedScreen(void) {
@@ -3371,11 +4589,11 @@ static void DrawRetroScene(Rectangle r, bool snes) {
 /* Preview of the current Pixel Perfect + Scanlines combination. The picture
  * keeps the game's aspect (dark side bars in a 4:3 frame); scanlines are
  * overlaid when that toggle is on. */
-static void DrawRetroThumb(Rectangle r, bool snes, bool scanlines) {
+static void DrawRetroThumb(Rectangle r, bool snes, bool scanlines, bool allowShot) {
     float w = r.width * 0.82f;
     DrawRectangleRec(r, (Color){ 66, 68, 68, 255 });
     Rectangle img = { r.x + (r.width - w) * 0.5f, r.y, w, r.height };
-    Texture2D shot = RetroShot(snes);
+    Texture2D shot = allowShot ? RetroShot(snes) : (Texture2D){ 0 };
     if (shot.id) {
         DrawTexturePro(shot, (Rectangle){ 0, 0, (float)shot.width, (float)shot.height }, img,
                        (Vector2){ 0 }, 0.0f, WHITE);
@@ -3409,7 +4627,7 @@ static void SidebarPanelRetro_Draw(Font font, Color red) {
     Rectangle frame = { bx, sh * 0.132f, sw * 0.112f + 2.0f * th, ch };
     DrawRectangleLinesEx(frame, th * 0.6f, WHITE);
     Rectangle thumb = { frame.x + th, frame.y + th, sw * 0.112f, ch - 2.0f * th };
-    DrawRetroThumb(thumb, snes, st->scanlines);
+    DrawRetroThumb(thumb, snes, st->scanlines, SysIsNes(currentSystem) || SysIsSnes(currentSystem));
 
     static const StrId labels[3] = { S_SET_PIXEL, S_SET_SCANLINES, S_SET_CRTGEOM };
     /* Raised to sit under the small thumb without a large gap. */
@@ -3448,6 +4666,17 @@ static void SidebarPanelRetro_Draw(Font font, Color red) {
         DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f }, th * 1.3f, WHITE);
     } else {
         DrawRectangleLinesEx(cb, th * 0.7f, WHITE);
+    }
+
+    if (SysHasPad(currentSystem)) {
+        float phy = sh * 0.900f, py = sh * 0.958f;
+        bool pcur = (sidebarSetRow == SB_SET_PAD);
+        Rectangle pbox = { bx, py - bh * 0.5f, bw * 0.99f, bh };
+        DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, phy }, hsize, sw - hx, WHITE);
+        if (pcur) DrawRectangleRec(pbox, curFill);
+        else DrawRectangleLinesEx(pbox, th * 0.6f, WHITE);
+        DrawFitText(font, T(PadEntryLabel(currentSystem)), (Vector2){ sw * 0.504f, py }, osize,
+                    bw - sw * 0.03f, pcur ? pink : WHITE);
     }
 }
 
@@ -3501,7 +4730,7 @@ static void SidebarPanel_Draw(Font font, Color red) {
         }
     }
     {   /* Game Screen: CRT Geometry (N64 / GameCube games drawn by NSO; the others keep their window) */
-        float hy = 0.858f, y = sh * 0.922f, r = sh * 0.016f;
+        float hy = 0.828f, y = sh * 0.880f, r = sh * 0.016f;
         bool cur = (sidebarSetRow == SB_SET_CRTGEOM);
         DrawFitText(font, T(S_SET_SCREEN), (Vector2){ hx, sh * hy }, hsize, sw - hx, WHITE);
         Rectangle box = { bx, y - bh * 0.5f, bw, bh };
@@ -3517,78 +4746,37 @@ static void SidebarPanel_Draw(Font font, Color red) {
             DrawRectangleLinesEx(cb, th, WHITE);
         }
     }
-}
-
-/* Box-art scrape of the current system (covers + release dates), a second
- * page of the Settings panel below the others: the panel scrolls to it. */
-static float sbPanelShift = 0.0f;
-
-static void SidebarPanelScrape_Draw(Font font, Color red) {
-    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
-    float hx = sw * 0.449f, bx = sw * 0.485f, bw = sw * 0.387f, bh = sh * 0.066f;
-    float th = fmaxf(2.0f, sh * 0.0028f);
-    float hsize = (float)font.baseSize * 0.85f, osize = (float)font.baseSize * 1.2f;
-    static const StrId labels[3] = { S_MANAGE_MISSING, S_MANAGE_REPLACE, S_GS_SELECT };
-    static const float ys[3] = { 1.050f, 1.140f, 1.230f };
-    char status[192];
-
-    DrawFitText(font, T(S_MANAGE_COVERS), (Vector2){ hx, sh * 0.972f }, hsize, sw - hx, WHITE);
-    for (int k = 0; k < 3; k++) {
-        float y = sh * ys[k];
-        bool cur = (SB_SET_COVERS_MISSING + k == sidebarSetRow);
-        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
-        if (cur) DrawRectangleRec(box, WHITE);
-        else DrawRectangleLinesEx(box, th, WHITE);
-        DrawFitText(font, T(labels[k]), (Vector2){ bx + sw * 0.0225f, y }, osize,
-                    bw - sw * 0.03f, cur ? red : WHITE);
-    }
-    {   /* Hide unplayable: a checkbox row right below the scraping rows */
-        float y = sh * 1.320f, cx = sw * 0.46f, r = sh * 0.016f;
-        bool cur = (sidebarSetRow == SB_SET_HIDE);
-        Rectangle box = { bx, y - bh * 0.5f, bw, bh };
-        Rectangle cb = { cx - r, y - r, r * 2.0f, r * 2.0f };
-        if (cur) DrawRectangleRec(box, WHITE);
-        else DrawRectangleLinesEx(box, th, WHITE);
-        DrawFitText(font, T(S_SET_HIDE), (Vector2){ bx + sw * 0.0225f, y }, osize,
-                    bw - sw * 0.03f, cur ? red : WHITE);
-        if (hideOn[currentSystem]) {
-            DrawRectangleRec(cb, red);
-            DrawLineEx((Vector2){ cb.x + r * 0.45f, y + r * 0.05f }, (Vector2){ cx - r * 0.15f, y + r * 0.5f },
-                       th * 1.3f, WHITE);
-            DrawLineEx((Vector2){ cx - r * 0.15f, y + r * 0.5f }, (Vector2){ cb.x + r * 1.6f, y - r * 0.5f },
-                       th * 1.3f, WHITE);
-        } else {
-            DrawRectangleLinesEx(cb, th, WHITE);
-        }
-    }
-    Msg_Format(&scrapeMsg, status, sizeof(status));
-    if (status[0]) DrawFitText(font, status, (Vector2){ hx, sh * 1.415f }, hsize, sw - hx, WHITE);
-    if (SysHasPad(currentSystem)) {   /* Controller: below the scraping rows, opens padui.h's page */
-        float y = sh * 1.585f;
+    if (SysHasPad(currentSystem)) {
+        float hy = 0.928f, y = sh * 0.978f, r = sh * 0.016f;
         bool cur = (sidebarSetRow == SB_SET_PAD);
+        DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, sh * hy }, hsize, sw - hx, WHITE);
         Rectangle box = { bx, y - bh * 0.5f, bw, bh };
-        DrawFitText(font, T(S_PC_HEAD), (Vector2){ hx, sh * 1.505f }, hsize, sw - hx, WHITE);
         if (cur) DrawRectangleRec(box, WHITE);
         else DrawRectangleLinesEx(box, th, WHITE);
         DrawFitText(font, T(PadEntryLabel(currentSystem)), (Vector2){ bx + sw * 0.0225f, y }, osize,
                     bw - sw * 0.03f, cur ? red : WHITE);
+        (void)r;
     }
 }
 
+/* Settings panel vertical shift: the controller mapping page (padui). */
+static float sbPanelShift = 0.0f;
+
+#define SNESLIST_IMPLEMENTATION
+#include "sneslist.h"
 #include "gamesel_ui.h"
 #include "padui.h"
 
-/* Settings panel plus the scrape page; scrolls down to it while a scrape row is selected. */
+/* Settings panel; scrolls down only to the controller mapping page. */
 static void SidebarPanels_Draw(Font font, Color red) {
     float sh = (float)GetScreenHeight();
-    float target = padOpen ? sh * PADUI_PAGE_Y : sidebarSetRow >= SB_SET_COVERS_MISSING ? sh * 0.9f : 0.0f;
+    float target = padOpen ? sh * PADUI_PAGE_Y : 0.0f;
     sbPanelShift += (target - sbPanelShift) * fminf(1.0f, GetFrameTime() * 16.0f);
     if (fabsf(sbPanelShift - target) < 0.5f) sbPanelShift = target;
     if (SysHasPad(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Prepare();   /* its texture, outside the translation */
     rlPushMatrix();
     rlTranslatef(0.0f, -sbPanelShift, 0.0f);
     SidebarPanel_Draw(font, red);
-    SidebarPanelScrape_Draw(font, red);
     if (SysHasPad(currentSystem) && sbPanelShift > sh * 1.0f) PadUi_Draw(font, red);
     rlPopMatrix();
 }
@@ -3660,8 +4848,7 @@ static void DrawSidebar(Color systemBg, Font font) {
     if (slid) rlPopMatrix();
 
     if (settled && sidebarPanelFocus && sidebarItem == SB_ITEM_SETTINGS) {
-        if (gsOpen) GameSel_Draw(font, systemBg);
-        else SidebarPanels_Draw(font, systemBg);
+        SidebarPanels_Draw(font, systemBg);
     }
 }
 
@@ -3690,6 +4877,25 @@ static void DrawMissingCover(Texture2D tex, Rectangle r, Color tint) {
 }
 
 
+/* Fit a cover to its slot (scale up or down, keep aspect). The scale
+ * argument is then applied from that fitted size (1.18 for the selected
+ * cover's grow; other covers stay at 1 or shrink in move/lift). */
+static void CoverDestInSlot(Rectangle slot, Texture2D tex, float scale,
+                            float v_offset,
+                            float *ox, float *oy, float *dw, float *dh)
+{
+    float aspect = (tex.id > 0 && tex.width > 0 && tex.height > 0)
+        ? (float)tex.width / (float)tex.height
+        : (slot.height > 0.0f ? slot.width / slot.height : 4.0f / 3.0f);
+    float fitW, fitH;
+    FitAspectInCell(slot.width, slot.height, aspect, &fitW, &fitH);
+    if (scale < 0.0f) scale = 0.0f;
+    *dw = fitW * scale;
+    *dh = fitH * scale;
+    *ox = slot.x + (slot.width - *dw) * 0.5f;
+    *oy = slot.y - v_offset + (slot.height - *dh) * 0.5f;
+}
+
 static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numImgs) {
     if (numImgs <= 0 || !layout) return;
 
@@ -3714,11 +4920,10 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         float y = item.y;
 
         float tile_scale = animScales[i] * othersScale;
-        float draw_y = y - v_offset;
-        float draw_w = item.width * tile_scale;
-        float draw_h = item.height * tile_scale;
-        float ox = x + (item.width - draw_w) * 0.5f;
-        float oy = draw_y + (item.height - draw_h) * 0.5f;
+        float ox, oy, draw_w, draw_h;
+        CoverDestInSlot((Rectangle){ x, y, item.width, item.height },
+                        images[i], tile_scale, v_offset,
+                        &ox, &oy, &draw_w, &draw_h);
 
         if (slot.y + slot.height - v_offset > 0.0f
             && slot.y - v_offset < (float)screen_h) {
@@ -3761,11 +4966,10 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         }
 
         float scale = animScales[GameIdx];
-        float scaled_w = item.width * scale;
-        float scaled_h = item.height * scale;
-        float draw_y = y - v_offset;
-        float draw_x = x + (item.width - scaled_w) * 0.5f;
-        float draw_y_scaled = draw_y + (item.height - scaled_h) * 0.5f;
+        float draw_x, draw_y_scaled, scaled_w, scaled_h;
+        CoverDestInSlot((Rectangle){ x, y, item.width, item.height },
+                        images[GameIdx], scale, v_offset,
+                        &draw_x, &draw_y_scaled, &scaled_w, &scaled_h);
         ClampTileToContent(&draw_x, &draw_y_scaled, scaled_w, scaled_h,
                            origin_x, content_w, screen_h, MOSAIC_CURSOR_PAD);
 
@@ -3968,20 +5172,8 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
         if (ok) {
             Sfx_Play(SFX_CLICK);
             SysSettings *st = &sysSettings[currentSystem];
-            if (sidebarSetRow == SB_SET_GAMES) {
-                GameSel_Open();
-                return;
-            }
-            if (sidebarSetRow == SB_SET_HIDE) {
-                Hide_Toggle();
-                return;
-            }
             if (sidebarSetRow == SB_SET_PAD) {
-                PadUi_Open(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
-                return;
-            }
-            if (sidebarSetRow >= SB_SET_COVERS_MISSING) {
-                ScrapeMenu_Start(sidebarSetRow == SB_SET_COVERS_REPLACE);
+                PadUi_Open(PadUi_KindOf(currentSystem));
                 return;
             }
             if (SysIsRetro(currentSystem) && sidebarSetRow == SB_RETRO_PIXEL) st->pixel = !st->pixel;
@@ -4024,7 +5216,8 @@ static bool OverlayActive(void) {
     return SortPanel_Active() || sidebarOpen || sidebarExpandPending || sidebarClosing
         || sbWidthPhase != SB_WIDTH_IDLE
         || mosaicExitPhase != MOSAIC_EXIT_NONE
-        || liveConfirm != 0;
+        || liveConfirm != 0
+        || powerDialogOpen;
 }
 
 /* Select-games pipeline (gamesel.h) of a catalog game, -1 = none. */
@@ -4037,12 +5230,30 @@ static int GamePipelineOf(const GameEntry *game) {
     return -1;
 }
 
+/* Resolve a catalog/scan ROM path after the roms/ move (repos/roms → roms).
+ * dst is NSO-relative. */
+static bool Rom_ResolveRel(const char *rel, char *dst, size_t n)
+{
+    if (!dst || n == 0) return false;
+    dst[0] = '\0';
+    if (!rel || !rel[0]) return false;
+    if (FileExists(GetDataPath(rel))) { snprintf(dst, n, "%s", rel); return true; }
+    if (strncmp(rel, "repos/roms/", 11) == 0) {
+        char alt[1200];
+        snprintf(alt, sizeof(alt), "%s/%s", Gs_RomRoot(), rel + 11);
+        if (FileExists(GetDataPath(alt))) { snprintf(dst, n, "%s", alt); return true; }
+    }
+    return false;
+}
+
 /* Playable: the binary plus whatever its pipeline says the game also needs
  * (assets, the provisioned ROM). */
 static bool GameIsLaunchable(const GameEntry *game) {
     int p;
+    char romRel[1200];
     if (!GameBinaryPresent(game)) return false;
-    if (game->rom && !FileExists(GetDataPath(game->rom))) return false;
+    if (game->rom && game->rom[0] && !Rom_ResolveRel(game->rom, romRel, sizeof(romRel)))
+        return false;
     p = GamePipelineOf(game);
     return p < 0 || Gs_NeedsMet(&gs_pipelines[p], GsRelExists, NULL);
 }
@@ -4055,7 +5266,89 @@ static void Order_Path(int sys, char *dst, size_t n) {
     snprintf(dst, n, "%s/config/order-%s.txt", GetBaseDirectory(), systems[sys].platform->id);
 }
 
+/* Move loaded covers and slot sizes onto the rebuilt list by game key, not
+ * slot index. shown < count unloads textures for the hidden tail. */
+static void Covers_SyncToGames(const GameEntry *games, int count, int shown)
+{
+    static char newK[MAX_GAMES][COVER_KEY_MAX];
+    static int from[MAX_GAMES];
+    static Texture2D art[MAX_GAMES];
+    static float scale[MAX_GAMES], metaW[MAX_GAMES], metaH[MAX_GAMES];
+    static char keys[MAX_GAMES][COVER_KEY_MAX];
+    static unsigned char used[MAX_GAMES];
+    int oldN = coverSlotN, i;
+    if (count < 0) count = 0;
+    if (count > MAX_GAMES) count = MAX_GAMES;
+    if (shown < 0 || shown > count) shown = count;
+    if (oldN < 0) oldN = 0;
+    if (oldN > MAX_GAMES) oldN = MAX_GAMES;
+    for (i = 0; i < count; i++) {
+        const GameEntry *g = games ? &games[i] : NULL;
+        Covers_Key(g ? g->title : NULL, g ? g->boxartPath : NULL, g ? g->rom : NULL,
+                   newK[i], sizeof(newK[i]));
+    }
+    Covers_PlanMoves(coverSlotKey, oldN, newK, count, from);
+    memset(used, 0, sizeof used);
+    for (i = 0; i < count; i++) {
+        int s = from[i];
+        if (s >= 0 && s < oldN) {
+            art[i] = gameBoxarts[s];
+            scale[i] = animScales[s];
+            metaW[i] = boxartMetaW[s];
+            metaH[i] = boxartMetaH[s];
+            memcpy(keys[i], coverSlotKey[s], sizeof keys[i]);
+            used[s] = 1;
+        } else {
+            art[i] = (Texture2D){ 0 };
+            scale[i] = 1.0f;
+            metaW[i] = 0.0f;
+            metaH[i] = 0.0f;
+            memcpy(keys[i], newK[i], sizeof keys[i]);
+        }
+    }
+    for (i = 0; i < oldN; i++) {
+        if (!used[i] && gameBoxarts[i].id != 0) UnloadTexture(gameBoxarts[i]);
+    }
+    for (i = 0; i < count; i++) {
+        gameBoxarts[i] = art[i];
+        animScales[i] = scale[i];
+        boxartMetaW[i] = metaW[i];
+        boxartMetaH[i] = metaH[i];
+        memcpy(coverSlotKey[i], keys[i], sizeof coverSlotKey[i]);
+    }
+    for (i = shown; i < count; i++) {   /* hidden covers are not kept on the GPU */
+        if (gameBoxarts[i].id != 0) UnloadTexture(gameBoxarts[i]);
+        gameBoxarts[i] = (Texture2D){ 0 };
+    }
+    for (i = count; i < oldN && i < MAX_GAMES; i++) {
+        gameBoxarts[i] = (Texture2D){ 0 };
+        coverSlotKey[i][0] = '\0';
+        boxartMetaW[i] = 0.0f;
+        boxartMetaH[i] = 0.0f;
+    }
+    coverSlotN = count;
+}
+
 /* At startup, before any cover is loaded: apply each system's saved order. */
+#include "version_ui.h"
+
+static void Cover_Replace(int gameIdx)
+{
+    if (gameIdx < 0 || gameIdx >= MAX_GAMES) return;
+    CoverLoader_Stop();
+    UnloadBoxart(gameIdx);
+    {
+        const char *rel = ActiveGames()[gameIdx].boxartPath;
+        Image img = LoadBoxartImage(GetDataPath(rel));
+        if (img.data) {
+            gameBoxarts[gameIdx] = LoadTextureFromImage(img);
+            BoxartMetaRemember(gameIdx, img.width, img.height);
+            UnloadImage(img);
+        }
+        Cover_RememberGame(gameIdx, &ActiveGames()[gameIdx]);
+    }
+}
+
 static void Order_LoadAll(void) {
     for (int s = 0; s < SYSTEM_COUNT; s++) {
         GameEntry *games = systems[s].games;
@@ -4069,8 +5362,12 @@ static void Order_LoadAll(void) {
         const char *titles[MAX_GAMES];
         int perm[MAX_GAMES];
         GameEntry tmp[MAX_GAMES];
+        static char rewritten[MAX_GAMES * 256];
+        const char *orderText = text;
+        Version_RewriteOrder(s, text, rewritten, sizeof(rewritten));
+        if (rewritten[0]) orderText = rewritten;
         for (int i = 0; i < count; i++) titles[i] = games[i].title;
-        Order_Perm(text, titles, count, perm);
+        Order_Perm(orderText, titles, count, perm);
         UnloadFileText(text);
         for (int k = 0; k < count; k++) tmp[k] = games[perm[k]];
         memcpy(games, tmp, sizeof(GameEntry) * (size_t)count);
@@ -4123,8 +5420,11 @@ static int GridNavPressed(bool gpLeft, bool gpRight, bool gpUp, bool gpDown) {
 #include "sortpanel.h"
 
 /* ---- X Details panel ---- */
+static int detailsRow = 0;   /* 0 = version (when shown), 1 = install */
+
 static void Details_Open(void) {
     detailsOpen = true;
+    detailsRow = 0;
     Repo_RefreshLocal();
     InfoBar_Request(INFO_BAR_NONE);
 }
@@ -4132,6 +5432,59 @@ static void Details_Open(void) {
 static void Details_Close(void) {
     detailsOpen = false;
     InfoBar_Request(INFO_BAR_MOSAIC);
+}
+
+static bool SortY_IsDown(void) {
+    return IsKeyDown(KEY_Y)
+        || padCDownHeld
+        || (IsGamepadAvailable(0) && IsGamepadButtonDown(0, NSO_BTN_Y));
+}
+
+static bool SortY_IsPressed(void) {
+    return IsKeyPressed(KEY_Y)
+        || padCDown
+        || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, NSO_BTN_Y));
+}
+
+static void Grid_BeginMove(void) {
+    gridLifted = true;
+    gridLiftMoved = false;
+    gridLiftFrom = GameIdx;
+}
+
+/* Keyboard Y, gamepad Y, and C-Down on the games grid: hold SORT_HOLD_SEC
+ * to open the sort panel; a shorter tap starts Move.
+ * The info menu's Y (favorite) is handled separately while Details is open. */
+static void SortY_Update(bool canHold, bool canMove) {
+    if (sortYConsumed) {
+        if (!SortY_IsDown()) sortYConsumed = false;
+        sortYHeld = false;
+        return;
+    }
+    if (SortY_IsDown()) {
+        if (!sortYHeld) {
+            if (canHold && SortY_IsPressed()) {
+                sortYHeld = true;
+                sortYT0 = GetTime();
+            }
+            return;
+        }
+        if (!canHold) {
+            sortYHeld = false;
+            sortYConsumed = true;
+            return;
+        }
+        if (GetTime() - sortYT0 >= (double)SORT_HOLD_SEC) {
+            sortYHeld = false;
+            sortYConsumed = true;
+            SortPanel_Open();
+        }
+        return;
+    }
+    if (sortYHeld) {
+        sortYHeld = false;
+        if (canMove) Grid_BeginMove();
+    }
 }
 
 static void Details_Update(float dt) {
@@ -4144,11 +5497,11 @@ static void Details_Update(float dt) {
 
 static int Details_Repo(const GameEntry *g) { return Game_Repo(g); }
 
-static void Details_HandleInput(bool gpConfirm, bool gpBack) {
+static void Details_HandleInput(bool gpConfirm, bool gpBack,
+                                bool gpLeft, bool gpRight, bool gpUp, bool gpDown) {
     bool gp = IsGamepadAvailable(0);
     if (!detailsOpen) return;   /* sliding out */
-    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_X) || gpBack
-        || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X))) {
+    if (IsKeyPressed(KEY_B) || gpBack) {
         Details_Close();
         return;
     }
@@ -4156,8 +5509,45 @@ static void Details_HandleInput(bool gpConfirm, bool gpBack) {
     const GameEntry *g = &ActiveGames()[GameIdx];
     bool confirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
     int repo = Details_Repo(g);
-    if (Repo_Offer(repo)) {   /* Install is the highlighted row while offered */
+    bool hasVer = Version_CountAt(currentSystem, g->title) > 1;
+    bool hasInst = Repo_Offer(repo);
+    if (hasVer && hasInst) {
+        if (IsKeyPressed(KEY_UP) || gpUp) detailsRow = 0;
+        if (IsKeyPressed(KEY_DOWN) || gpDown) detailsRow = 1;
+    } else if (hasVer) detailsRow = 0;
+    else detailsRow = 1;
+    if (hasVer && detailsRow == 0) {
+        int dir = 0;
+        if (IsKeyPressed(KEY_RIGHT) || gpRight) dir = 1;
+        if (IsKeyPressed(KEY_LEFT) || gpLeft) dir = -1;
+        if (dir && Version_Cycle(currentSystem, GameIdx, dir)) Sfx_Play(SFX_CLICK);
+    }
+    if (hasInst && detailsRow == 1) {   /* Install is the highlighted row while offered */
         if (confirm) Repo_Enqueue(repo, true);
+    }
+    if (IsKeyPressed(KEY_Y) || padCDown || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y))) {
+        Sfx_Play(SFX_CLICK);
+        Fav_ToggleCurrent();
+        if (favOn[currentSystem]) {
+            SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+            CoverLoader_Start();
+            if (GameIdx >= ActiveGameCount()) Details_Close();
+        }
+    }
+    /* Info menu only: keyboard X and gamepad X hide/unhide. Grid tap/hold X is unchanged.
+     * Rebuild off-screen and present the finished grid in one frame (same
+     * serialize/hold as Hide Unplayable). The current title leaves this view,
+     * so Details closes now; the hide is not deferred to that close. */
+    if (IsKeyPressed(KEY_X) || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X))) {
+        int keep = GameIdx;
+        Sfx_Play(SFX_CLICK);
+        Hidden_ToggleCurrent();
+        SortPanel_RelistReload();
+        /* Apply follows the hidden title to the packed tail, then clamps to
+         * the last slot. Keep the old index so the cursor lands on the game
+         * that slid into this slot (or the new last item if this was last). */
+        GameIdx = Hide_Clamp(keep, ActiveGameCount());
+        Details_Close();
     }
 }
 
@@ -4193,7 +5583,7 @@ static void Details_GlowRect(Rectangle r, float rad, float th, float alpha) {
 
 /* The card frame shared by Details and Status: dimmed grid, one rounded panel
  * (lighter left column). Returns the card, its left column width and radius. */
-static void Details_DrawFrame(float a, Rectangle *cardOut, float *lwOut, float *radOut) {
+static void Details_DrawFrameH(float a, Rectangle *cardOut, float *lwOut, float *radOut, float height) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
     const Color colL = { 240, 245, 244, 255 }, colR = { 229, 235, 237, 255 };
@@ -4203,7 +5593,7 @@ static void Details_DrawFrame(float a, Rectangle *cardOut, float *lwOut, float *
     /* Integer bounds; the same rounded panel is drawn twice, each clipped to
      * its own column, so every pixel is blended exactly once (no seam, no
      * shade change mid-fade, corners intact). */
-    Rectangle card = { roundf(sw * 0.042f), roundf(sh * 0.047f), roundf(sw * 0.916f), roundf(sh * 0.905f) };
+    Rectangle card = { roundf(sw * 0.042f), roundf(sh * 0.047f), roundf(sw * 0.916f), height };
     float rad = sh * 0.012f, lw = roundf(sw * 0.259f);
     float rnd = 2.0f * rad / fminf(card.width, card.height);
     int cx0 = (int)card.x, cy0 = (int)card.y, split = cx0 + (int)lw;
@@ -4217,6 +5607,10 @@ static void Details_DrawFrame(float a, Rectangle *cardOut, float *lwOut, float *
     *cardOut = card;
     *lwOut = lw;
     *radOut = rad;
+}
+
+static void Details_DrawFrame(float a, Rectangle *cardOut, float *lwOut, float *radOut) {
+    Details_DrawFrameH(a, cardOut, lwOut, radOut, roundf((float)GetScreenHeight() * 0.905f));
 }
 
 /* Details card as in the video: frosted, dimmed grid behind; one light card
@@ -4245,7 +5639,37 @@ static void Details_Draw(Font font) {
     }
 
     float tx = sw * 0.334f, tw = card.x + card.width - sw * 0.05f - tx;
-    Details_Text(font, g->title ? g->title : "", (Vector2){ tx, sh * 0.140f }, sh * 0.040f, tw, Fade(ink, a));
+    float titleSize = sh * 0.040f, heartSize = sh * 0.048f, iconGap = sw * 0.012f;
+    const Color heartCol = { 230, 36, 40, 255 };
+    int heartCp = Fav_IsTitle(currentSystem, g->title) ? FAV_HEART : FAV_HEART_O;
+    bool blocked = Hidden_IsTitle(currentSystem, g->title);
+    float heartW = favNerdLoaded ? Hint_GlyphAdvance(favNerdFont, heartCp, heartSize) : 0.0f;
+    float blockW = hideNerdLoaded ? Hint_GlyphAdvance(favNerdFont, HIDE_BLOCK, heartSize) : 0.0f;
+    float iconsW = 0.0f;
+    if (favNerdLoaded) iconsW += heartW;
+    if (hideNerdLoaded) iconsW += (iconsW > 0.0f ? iconGap : 0.0f) + blockW;
+    float titleMax = tw - (iconsW > 0.0f ? iconsW + iconGap : 0.0f);
+    titleSize = Details_Text(font, g->title ? g->title : "", (Vector2){ tx, sh * 0.140f },
+                             titleSize, titleMax, Fade(ink, a));
+    float hy = sh * 0.140f;
+    if (favNerdLoaded) {
+        float hh = Hint_GlyphHeight(favNerdFont, heartCp, heartSize);
+        hy = sh * 0.140f + (titleSize - hh) * 0.5f;
+    } else if (hideNerdLoaded) {
+        float hh = Hint_GlyphHeight(favNerdFont, HIDE_BLOCK, heartSize);
+        hy = sh * 0.140f + (titleSize - hh) * 0.5f;
+    }
+    if (favNerdLoaded) {
+        float hx = tx + tw - iconsW;
+        DrawTextCodepoint(favNerdFont, heartCp, (Vector2){ hx, hy },
+                          heartSize, Fade(heartCol, a));
+    }
+    if (hideNerdLoaded) {
+        float bx = tx + tw - blockW;
+        Color blockCol = blocked ? heartCol : (Color){ 150, 150, 150, 255 };
+        DrawTextCodepoint(favNerdFont, HIDE_BLOCK, (Vector2){ bx, hy },
+                          heartSize, Fade(blockCol, blocked ? a : a * 0.55f));
+    }
 
     int repo = Details_Repo(g);
     char source[2304], status[192] = "";
@@ -4270,13 +5694,34 @@ static void Details_Draw(Font font) {
     Details_Text(font, TextFormat("%s: %s", T(S_DET_SOURCE), source),
                  (Vector2){ tx, sh * 0.253f - ms * 0.5f }, ms, tw, Fade(meta, a));
 
-    /* Install is the only Details action row (highlighted while offered). */
-    if (Repo_Offer(repo)) {
-        float rs = sh * 0.033f, rh = sh * 0.085f, ry = sh * 0.32f;
+    /* Version selector (left/right) when a group has more than one release. */
+    int verN = 1, verI = 0;
+    char verLab[VERSION_NAME];
+    verLab[0] = '\0';
+    Version_LabelAt(currentSystem, g->title, verLab, sizeof(verLab), &verI, &verN);
+    float rowY = sh * 0.32f, rowH = sh * 0.085f, rowGap = sh * 0.018f;
+    if (verN > 1) {
+        float rs = sh * 0.033f, rh = rowH, ry = rowY;
         float rx = tx - sw * 0.012f, rw = sw * 0.56f;
         Rectangle rr = { rx, ry, rw, rh };
+        bool focus = detailsRow == 0 || !Repo_Offer(repo);
         DrawRectangleRounded(rr, 2.0f * rad / rh, 12, Fade((Color){ 250, 252, 252, 255 }, a));
-        Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
+        if (focus) Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
+        char line[256];
+        snprintf(line, sizeof(line), "%s:  ‹  %s  ›", T(S_DET_VERSION), verLab[0] ? verLab : "");
+        Details_Text(font, line, (Vector2){ tx, ry + (rh - rs) * 0.5f }, rs, rw - sw * 0.03f,
+                     Fade(ink, a));
+        rowY = ry + rh + rowGap;
+    }
+
+    /* Install is highlighted while offered (and focused when both rows exist). */
+    if (Repo_Offer(repo)) {
+        float rs = sh * 0.033f, rh = rowH, ry = rowY;
+        float rx = tx - sw * 0.012f, rw = sw * 0.56f;
+        Rectangle rr = { rx, ry, rw, rh };
+        bool focus = detailsRow == 1 || verN <= 1;
+        DrawRectangleRounded(rr, 2.0f * rad / rh, 12, Fade((Color){ 250, 252, 252, 255 }, a));
+        if (focus) Details_GlowRect(rr, rad, fmaxf(2.0f, sh * 0.0045f), a);
         Details_Text(font, T(S_DET_INSTALL), (Vector2){ tx, ry + (rh - rs) * 0.5f }, rs, rw - sw * 0.03f,
                      Fade(ink, a));
     }
@@ -4601,7 +6046,13 @@ NsoProc LaunchGame(const GameEntry *game) {
         snprintf(mednafenHome, sizeof(mednafenHome), "%s", GetDataPath(TextFormat("saves/%s/mednafen", game->mednafen)));
         snprintf(mednafenStates, sizeof(mednafenStates), "%s/mcs", mednafenHome);
         EnsureDirectoryTree(mednafenStates);
-        snprintf(mednafenRom, sizeof(mednafenRom), "%s", GetDataPath(game->rom));
+        {
+            char romRel[1200];
+            const char *use = game->rom;
+            if (Rom_ResolveRel(game->rom, romRel, sizeof(romRel))) use = romRel;
+            use = Version_LaunchRom(currentSystem, game, use, romRel, sizeof(romRel));
+            snprintf(mednafenRom, sizeof(mednafenRom), "%s", GetDataPath(use));
+        }
         /* "Show controls in game": the caption bar is drawn over the game (rewind.h): at its start and
          * while rewinding. The window is always full size. */
         bool showBar = sysSettings[currentSystem].showControls;
@@ -4783,6 +6234,17 @@ static void SelectSystem(int direction) {
  * visible screen first, then the first and last screens, then the middle. */
 static bool frontendArtsParked = false;
 static int frontendKeepCover = -1;
+static bool menuArtsParked = false;
+
+/* System-card textures only. InitSystems() also resets WikiLive and re-walks
+ * every scraped cover, then Version_Rebuild, for all systems; after the first
+ * boot Version_Refresh is live, so that blocks the main thread (Mega Drive
+ * is the largest). Platform unload did not drop that catalog state. */
+static void FrontendArts_ReloadPlatforms(void)
+{
+    for (int i = 0; i < SYSTEM_COUNT; i++)
+        Nso_PlatformInit(systems[i].platform);
+}
 
 static void FrontendArts_Unload(int keepIdx)
 {
@@ -4791,6 +6253,7 @@ static void FrontendArts_Unload(int keepIdx)
         if (i != keepIdx) UnloadBoxart(i);
     }
     UnloadSystems();
+    menuArtsParked = true;
     PadNotice_Unload();
     RetroShots_Unload();
     SortPanel_Unload();
@@ -4804,14 +6267,37 @@ static void FrontendArts_Unload(int keepIdx)
 static void FrontendArts_Reload(void)
 {
     if (!frontendArtsParked) return;
-    InitSystems();
+    /* System-card art stays parked while the games grid is showing; it is
+     * reloaded only when returning to the main menu (MenuArts_Reload). */
     coverReloadVisibleLogged = false;
+    MosaicBlur_HoldEnd();
     mosaicRevealWait = true;
     CoverReload_Stamp("reveal-wait");
     CoverLoader_Start();
     frontendArtsParked = false;
     frontendKeepCover = -1;
     CoverReload_Stamp("reload-start");
+}
+
+/* Main-menu system-card textures (PlatformEntry.texture). Unloaded once the
+ * enter-a-system animation has finished and the games grid is showing. */
+static void MenuArts_Unload(void)
+{
+    if (menuArtsParked) return;
+    UnloadSystems();
+    menuArtsParked = true;
+}
+
+static void MenuArts_Reload(void)
+{
+    if (!menuArtsParked) return;
+    FrontendArts_ReloadPlatforms();
+    menuArtsParked = false;
+}
+
+static bool MenuArts_Ready(void)
+{
+    return !menuArtsParked;
 }
 
 static void GameExit_Reset(void)
@@ -5023,6 +6509,7 @@ static void BeginMosaicEnterIntro(void) {
      * visible-screen reload during the exit animation, so the menu is
      * usable at once. No-op if arts were never parked (splash path). */
     FrontendArts_Reload();
+    MenuArts_Unload();
     for (int i = 0; i < MAX_GAMES; i++) {
         animScales[i] = 1.0f;
     }
@@ -5053,6 +6540,7 @@ static void StartEnterMosaic(void) {
 
     /* Covers load during the splash (UpdateSplash); start from a clean set. */
     UnloadAllBoxarts();
+    MosaicBlur_HoldEnd();
     mosaicRevealWait = true;
     CoverReload_Stamp("reveal-wait");
     CoverLoader_Start();
@@ -5070,6 +6558,8 @@ static void StartEnterMosaic(void) {
     }
     mosaicIntroPhase = MOSAIC_INTRO_NONE;
 
+    menuBarFocus = -1;
+    powerDialogOpen = false;
     /* Splash first: the enter transition over the menu, then the system's own art. */
     currentState = SPLASH;
     splashTimer = 0.0f;
@@ -5197,6 +6687,15 @@ static void UpdateSplash(float dt) {
     float step = dt > 0.1f ? 0.1f : dt;   /* a hitch must not skip the sequence */
     const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step in seconds per frame (frame capture) */
     if (fixed && atof(fixed) > 0.0) step = (float)atof(fixed);
+    /* Hold the gray logo layer (the loading screen) until visible covers are
+     * ready; do not sit on the full-screen system art waiting for artboxes. */
+    {
+        float crossAt = EnterAnim_TimeOfFrame(176.0f);
+        if (!loaded && enterT < crossAt && enterT + step >= crossAt)
+            step = crossAt - enterT;
+        if (!loaded && enterT >= crossAt - 0.0001f && enterT < EnterAnim_Total())
+            return;
+    }
     if (enterT < EnterAnim_Total()) {   /* transition still running */
         enterT += step;
         if (enterT >= EnterAnim_Total() && enterJinglePending) {   /* destination at 100%, no overlay */
@@ -5220,11 +6719,9 @@ static Rectangle SelectedCardRect(float scale) {
     GridLayout g = GetGridLayout();
     if (g.rowCount < 1 || GameIdx < 0 || GameIdx >= ActiveGameCount()) return (Rectangle){ 0 };
     Rectangle item = g.items[GameIdx];
-    float x = item.x;
-    float y = item.y - viewportY;
-    float w = item.width * scale, h = item.height * scale;
-    x += (item.width - w) * 0.5f;
-    y += (item.height - h) * 0.5f;
+    Texture2D tex = (GameIdx < MAX_GAMES) ? gameBoxarts[GameIdx] : (Texture2D){ 0 };
+    float x, y, w, h;
+    CoverDestInSlot(item, tex, scale, viewportY, &x, &y, &w, &h);
     ClampTileToContent(&x, &y, w, h, g.originX, g.contentW, g.screenH, MOSAIC_CURSOR_PAD);
     return (Rectangle){ x, y, w, h };
 }
@@ -5242,12 +6739,34 @@ static void DrawMosaicSlots(Color background, Font font) {
         }
 
         DrawSlotImages(&drawGrid, boxarts, count);
-    } else if (ActiveGameTotal() > 0) {   /* Hide unplayable with nothing playable */
-        const char *msg = T(S_NO_PLAYABLE);
+    } else if (ActiveGameTotal() > 0) {   /* a filter is on and nothing is visible */
+        const char *msg = T(showHidden[currentSystem] ? S_NO_HIDDEN
+                            : favOn[currentSystem] ? S_NO_FAVORITES : S_NO_PLAYABLE);
         float x0 = SidebarRailWidth(), w = (float)GetScreenWidth() - x0, size = (float)font.baseSize * 1.2f;
         float tw = fminf(MeasureTextEx(font, msg, size, 1.0f).x, w * 0.8f);
         DrawFitText(font, msg, (Vector2){ x0 + (w - tw) * 0.5f, (float)GetScreenHeight() * 0.5f }, size, w * 0.8f, WHITE);
     }
+}
+
+/* Snapshot the current (still-old) grid and hold a blur of it until the
+ * rebuilt list's visible covers are ready. A second toggle keeps this frame
+ * rather than recapturing a half-built list. */
+static void MosaicBlur_HoldBegin(void)
+{
+    int sw, sh;
+    if (mosaicBlurHeld && mosaicRT.id) return;
+    sw = GetScreenWidth();
+    sh = GetScreenHeight();
+    if (sw < 1 || sh < 1) { mosaicBlurHeld = true; return; }
+    EnsureBlurResources(sw, sh);
+    if (mosaicRT.id) {
+        BeginTextureMode(mosaicRT);
+        /* Same grey as the mosaic (Mosaicbg in main). Font is only used when
+         * a filter has emptied the grid; the pre-toggle list usually has tiles. */
+        DrawMosaicSlots(GetColor(0x303030FF), slotFont);
+        EndTextureMode();
+    }
+    mosaicBlurHeld = true;
 }
 
 static void DrawMosaic(Color background, Font font) {
@@ -5255,20 +6774,23 @@ static void DrawMosaic(Color background, Font font) {
 
     Live_ConfirmStep();
     float overlayT = fmaxf(fmaxf(detailsT, statusT), liveConfirmT);
-    if (SidebarWantsBlur() || overlayT > 0.0f) {
+    if (SidebarWantsBlur() || overlayT > 0.0f || mosaicBlurHeld) {
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
         EnsureBlurResources(sw, sh);
 
         if (mosaicRT.id) {
-            BeginTextureMode(mosaicRT);
-            DrawMosaicSlots(background, font);
-            EndTextureMode();
+            if (!mosaicBlurHeld) {
+                BeginTextureMode(mosaicRT);
+                DrawMosaicSlots(background, font);
+                EndTextureMode();
+            }
             /* Side menu (every item): twice the blur radius, same passes and taps.
-             * Details / status keep the standard blur. */
-            DrawBlurredMosaicBackdrop(background, SidebarWantsBlur() ? 2.0f : 1.0f);
+             * Details / status keep the standard blur. A hide/filter re-list
+             * keeps that same heavy blur on the frozen pre-toggle snapshot. */
+            DrawBlurredMosaicBackdrop(background, (SidebarWantsBlur() || mosaicBlurHeld) ? 2.0f : 1.0f);
             /* Details: the sharp grid dissolves into the blur in step with the card. */
-            if (!SidebarWantsBlur() && overlayT < 1.0f)
+            if (!SidebarWantsBlur() && !mosaicBlurHeld && overlayT < 1.0f)
                 DrawRT(mosaicRT.texture, (Rectangle){ 0, 0, (float)sw, (float)sh },
                        Fade(WHITE, 1.0f - overlayT));
         } else {
@@ -5288,39 +6810,63 @@ static void DrawMosaic(Color background, Font font) {
         DrawInfoBarEx(font, T(S_SIDEBAR_INFO), liveConfirmT, (1.0f - liveConfirmT) * INFO_BAR_SLIDE_PX);
         return;
     }
-    /* Above blur / panel so accept/back help stays readable. */
-    InfoBar_Draw(font);
+    /* Above blur / panel so accept/back help stays readable.
+     * While the status card is up, Status_Draw draws the bars after its dim. */
+    if (statusT <= 0.0f) InfoBar_Draw(font);
 }
 
 static void SlideEffect(Color mosaicBg, Font font)
 {
     if (slideDirection > 0) {
-        /* Leaving: a (17,17,17) layer gains alpha over the games grid; the moment it is opaque the
-         * main menu is drawn instead (systems and controllers), then the layer loses alpha. */
+        /* Leaving: a (17,17,17) layer fades over the games grid (faster than
+         * the enter dim), holds fully opaque until every main-menu system card
+         * is loaded, then fades out over ENTER_FADE_SEC along the same curve. */
         float step = GetFrameTime() > 0.1f ? 0.1f : GetFrameTime();
         const char *fixed = getenv("NSO_ENTER_STEP");   /* debug: fixed step per frame (frame capture) */
         if (fixed && atof(fixed) > 0.0) step = (float)atof(fixed);
+        Color layer = { ENTER_COVER_R, ENTER_COVER_G, ENTER_COVER_B, 255 };
+        float cover;
         leaveT += step;
-        if (!leaveSwitched && EnterAnim_ExitSwitched(leaveT)) {
-            leaveSwitched = true;
-            currentState = SYSTEMS;
-            sidebarExpandPending = false;
-            sidebarOpen = false;
-            sidebarClosing = false;
-            sbWidthPhase = SB_WIDTH_IDLE;
-            sidebarWidth = 0.0f;
-            targetSidebarWidth = 0.0f;
-            gearSpinAngle = 0.0f;
-            mosaicIntroPhase = MOSAIC_INTRO_NONE;
-            mosaicExitPhase = MOSAIC_EXIT_NONE;
-            InfoBar_Reset();
-            UnloadAllBoxarts();
+        if (leaveFadeInT < 0.0f) {
+            float u = leaveT / LEAVE_FADE_OUT_SEC;
+            if (u < 1.0f) {
+                if (u < 0.0f) u = 0.0f;
+                /* Same dim curve as the original exit, compressed into the shorter fade-out. */
+                cover = EnterAnim_ExitCover(u * ENTER_FADE_SEC);
+            } else {
+                cover = 1.0f;
+                if (!leaveSwitched) {
+                    leaveSwitched = true;
+                    currentState = SYSTEMS;
+                    menuBarFocus = -1;
+                    powerDialogOpen = false;
+                    sidebarExpandPending = false;
+                    sidebarOpen = false;
+                    sidebarClosing = false;
+                    sbWidthPhase = SB_WIDTH_IDLE;
+                    sidebarWidth = 0.0f;
+                    targetSidebarWidth = 0.0f;
+                    gearSpinAngle = 0.0f;
+                    mosaicIntroPhase = MOSAIC_INTRO_NONE;
+                    mosaicExitPhase = MOSAIC_EXIT_NONE;
+                    InfoBar_Reset();
+                    UnloadAllBoxarts();
+                } else {
+                    /* One full-black frame first, then load so a hitch stays hidden. */
+                    MenuArts_Reload();
+                    if (MenuArts_Ready()) leaveFadeInT = 0.0f;
+                }
+            }
         }
-        if (leaveSwitched) DrawSystemMenu(0.0f);
-        else DrawMosaic(mosaicBg, font);
-        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
-                      Fade((Color){ ENTER_COVER_R, ENTER_COVER_G, ENTER_COVER_B, 255 }, EnterAnim_ExitCover(leaveT)));
-        if (leaveT >= EnterAnim_ExitTotal()) {
+        if (leaveFadeInT >= 0.0f) {
+            cover = EnterAnim_ExitCover(ENTER_FADE_SEC + leaveFadeInT);
+            leaveFadeInT += step;
+        }
+        if (leaveSwitched && MenuArts_Ready()) DrawSystemMenu(0.0f);
+        else if (!leaveSwitched) DrawMosaic(mosaicBg, font);
+        else ClearBackground(layer);
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, cover));
+        if (leaveFadeInT >= ENTER_FADE_SEC) {
             screenSliding = false;
             slideOffset = 0.0f;
         }
@@ -5363,6 +6909,7 @@ static void BeginLeaveMosaicSlide(void) {
     slideOffset = -(float)GetScreenWidth();
     leaveT = 0.0f;
     leaveSwitched = false;
+    leaveFadeInT = -1.0f;
 }
 
 /* Reverse of enter post-slide: info fade out → shrink → slide (no delay). */
@@ -5447,6 +6994,7 @@ static void Home_DismissOverlays(void)
         targetSidebarWidth = rail;
     }
     mosaicExitPhase = MOSAIC_EXIT_NONE;
+    powerDialogOpen = false;
     if (currentState == MOSAIC) InfoBar_Request(INFO_BAR_MOSAIC);
 }
 
@@ -5468,7 +7016,6 @@ static void Home_SaveReturn(void)
         return;
     }
     if (currentState == SYSTEMS) { homeReturn = HOME_RET_SYSTEMS; return; }
-    if (currentState == MANAGE) { homeReturn = HOME_RET_MANAGE; return; }
     if (detailsOpen) { homeReturn = HOME_RET_DETAILS; return; }
     if (statusOpen) { homeReturn = HOME_RET_STATUS; return; }
     if (SortPanel_Active()) { homeReturn = HOME_RET_SORT; return; }
@@ -5638,19 +7185,22 @@ static void Home_GoToMainMenu(void)
     Home_CaptureUnderlay();
     /* System tiles need their art; the games-grid covers do not — they are
      * loaded again when a system is entered (StartEnterMosaic). */
+    MenuArts_Reload();
     if (frontendArtsParked) {
-        InitSystems();
         frontendArtsParked = false;
         frontendKeepCover = -1;
     }
     CoverLoader_Stop();
     UnloadAllBoxarts();
     mosaicRevealWait = false;
+    MosaicBlur_HoldEnd();
     if (Home_InGame()) {
         Live_BeginPark();
         homeUnmapAfterFrame = true; /* unmap only after the snapshot is on screen */
     }
     currentState = SYSTEMS;
+    menuBarFocus = -1;
+    powerDialogOpen = false;
     introOpacity = 0.0f;
     introFrames = FPS;
     mosaicIntroPhase = MOSAIC_INTRO_NONE;
@@ -5666,11 +7216,6 @@ static void Home_ApplyReturn(void)
     switch (dest) {
     case HOME_RET_SYSTEMS:
         break;
-    case HOME_RET_MANAGE:
-        Manage_Open();
-        introOpacity = 0.0f;
-        introFrames = FPS;
-        break;
     case HOME_RET_MOSAIC:
     case HOME_RET_DETAILS:
     case HOME_RET_STATUS:
@@ -5679,8 +7224,10 @@ static void Home_ApplyReturn(void)
     case HOME_RET_SIDEBAR:
         Home_PrepareGrid(homeRetSys, homeRetGame, homeRetViewY);
         if (frontendArtsParked) FrontendArts_Reload();
+        MenuArts_Unload();
         mosaicIntroPhase = MOSAIC_INTRO_NONE;
         mosaicRevealWait = false;
+        MosaicBlur_HoldEnd();
         currentState = MOSAIC;
         if (dest != HOME_RET_MOSAIC) homeReturn = dest;
         break;
@@ -5751,7 +7298,7 @@ static void Home_ApplyDeferredOverlay(void)
         sidebarSetRow = homeRetSetRow;
         sidebarPanelFocus = homeRetPanelFocus;
         if (homeRetPad)
-            PadUi_Open(SysIsN64(currentSystem) ? 2 : SysIsSnes(currentSystem) ? 1 : 0);
+            PadUi_Open(PadUi_KindOf(currentSystem));
         if (homeRetGameSel) GameSel_Open();
         break;
     default: break;
@@ -5794,6 +7341,9 @@ int main(int argc, char **argv) {
     sigemptyset(&externalHomeAction.sa_mask);
     sigaction(SIGUSR2, &externalHomeAction, NULL);
 #endif
+#ifdef NSO_RELEASE
+    AssetPack_Install();
+#endif
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");
     SetGamepadMappings(NSO_PAD_MAPPINGS);
@@ -5817,6 +7367,7 @@ int main(int argc, char **argv) {
     SysSettings_LoadAll();
     Pad_LoadMaps();
     Order_LoadAll();
+    CoverSize_Start();
     SortPanel_LoadAll();
     Sfx_Init();
 
@@ -5829,8 +7380,10 @@ int main(int argc, char **argv) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
         "0123456789"
-        " .,!?()[]{}'°-:/_+%"
-        "áàâãéêíóôõúçÁÂÃÉÊÍÓÔÕÚÇ"
+        " .,!?()[]{}@'°-:/_+%&\"~*$"
+        "áàâãéêíóôõúçÁÂÃÉÊÍÓÔÕÚÇëË"
+        "āēīōūÿäöüĀĒĪŌŪÄÖÜ"
+        "×½²³☆‼—–′"
         "🅐🅑🅧🅨",
         &Count
     );
@@ -5846,16 +7399,87 @@ int main(int argc, char **argv) {
         snprintf(nerdPath, sizeof(nerdPath), "%s",
                  GetDataPath("assets/fonts/SymbolsNerdFont-Regular.ttf"));
         hintNerdLoaded = false;
+        hintYNerdLoaded = false;
         hintNerdFont = (Font){ 0 };
         if (FileExists(nerdPath)) {
-            int nerdCps[2] = { HINT_NERD_CUP, HINT_NERD_CDOWN };
-            hintNerdFont = LoadFontEx(nerdPath, 36, nerdCps, 2);
+            int nerdCps[3] = { HINT_NERD_CUP, HINT_NERD_CDOWN, HINT_NERD_Y_CIRCLE };
+            hintNerdFont = LoadFontEx(nerdPath, 36, nerdCps, 3);
             hintNerdLoaded = (hintNerdFont.texture.id != 0 && hintNerdFont.glyphCount >= 2);
+            hintYNerdLoaded = false;
             if (hintNerdLoaded) {
+                int gi = GetGlyphIndex(hintNerdFont, HINT_NERD_Y_CIRCLE);
+                hintYNerdLoaded = (gi >= 0 && hintNerdFont.glyphs[gi].value == HINT_NERD_Y_CIRCLE
+                                   && hintNerdFont.recs[gi].width > 1.0f);
                 SetTextureFilter(hintNerdFont.texture, TEXTURE_FILTER_BILINEAR);
             } else if (hintNerdFont.texture.id) {
                 UnloadFont(hintNerdFont);
                 hintNerdFont = (Font){ 0 };
+            }
+        }
+        favNerdLoaded = false;
+        favNerdFont = (Font){ 0 };
+        if (FileExists(nerdPath)) {
+            int favCps[3] = { FAV_HEART, FAV_HEART_O, HIDE_BLOCK };
+            favNerdFont = LoadFontEx(nerdPath, 64, favCps, 3);
+            favNerdLoaded = (favNerdFont.texture.id != 0 && favNerdFont.glyphCount >= 2
+                             && favNerdFont.recs[0].width > 1.0f && favNerdFont.recs[1].width > 1.0f);
+            hideNerdLoaded = false;
+            if (favNerdLoaded) {
+                int gi = GetGlyphIndex(favNerdFont, HIDE_BLOCK);
+                hideNerdLoaded = (gi >= 0 && favNerdFont.glyphs[gi].value == HIDE_BLOCK
+                                  && favNerdFont.recs[gi].width > 1.0f);
+                SetTextureFilter(favNerdFont.texture, TEXTURE_FILTER_BILINEAR);
+            } else if (favNerdFont.texture.id) {
+                UnloadFont(favNerdFont);
+                favNerdFont = (Font){ 0 };
+            }
+        }
+        statusNerdLoaded = false;
+        statusNerdFont = (Font){ 0 };
+        if (FileExists(nerdPath)) {
+            int statusCps[] = {
+                STATUS_NERD_WIFI, STATUS_NERD_WIFI_OFF, STATUS_NERD_WIFI_DISC,
+                STATUS_NERD_BAT_FULL, STATUS_NERD_BAT_75, STATUS_NERD_BAT_50,
+                STATUS_NERD_BAT_25, STATUS_NERD_BAT_0, STATUS_NERD_BOLT,
+                STATUS_NERD_CIRCLE_PLUS
+            };
+            statusNerdFont = LoadFontEx(nerdPath, 48, statusCps,
+                                        (int)(sizeof(statusCps) / sizeof(statusCps[0])));
+            statusNerdLoaded = (statusNerdFont.texture.id != 0
+                                && statusNerdFont.glyphCount >= 1);
+            if (statusNerdLoaded) {
+                SetTextureFilter(statusNerdFont.texture, TEXTURE_FILTER_BILINEAR);
+            } else if (statusNerdFont.texture.id) {
+                UnloadFont(statusNerdFont);
+                statusNerdFont = (Font){ 0 };
+            }
+        }
+        menuBarFontLoaded = false;
+        menuBarFont = (Font){ 0 };
+        if (FileExists(nerdPath)) {
+            int barCps[2] = { MENU_BAR_DOWNLOAD, MENU_BAR_POWER };
+            menuBarFont = LoadFontEx(nerdPath, 128, barCps, 2);
+            menuBarFontLoaded = (menuBarFont.texture.id != 0 && menuBarFont.glyphCount >= 2);
+            if (menuBarFontLoaded) {
+                SetTextureFilter(menuBarFont.texture, TEXTURE_FILTER_BILINEAR);
+            } else if (menuBarFont.texture.id) {
+                UnloadFont(menuBarFont);
+                menuBarFont = (Font){ 0 };
+            }
+        }
+        statusPadN64Loaded = false;
+        statusPadN64 = (Texture2D){ 0 };
+        {
+            const char *padPath = GetDataPath("assets/images/ui/pad-n64.png");
+            if (FileExists(padPath)) {
+                Image padImg = LoadImage(padPath);
+                if (padImg.data) {
+                    statusPadN64 = LoadTextureFromImage(padImg);
+                    UnloadImage(padImg);
+                    statusPadN64Loaded = (statusPadN64.id != 0);
+                    if (statusPadN64Loaded)
+                        SetTextureFilter(statusPadN64, TEXTURE_FILTER_BILINEAR);
+                }
             }
         }
     }
@@ -5926,6 +7550,7 @@ int main(int argc, char **argv) {
 
         padCUp = gpReady && eRY < 0;
         padCDown = gpReady && eRY > 0;
+        padCDownHeld = gpReady && ry > NSO_PAD_DEADZONE;
         padCLeft = gpReady && eRX < 0;
         padCRight = gpReady && eRX > 0;
 
@@ -5935,6 +7560,7 @@ int main(int argc, char **argv) {
          * screen). Only while mosaicRevealWait: browsing must not blank the grid. */
         if (mosaicRevealWait && CoverLoader_VisibleReady()) {
             mosaicRevealWait = false;
+            MosaicBlur_HoldEnd();
             CoverReload_Stamp("reveal-ready");
         }
         bool gridHold = mosaicRevealWait && !CoverLoader_VisibleReady();
@@ -5946,6 +7572,13 @@ int main(int argc, char **argv) {
             introFrames++;
         } else {
             introOpacity = 0.0f;
+        }
+
+        /* Debug: NSO_SCREENSHOT=<path> focuses the dock (download icon) after
+         * the intro fade; the capture itself happens just before EndDrawing. */
+        if (getenv("NSO_SCREENSHOT") && getenv("NSO_SCREENSHOT")[0]
+            && currentState == SYSTEMS && introFrames >= FPS && menuBarFocus < 0) {
+            menuBarFocus = 0;
         }
 
         /* Debug: NSO_AUTOSELECT=<system index> enters that system after 1.5s
@@ -6234,12 +7867,23 @@ int main(int argc, char **argv) {
                         nsoQuit = true;
                         break;
                     }
-                    /* O: repository download + language screen. */
-                    if (canNavigate && (IsKeyPressed(KEY_O) || padCLeft)) {
-                        Manage_Open();
+                    if (powerDialogOpen) {
+                        bool up = IsKeyPressed(KEY_UP) || gpUp;
+                        bool down = IsKeyPressed(KEY_DOWN) || gpDown;
+                        bool ok = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm;
+                        bool back = IsKeyPressed(KEY_B) || gpBack;
+                        if (up && powerDialogRow > 0) { powerDialogRow--; Sfx_Play(SFX_PLUCK); }
+                        if (down && powerDialogRow < 2) { powerDialogRow++; Sfx_Play(SFX_PLUCK); }
+                        if (back) { powerDialogOpen = false; Sfx_Play(SFX_CLICK); }
+                        else if (ok) {
+                            Sfx_Play(SFX_CLICK);
+                            if (powerDialogRow == 0) Power_ShutDown();
+                            else if (powerDialogRow == 1) nsoQuit = true;
+                            powerDialogOpen = false;
+                        }
                         break;
                     }
-                    if (canNavigate && SYSTEM_COUNT > 1) {
+                    if (canNavigate && menuBarFocus < 0 && SYSTEM_COUNT > 1) {
                         if (IsKeyPressed(KEY_LEFT) || gpLeft) {
                             SelectSystem(-1);
                         }
@@ -6247,15 +7891,52 @@ int main(int argc, char **argv) {
                             SelectSystem(1);
                         }
                     }
+                    if (canNavigate && menuBarFocus >= 0) {
+                        if ((IsKeyPressed(KEY_LEFT) || gpLeft) && menuBarFocus > 0) {
+                            menuBarFocus--;
+                            Sfx_Play(SFX_PLUCK);
+                        }
+                        if ((IsKeyPressed(KEY_RIGHT) || gpRight) && menuBarFocus < MENU_BAR_ICON_COUNT - 1) {
+                            menuBarFocus++;
+                            Sfx_Play(SFX_PLUCK);
+                        }
+                    }
+                    if (canNavigate && (IsKeyPressed(KEY_DOWN) || gpDown) && menuBarFocus < 0) {
+                        menuBarFocus = 0;
+                        Sfx_Play(SFX_PLUCK);
+                    }
+                    if (canNavigate && (IsKeyPressed(KEY_UP) || gpUp) && menuBarFocus >= 0) {
+                        menuBarFocus = -1;
+                        Sfx_Play(SFX_PLUCK);
+                    }
 
-                    if (canNavigate && !overlayConsumedConfirm &&
-                        (IsKeyPressed(KEY_ENTER) || gpConfirm)) {
-                        Sfx_Play(SFX_CLICK);   /* the selection; the system's jingle follows the transition */
-                        StartEnterMosaic();
+                    if (canNavigate && !overlayConsumedConfirm) {
+                        bool ok = IsKeyPressed(KEY_ENTER) || gpConfirm;
+                        bool okBar = ok || IsKeyPressed(KEY_A);
+                        if (menuBarFocus == 1 && okBar) {
+                            powerDialogOpen = true;
+                            powerDialogRow = 2;   /* Cancel */
+                            Sfx_Play(SFX_CLICK);
+                        } else if (menuBarFocus < 0 && ok) {
+                            Sfx_Play(SFX_CLICK);   /* the selection; the system's jingle follows the transition */
+                            StartEnterMosaic();
+                        }
                     }
                     break;
 
-                case MOSAIC:
+                case MOSAIC: {
+                    /* Enter-games-menu animation (tile delay+grow after the
+                     * slide): no games-menu input until it has finished. */
+                    if (mosaicIntroPhase != MOSAIC_INTRO_NONE) break;
+                    bool mosaicIdle = liveConfirm == 0 && !Live_Busy()
+                        && !GameExitActive() && !GameEnterActive()
+                        && !SortPanel_Active()
+                        && !sidebarOpen && !sidebarExpandPending && !sidebarClosing
+                        && sbWidthPhase == SB_WIDTH_IDLE && !gridLifted
+                        && !statusOpen && statusT <= 0.0f
+                        && !detailsOpen && detailsT <= 0.0f;
+                    SortY_Update(canNavigate && mosaicIdle,
+                                 canNavigate && mosaicIdle && gameCount > 0 && GameIdx < gameCount);
                     if (liveConfirm != 0) {
                         Live_ConfirmInput(gpUp, gpDown, gpConfirm, gpBack);
                         break;
@@ -6282,12 +7963,12 @@ int main(int argc, char **argv) {
                     }
 
                     if (statusOpen || statusT > 0.0f) {
-                        Status_HandleInput(gpUp, gpDown, gpBack);
+                        Status_HandleInput(gpUp, gpDown, gpBack, gpConfirm, gpLeft, gpRight);
                         break;
                     }
 
                     if (detailsOpen || detailsT > 0.0f) {
-                        Details_HandleInput(gpConfirm, gpBack);
+                        Details_HandleInput(gpConfirm, gpBack, gpLeft, gpRight, gpUp, gpDown);
                         break;
                     }
 
@@ -6322,8 +8003,9 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    /* T / right stick right: change order of titles. */
-                    if (canNavigate && (IsKeyPressed(KEY_T) || padCRight)) {
+                    /* Right stick right: change order of titles.
+                     * Keyboard Y / gamepad Y / C-Down: hold (SortY_Update). */
+                    if (canNavigate && padCRight) {
                         SortPanel_Open();
                         break;
                     }
@@ -6335,14 +8017,9 @@ int main(int argc, char **argv) {
                     }
 
                     bool onGame = canNavigate && gameCount > 0 && GameIdx < gameCount;
-                    if (onGame && (IsKeyPressed(KEY_Y) || padCDown || (gp && IsGamepadButtonPressed(0, NSO_BTN_Y)))) {
-                        gridLifted = true;
-                        gridLiftMoved = false;
-                        gridLiftFrom = GameIdx;
-                        break;
-                    }
+                    /* Keyboard Y is SortY_Update (hold = sort, tap = Move). */
 
-                    /* X / gamepad X: details panel. */
+                    /* Keyboard X / gamepad X / C-Up: details panel. */
                     if (onGame && (IsKeyPressed(KEY_X) || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X)))) {
                         Details_Open();
                         break;
@@ -6380,16 +8057,6 @@ int main(int argc, char **argv) {
                     if (canNavigate && (IsKeyPressed(KEY_B) || gpBack)) {
                         RequestLeaveMosaic();
                     }
-                    break;
-
-                case MANAGE: {
-                    int rowsN = Manage_RowCount();
-                    if (IsKeyPressed(KEY_LEFT) || gpLeft) { SelectSystem(-1); manageRow = 0; }
-                    if (IsKeyPressed(KEY_RIGHT) || gpRight) { SelectSystem(1); manageRow = 0; }
-                    if (IsKeyPressed(KEY_UP) || gpUp) manageRow = (manageRow + rowsN - 1) % rowsN;
-                    if (IsKeyPressed(KEY_DOWN) || gpDown) manageRow = (manageRow + 1) % rowsN;
-                    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_A) || gpConfirm) Manage_Activate();
-                    if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_O) || padCLeft || gpBack) Manage_Close();
                     break;
                 }
 
@@ -6449,11 +8116,6 @@ int main(int argc, char **argv) {
             }
         } else if (currentState == SPLASH) {
             DrawEnterTransition();
-        } else if (currentState == MANAGE) {
-            Manage_Draw(font);
-            if (introOpacity > 0.0f) {
-                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, introOpacity));
-            }
         } else if (currentState == EMBED) {
             const char *const text[EMBED_TXT_COUNT] = { T(S_EMB_CONTINUE), T(S_EMB_LOAD), T(S_EMB_SAVE),
                 T(S_EMB_RESTART), T(S_EMB_CRT), T(S_EMB_QUIT), T(S_EMB_SLOT), T(S_EMB_NODATA), T(S_EMB_DATE),
@@ -6500,7 +8162,14 @@ int main(int argc, char **argv) {
                                   Fade(BLACK, 1.0f - gameEnterT));
                 }
             } else if (gridHold) {
-                ClearBackground(BLACK);   /* the held frame: game / black, never empty slots */
+                if (mosaicBlurHeld) {
+                    /* Hide/filter re-list: keep the pre-toggle blur, not black. */
+                    DrawMosaic(Mosaicbg, font);
+                    Details_Draw(font);
+                    Status_Draw(font);
+                } else {
+                    ClearBackground(BLACK);   /* the held frame: game / black, never empty slots */
+                }
             } else if (!gameOwnsScreen) {
                 DrawMosaic(Mosaicbg, font);
                 Details_Draw(font);
@@ -6517,6 +8186,19 @@ int main(int argc, char **argv) {
         } else if (!isLaunching && currentState != EMBED) {
             Repo_NoticeDraw(font);
             PadNotice_Draw(font);
+        }
+
+        {
+            const char *shot = getenv("NSO_SCREENSHOT");
+            if (shot && shot[0] && currentState == SYSTEMS && introFrames >= FPS
+                && menuBarFocus == 0) {
+                static int shotFrames = 0;
+                shotFrames++;
+                if (shotFrames >= 2) {   /* a full focused bar frame is in the back buffer */
+                    TakeScreenshot(shot);
+                    nsoQuit = true;
+                }
+            }
         }
 
         EndDrawing();
@@ -6570,6 +8252,7 @@ int main(int argc, char **argv) {
     if (live.parked || Embed_IsActive()) Live_Close();
     else Embed_Stop();
     CoverLoader_Stop();
+    CoverSize_Stop();
     if (NsoProcOk(repoProc)) NsoSpawnKill(repoProc);
     if (GameSel_Busy()) GameSel_Cancel();
     UnloadAllBoxarts();
@@ -6580,7 +8263,31 @@ int main(int argc, char **argv) {
         UnloadFont(hintNerdFont);
         hintNerdFont = (Font){ 0 };
         hintNerdLoaded = false;
+        hintYNerdLoaded = false;
     }
+    if (favNerdLoaded) {
+        UnloadFont(favNerdFont);
+        favNerdFont = (Font){ 0 };
+        favNerdLoaded = false;
+        hideNerdLoaded = false;
+    }
+    if (statusNerdLoaded) {
+        UnloadFont(statusNerdFont);
+        statusNerdFont = (Font){ 0 };
+        statusNerdLoaded = false;
+    }
+    if (menuBarFontLoaded) {
+        UnloadFont(menuBarFont);
+        menuBarFont = (Font){ 0 };
+        menuBarFontLoaded = false;
+    }
+    MenuBarCursorTex_Unload();
+    if (statusPadN64Loaded) {
+        UnloadTexture(statusPadN64);
+        statusPadN64 = (Texture2D){ 0 };
+        statusPadN64Loaded = false;
+    }
+    PadUi_Unload();
     PadNotice_Unload();
     RetroShots_Unload();
     UnloadBlurResources();

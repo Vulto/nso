@@ -1,5 +1,5 @@
 /* gamesel.h - "Select games" (system sidebar > Settings > Image scraping):
- * the user's ROMs in repos/roms/<folder>, matched to catalog titles, one check
+ * the user's ROMs in roms/<folder>, matched to catalog titles, one check
  * per game, and the queue that downloads the cover + date of each checked game
  * and, when the game has a pipeline below, fetches its port, builds it and
  * installs it where the launcher looks. Pure logic (no raylib), unit-tested in
@@ -51,7 +51,9 @@ typedef struct {
     GsState st;
 } GsRow;
 
-/* Folder under repos/roms for a system id ("NES", ...); NULL = none. */
+/* NSO-relative root of user ROM trees. */
+const char *Gs_RomRoot(void);
+/* Folder under roms/ for a system id ("NES", ...); NULL = none. */
 const char *Gs_RomFolder(const char *system);
 /* Pipeline for a catalog title of a system, -1 if none. */
 int Gs_FindPipeline(const char *system, const char *title);
@@ -153,12 +155,18 @@ const GamePipeline gs_pipelines[] = {
 };
 const int gs_pipeline_count = (int)(sizeof(gs_pipelines) / sizeof(gs_pipelines[0]));
 
+const char *Gs_RomRoot(void)
+{
+    return "roms";
+}
+
 const char *Gs_RomFolder(const char *system)
 {
     if (!system) return NULL;
     if (strcmp(system, "nes") == 0) return "NES";
     if (strcmp(system, "snes") == 0) return "SNES";
     if (strcmp(system, "n64") == 0) return "N64";
+    if (strcmp(system, "megadrive") == 0) return "MegaDrive";
     return NULL;
 }
 

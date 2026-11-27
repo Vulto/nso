@@ -22,11 +22,11 @@ PlatformEntry snes_platform = {
 };
 
 /* Mednafen (mednafen/src/mednafen, built from the source tree in the NSO root)
- * runs the ROM in repos/roms/SNES. Config and saves: saves/snes/mednafen; NSO's
+ * runs the ROM in roms/SNES. Config and saves: saves/snes/mednafen; NSO's
  * suspend points: saves/snes/mednafen/states/<ROM file>. */
 #define MEDNAFEN_SNES(file) \
     .dir = "mednafen/src", .binary = "./mednafen", .mednafen = "snes", \
-    .rom = "repos/roms/SNES/" file, \
+    .rom = "roms/SNES/" file, \
     .stateDir = "saves/snes/mednafen/states/" file, .externalSlots = true
 
 GameEntry snes_games[] = {

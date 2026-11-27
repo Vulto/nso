@@ -17,6 +17,7 @@
 #define ENTER_EXTRA_SEC 0.020f
 #define ENTER_STRETCH ((97.0f / ENTER_REF_FPS + ENTER_EXTRA_SEC) / (97.0f / ENTER_REF_FPS))
 #define ENTER_FADE_SEC 0.300f   /* the dim, the crossfade, and both halves of the exit */
+#define ENTER_SPEED 1.5625f     /* enter-a-system timeline: 25% faster, then 25% again; leave unchanged */
 #define ENTER_COVER_R 17
 #define ENTER_COVER_G 17
 #define ENTER_COVER_B 17
@@ -66,8 +67,8 @@ int EnterAnim_SlideReady(int coversLoaded, float shownSec, int hasSound, int sou
 static const float enter_pf[5] = { 106.0f, 123.0f, 134.0f, 176.0f, 203.0f };
 static float enter_pd(int k)
 {
-    if (k == 1 || k == 3) return ENTER_FADE_SEC;
-    return (enter_pf[k + 1] - enter_pf[k]) / ENTER_REF_FPS * ENTER_STRETCH;
+    if (k == 1 || k == 3) return ENTER_FADE_SEC / ENTER_SPEED;
+    return (enter_pf[k + 1] - enter_pf[k]) / ENTER_REF_FPS * ENTER_STRETCH / ENTER_SPEED;
 }
 
 static float enter_frame(float t)

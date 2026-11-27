@@ -15,6 +15,8 @@
 #include "systems/n64.h"
 #define GAMECUBE_IMPLEMENTATION
 #include "systems/gamecube.h"
+#define MEGADRIVE_IMPLEMENTATION
+#include "systems/megadrive.h"
 #define STATUS_IMPLEMENTATION
 #include "status.h"
 
@@ -71,9 +73,10 @@ int main(void)
     int counts[ST_COUNT] = { 0 }, total;
     check_sys("NES", nes_games, nes_game_count, (int[ST_COUNT]){ 5, 3, 50, 0 }, counts);
     check_sys("SNES", snes_games, snes_game_count, (int[ST_COUNT]){ 8, 3, 50, 0 }, counts);
-    check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 41, 10, 0, 242 }, counts);
+    check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 41, 10, 0, 190 }, counts);
     check_sys("GameCube", gamecube_games, gamecube_game_count, (int[ST_COUNT]){ 0, 4, 0, 0 }, counts);
-    total = nes_game_count + snes_game_count + n64_game_count + gamecube_game_count;
+    check_sys("Mega Drive", megadrive_games, megadrive_game_count, (int[ST_COUNT]){ 0, 0, 447, 0 }, counts);
+    total = nes_game_count + snes_game_count + n64_game_count + gamecube_game_count + megadrive_game_count;
     expect("sum of categories", counts[0] + counts[1] + counts[2] + counts[3], total);
     if (counts[ST_RECOMP] <= 0 || counts[ST_NATIVE] <= 0 || counts[ST_EMULATED] <= 0 || counts[ST_NONE] <= 0) {
         fprintf(stderr, "a category is empty\n");

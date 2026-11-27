@@ -1,0 +1,1649 @@
+# SNES scrapable artbox titles, with North American (U) and Japanese (J) releases.
+# Source (display names): https://nintendo.fandom.com/wiki/List_of_Super_Nintendo_Entertainment_System_games
+# Japan includes retail, Satellaview, and Nintendo Power lists on that page.
+# Europe and canceled/unreleased lists are omitted.
+# Boxart filenames are exact Named_Boxarts names from
+# https://github.com/libretro/libretro-thumbnails/tree/master/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts
+# Columns: regions, TAB, display title, TAB, optional alias, TAB, USA boxart, TAB, Japan boxart.
+#
+J	2020 Toshi no Super Baseball			2020 Super Baseball (Japan).png
+J	3×3 Eyes Jūma hōkan			3x3 Eyes - Juuma Houkan (Japan).png
+J	3×3 Eyes Seima kōrin-den			3x3 Eyes - Seima Kourinden (Japan).png
+U	3 Ninjas Kick Back		3 Ninjas Kick Back (USA).png	
+J	4 Nin Shōgi			4-nin Shougi (Japan).png
+J	'96 Zenkoku Kōkō Soccer Senshuken			'96 Zenkoku Koukou Soccer Senshuken (Japan).png
+UJ	A.S.P. Air Strike Patrol	Desert Fighter: Suna no Arashi Sakusen	A.S.P. - Air Strike Patrol (USA).png	Desert Fighter - Suna no Arashi Sakusen (Japan).png
+U	AAAHH!!! Real Monsters		Aaahh!!! Real Monsters (USA).png	
+J	Accele Brid			Accele Brid (Japan).png
+J	Ace o Nerae!			Ace o Nerae! (Japan).png
+U	ACME Animation Factory		ACME Animation Factory (USA).png	
+J	Acrobat Mission			Acrobat Mission (Japan) (En).png
+J	Action Pachio			Action Pachio (Japan).png
+UJ	ActRaiser		ActRaiser (USA).png	Actraiser (Japan).png
+UJ	ActRaiser 2	ActRaiser 2: Chinmoku e no Seisen	ActRaiser 2 (USA).png	ActRaiser 2 - Chinmoku e no Seisen (Japan).png
+U	Addams Family Values		Addams Family Values (USA) (En,Fr,De).png	
+UJ	Advanced Dungeons & Dragons: Eye of the Beholder		Advanced Dungeons _ Dragons - Eye of the Beholder (USA).png	Eye of the Beholder (Japan).png
+UJ	Adventures of Yogi Bear	Yogi Bear	Adventures of Yogi Bear (USA).png	Yogi Bear (Japan) (En).png
+UJ	Aero Fighters	Sonic Wings	Aero Fighters (USA).png	Sonic Wings (Japan).png
+U	Aero the Acro-Bat		Aero the Acro-Bat (USA).png	
+U	Aero the Acro-Bat 2		Aero the Acro-Bat 2 (USA).png	
+UJ	Aerobiz	Air Management: Ōzora ni Kakeru	Aerobiz (USA).png	Air Management - Oozora ni Kakeru (Japan).png
+UJ	Aerobiz Supersonic	Air Management II	Aerobiz Supersonic (USA).png	Air Management II - Koukuu Ou o Mezase (Japan).png
+J	AIII S.V.: A Ressha de Ikou 3 Super Version			AIII S.V. - A Ressha de Ikou 3 - Super Version (Japan).png
+U	Air Cavalry		Air Cavalry (USA).png	
+J	Akagawa Jirō: Majotachi no Nemuri			Akagawa Jirou - Majotachi no Nemuri (Japan).png
+J	Akazukin Chacha			Akazukin Chacha (Japan).png
+U	Al Unser Jr.'s Road to the Top		Al Unser Jr.'s Road to the Top (USA).png	
+UJ	Aladdin		Aladdin (USA).png	Aladdin (Japan).png
+J	Albert Odyssey			Albert Odyssey (Japan).png
+J	Albert Odyssey 2: Jashin no Taidō			Albert Odyssey 2 - Jashin no Taidou (Japan).png
+J	Alcahest			Alcahest (Japan).png
+J	Alice no Paint Adventure			Alice no Paint Adventure (Japan).png
+UJ	Alien vs. Predator	Aliens vs. Predator	Alien vs Predator (USA).png	Aliens vs. Predator (Japan).png
+UJ	Alien³		Alien 3 (USA).png	Alien 3 (Japan).png
+J	All Japan Super Bombliss Cup '95			
+J	America Ōdan Ultra Quiz			America Oudan Ultra Quiz (Japan).png
+J	American Battle Dome			American Battle Dome (Japan).png
+U	An American Tail: Fievel Goes West		American Tail, An - Fievel Goes West (USA).png	
+J	Ancient Magic: Bazoo! Mahō Sekai			
+J	Angelique			Angelique (Japan).png
+UJ	Animaniacs		Animaniacs (USA).png	Animaniacs (Japan).png
+J	Aoki Densetsu Shoot!			Aoki Densetsu Shoot! (Japan).png
+J	Appleseed			Appleseed - Prometheus no Shintaku (Japan).png
+J	Arabian Nights: Sabaku no Seirei-ō			Arabian Nights - Sabaku no Seirei Ou (Japan).png
+J	Araiguma Rascal: Raccoon Rascal			Araiguma Rascal (Japan).png
+UJ	Arcana	Card Master: Rimsalia no Fuuin	Arcana (USA).png	Card Master - Rimusaria no Fuuin (Japan).png
+J	Arcus Spirits			Arcus Spirits (Japan).png
+UJ	Ardy Lightfoot		Ardy Lightfoot (USA).png	Ardy Lightfoot (Japan).png
+J	Aretha			Aretha (Japan).png
+J	Aretha II: Ariel no Fushigi na Tabi			Aretha II - Ariel no Fushigi na Tabi (Japan).png
+UJ	Arkanoid: Doh It Again		Arkanoid - Doh It Again (USA).png	Arkanoid - Doh It Again (Japan) (En).png
+UJ	Art of Fighting	Ryūko no Ken	Art of Fighting (USA).png	Ryuuko no Ken (Japan).png
+J	Asahi Shinbun Rensai: Katō Hifumi Kudan Shogi: Shingiryū			Asahi Shinbun Rensai - Katou Hifumi Kudan Shougi - Shingiryuu (Japan).png
+J	Asameshimae Nyanko			Asameshimae Nyanko (Japan).png
+J	Ashita no Joe			Ashita no Joe (Japan).png
+J	Atsushi Onita: FMW			Oonita Atsushi FMW (Japan).png
+J	Atsuya Furuta no Simulation Pro Yakyū 2			Furuta Atsuya no Simulation Pro Yakyuu 2 (Japan).png
+UJ	Axelay		Axelay (USA).png	Axelay (Japan).png
+U	Bébé's Kids		Bebe's Kids (USA).png	
+UJ	B.O.B.	Space Funky B.O.B.	B.O.B. (USA).png	Space Funky B.O.B. (Japan).png
+J	Bahamut Lagoon			Bahamut Lagoon (Japan).png
+J	Bakkyū Renpatsu‼ Super B-Daman			Bakukyuu Renpatsu!! Super B-Daman (Japan).png
+J	Bakumatsu Kōrinden: Oni			Bakumatsu Kourinden Oni (Japan).png
+J	Bakutō Dodgers			
+J	Ball Bullet Gun: Survival Game Simulation			Ball Bullet Gun (Japan).png
+UJ	Ballz 3D	3 Jigen Kakuto: Ballz	Ballz 3D - Fighting at Its Ballziest (USA).png	3-jigen Kakutou Ballz (Japan).png
+J	Barbarossa			Barbarossa (Japan).png
+U	Barbie: Super Model		Barbie Super Model (USA).png	
+J	Bastard‼ Ankoku no Hakaishin			Bastard!! - Ankoku no Hakaishin (Japan).png
+UJ	Batman Forever		Batman Forever (USA).png	Batman Forever (Japan) (En).png
+UJ	Batman Returns		Batman Returns (USA).png	Batman Returns (Japan) (En).png
+UJ	Battle Blaze		Battle Blaze (USA).png	Battle Blaze (Japan) (En).png
+U	Battle Cars		Battle Cars (USA).png	
+UJ	Battle Clash	Space Bazooka	Battle Clash (USA).png	Space Bazooka (Japan).png
+J	Battle Commander: Hachibushū Shura no Heihō			Battle Commander - Hachibushuu, Shura no Heihou (Japan).png
+J	Battle Cross			Battle Cross (Japan).png
+J	Battle Dodge Ball			Battle Dodge Ball - Toukyuu Daigekitotsu! (Japan).png
+J	Battle Dodge Ball II			Battle Dodge Ball II (Japan).png
+UJ	Battle Grand Prix		Battle Grand Prix (USA).png	Battle Grand Prix (Japan) (En).png
+J	Battle Jockey			Battle Jockey (Japan).png
+J	Battle Master: Kyūkyoku no Senshitachi			Battle Master - Kyuukyoku no Senshi-tachi (Japan).png
+J	Battle Pinball			Battle Pinball (Japan).png
+J	Battle Racers			Battle Racers (Japan).png
+J	Battle Robot Retsuden			Battle Robot Retsuden (Japan).png
+J	Battle Soccer 2			Battle Soccer 2 (Japan).png
+J	Battle Soccer: Field no Hasha			Battle Soccer - Field no Hasha (Japan).png
+J	Battle Submarine			Battle Submarine (Japan).png
+J	Battle Tycoon: Flash Hiders SFX			Battle Tycoon - Flash Hiders SFX (Japan).png
+J	Battle Zeque Den			Battle Zeque Den (Japan).png
+U	Battletoads & Double Dragon		Battletoads-Double Dragon (USA).png	
+UJ	Battletoads in Battlemaniacs		Battletoads in Battlemaniacs (USA).png	Battletoads in Battlemaniacs (Japan).png
+UJ	Bazooka Blitzkrieg	Destructive	Bazooka Blitzkrieg (USA).png	Destructive (Japan).png
+J	BBS Nintama Rantarou 2			
+J	BBS Parlor! Parlor! 1			
+J	BBS Parlor! Parlor! 2			
+J	BBS Shanghai: Banri no Choujou			
+UJ	Beauty and the Beast	Bijo to Yajū	Beauty and the Beast (USA).png	Bijo to Yajuu (Japan).png
+U	Beavis and Butt-Head		Beavis and Butt-Head (USA).png	
+U	Beethoven: The Ultimate Canine Caper		Beethoven - The Ultimate Canine Caper! (USA).png	
+J	Benkei Gaiden: Suna no Shō			Benkei Gaiden - Suna no Shou (Japan).png
+J	Big Ichigeki! Pachi-Slot Dai-Kōryaku			Big Ichigeki! Pachi-Slot Daikouryaku (Japan).png
+J	Big Ichigeki! Pachi-Slot Dai-Kōryaku 2: Universal Collection			Big Ichigeki! Pachi-Slot Daikouryaku 2 - Universal Collection (Japan).png
+U	Big Sky Trooper		Big Sky Trooper (USA).png	
+J	Bike Daisuki! Hashiriya Kon – Rider's Spirits			
+U	Biker Mice from Mars		Biker Mice from Mars (USA).png	
+J	Bing Bing! Bingo			Bing Bing! Bingo (Japan).png
+UJ	BioMetal		BioMetal (USA).png	BioMetal (Japan) (En).png
+J	Bishōjo Janshi Suchie-Pai			Bishoujo Janshi Suchie-Pai (Japan).png
+J	Bishōjo Senshi Sailor Moon			Bishoujo Senshi Sailor Moon (Japan).png
+J	Bishōjo Senshi Sailor Moon: Another Story			Bishoujo Senshi Sailor Moon - Another Story (Japan).png
+J	Bishōjo Senshi Sailor Moon R			Bishoujo Senshi Sailor Moon R (Japan).png
+J	Bishōjo Senshi Sailor Moon S: Jōgai Rantō!? Shuyaku Sōdatsusen			Bishoujo Senshi Sailor Moon S - Jougai Rantou! Shuyaku Soudatsusen (Japan).png
+J	Bishōjo Senshi Sailor Moon S: Kondo wa Puzzle de Oshiokiyo!			Bishoujo Senshi Sailor Moon S - Kondo wa Puzzle de Oshioki yo! (Japan).png
+J	Bishōjo Senshi Sailor Moon S Kurukkurin			Bishoujo Senshi Sailor Moon S - Kurukkurin (Japan).png
+J	Bishōjo Senshi Sailor Moon Sailor Stars: Fuwa Fuwa Panic 2			
+J	Bishōjo Senshi Sailor Moon Super S: Fuwa Fuwa Panic			Bishoujo Senshi Sailor Moon SuperS - Fuwafuwa Panic (Japan).png
+J	Bishōjo Senshi Sailor Moon SuperS: Zenin Sanka‼ Shuyaku Sōdatsusen			Bishoujo Senshi Sailor Moon SuperS - Zenin Sanka!! Shuyaku Soudatsusen (Japan).png
+UJ	Blackthorne	Blackthorne: Fukushuu no Kuroki Toge	Blackthorne (USA).png	Blackthorne - Fukushuu no Kuroki Toge (Japan).png
+UJ	BlaZeon: The Bio-Cyborg Challenge	BlaZeon	BlaZeon - The Bio-Cyborg Challenge (USA).png	BlaZeon (Japan) (En).png
+J	Block Kuzushi			Block Kuzushi (Japan).png
+J	Bomberman B-Daman			Bomber Man B-Daman (Japan).png
+UJ	Bonkers		Bonkers (USA).png	Bonkers (USA).png
+U	Boogerman: A Pick and Flick Adventure		Boogerman - A Pick and Flick Adventure (USA).png	
+J	Bounty Sword			Bounty Sword (Japan).png
+UJ	Brain Lord		Brain Lord (USA).png	Brain Lord (Japan).png
+U	Bram Stoker's Dracula		Bram Stoker's Dracula (USA).png	
+UJ	Brandish		Brandish (USA).png	Brandish (Japan).png
+J	Brandish 2			Brandish 2 - The Planet Buster (Japan).png
+UJ	Brawl Brothers	Rushing Beat Ran: Fukusei Toshi	Brawl Brothers (USA).png	Rushing Beat Ran - Fukusei Toshi (Japan).png
+U	BreakThru!		BreakThru! (USA).png	
+UJ	Breath of Fire	Breath of Fire: Ryū no Senshi	Breath of Fire (USA).png	Breath of Fire - Ryuu no Senshi (Japan).png
+UJ	Breath of Fire II	Breath of Fire II: Shimei no Ko	Breath of Fire II (USA).png	Breath of Fire II - Shimei no Ko (Japan).png
+U	Bronkie the Bronchiasaurus		Bronkie the Bronchiasaurus (USA) (En,Es).png	
+U	Brunswick World: Tournament of Champions		Brunswick World Tournament of Champions (USA).png	
+UJ	Brutal: Paws of Fury	Animal Buranden: Brutal	Brutal - Paws of Fury (USA).png	Animal Buranden - Brutal (Japan).png
+J	BS Albert Odyssey			
+J	BS Arkanoid - Doh It Again			
+J	BS Chrono Trigger Character Library			
+J	BS Chrono Trigger Jet Bike Special			
+J	BS Chrono Trigger Music Library			
+J	BS Cu-On-Pa			
+J	BS Daibakusyou Jinseigekijyou			
+J	BS Dokapon Gaiden: Hono no Audition			
+J	BS Dr. Mario			
+J	BS Dragon Quest			
+J	BS Dragon Slayer Eiyuu Densetsu			
+J	BS Excitebike Bunbun Mario Battle Stadium 1			
+J	BS F-Zero Grand Prix 2			
+J	BS Fire Emblem Akaneia Senki 1: Palace Kanraku			
+J	BS Fire Emblem Akaneia Senki 2: Akai Ryuuki Shi			
+J	BS Fire Emblem Akaneia Senki 3: Seigi no Tozokudan			
+J	BS Fire Emblem Akaneia Senki 4: Hajimari no Toki			
+J	BS Ikari no Yousai			
+J	BS Kirby no Omocha Bako Hoshi Kuzushi			
+J	BS Kirby no Omocha Bako Pachinko			
+J	BS Kirby no Omotya Bako Baseball			
+J	BS Let's Pachinko Nante Gindama 1			
+J	BS Let's Pachinko Nante Gindama 2			
+J	BS Let's Pachinko Nante Gindama 3			
+J	BS Let's Pachinko Nante Gindama 4			
+J	BS Monoporī Kōza Bōdowōku e no Michi			
+J	BS Nichibutsu 4 Player Mahjong 1			
+J	BS Nichibutsu 4 Player Mahjong 2			
+J	BS Nichibutsu Mahjong			
+J	BS Panel De Pon			
+J	BS Panel de Pon Event '98			
+J	BS SimCity Machizukuri Taikai			
+J	BS Special Tee Shot			
+J	BS Spriggan Powered 1			
+J	BS Spriggan Powered 2			
+J	BS Spriggan Powered 3			
+J	BS Spriggan Powered 4			
+J	BS Spriggan Powered BS Ver. Prelude			
+J	BS Super E.D.F.			
+J	BS Super Mario Collection - Dai-1-Shū			
+J	BS Super Mario USA Power Challenge Dai-1-kai			
+J	BS Super Ninja Kun			
+J	BS Sutte Hakkun			
+J	BS Sutte Hakkun '98: Winter Event Version			
+J	BS Tantei Club: Yuki ni Kieta Kako			
+J	BS The Legend of Zelda			
+J	BS Wizardry 5			
+J	BS Zelda no Densetsu: Inishie no Sekiban			
+J	BS Zoot Mahjong			
+J	BSutte Hakkun - BS Version 2			
+U	Bubsy II		Bubsy II (USA).png	
+UJ	Bubsy in: Claws Encounters of the Furred Kind	Yamaneko Babujī no Daibōken	Bubsy in - Claws Encounters of the Furred Kind (USA).png	Bubsy in - Claws Encounters of the Furred Kind (USA).png
+UJ	Bugs Bunny: Rabbit Rampage	Bugs Bunny: Hachamecha Daibouken	Bugs Bunny - Rabbit Rampage (USA).png	Bugs Bunny - Hachamecha Daibouken (Japan).png
+J	Burai: Hachigyoku no Yūshi Densetsu			Burai - Hachigyoku no Yuushi Densetsu (Japan).png
+J	Bushi Seiryūden: Futari no Yūsha			Bushi Seiryuuden - Futari no Yuusha (Japan).png
+UJ	Bust-A-Move	Puzzle Bobble	Bust-A-Move (USA).png	Puzzle Bobble (Japan).png
+UJ	Cacoma Knight in Bizyland	Cacoma Knight	Cacoma Knight in Bizyland (USA).png	Cacoma Knight (Japan).png
+U	Cal Ripken Jr. Baseball		Cal Ripken Jr. Baseball (USA).png	
+U	Cannondale Cup		Cannondale Cup (USA).png	
+UJ	Capcom's Soccer Shootout	J.League Excite Stage '94	Capcom's Soccer Shootout (USA).png	J.League Excite Stage '94 (Japan).png
+U	Captain America and the Avengers		Captain America and the Avengers (USA).png	
+UJ	Captain Commando		Captain Commando (USA).png	Captain Commando (Japan).png
+U	Captain Novolin		Captain Novolin (USA) (En,Fr,Es).png	
+J	Captain Tsubasa III: Kōtei no Chōsen			Captain Tsubasa III - Koutei no Chousen (Japan).png
+J	Captain Tsubasa IV: Pro no Rival Tachi			Captain Tsubasa IV - Pro no Rival-tachi (Japan).png
+J	Captain Tsubasa J: The Way to World Youth			Captain Tsubasa J - The Way to World Youth (Japan).png
+J	Captain Tsubasa V: Hasha no Shōgō Campione			Captain Tsubasa V - Hasha no Shougou Campione (Japan).png
+J	Caravan Shooting Collection			Caravan Shooting Collection (Japan) (En).png
+UJ	Carrier Aces		Carrier Aces (USA).png	Carrier Aces (Japan) (En).png
+J	Casper			Casper (Japan).png
+U	Casper		Casper (USA).png	
+UJ	Castlevania: Dracula X	Akumajō Dracula XX	Castlevania - Dracula X (USA).png	Akumajou Dracula XX (Japan).png
+J	CB Chara Wars: Ushinawareta Gag			CB Chara Wars - Ushinawareta Gag (Japan).png
+J	Chō Jikū Yōsai Macross: Scrambled Valkyrie			Choujikuu Yousai Macross - Scrambled Valkyrie (Japan).png
+J	Chō Mahō Tairiku Wozz			Chou Mahou Tairiku Wozz (Japan).png
+UJ	Champions World Class Soccer		Champions - World Class Soccer (USA) (En,Fr,De,Es).png	Champions - World Class Soccer (Japan).png
+UJ	Championship Pool	Super Billiard	Championship Pool (USA).png	Super Billiard - Championship Pool (Japan).png
+U	Championship Soccer '94		Championship Soccer '94 (USA) (En,Fr,De,It).png	
+J	Chaos Seed			Chaos Seed - Fuusui Kairouki (Japan).png
+U	Chester Cheetah: Too Cool to Fool		Chester Cheetah - Too Cool to Fool (USA).png	
+U	Chester Cheetah: Wild Wild Quest		Chester Cheetah - Wild Wild Quest (USA).png	
+J	Chibi Maruko-chan: Harikiri 365-Nichi no Maki			Chibi Maruko-chan - Harikiri 365-nichi no Maki (Japan).png
+J	Chibi Maruko-chan: Mezase! Minami no Island‼			Chibi Maruko-chan - Mezase! Minami no Island!! (Japan).png
+J	Chinhai			Chinhai (Japan).png
+J	Cho Aniki Bakuretsu Ranto-hen			Chou Aniki - Bakuretsu Rantou Hen (Japan).png
+UJ	Choplifter III		Choplifter III (Europe).png	Choplifter III (Europe).png
+UJ	Chrono Trigger		Chrono Trigger (USA).png	Chrono Trigger (Japan).png
+U	Chuck Rock		Chuck Rock (USA).png	
+J	Classic Road			Classic Road (Japan).png
+J	Classic Road II			Classic Road II (Japan).png
+U	ClayFighter		Clay Fighter (USA).png	
+U	ClayFighter 2: Judgment Clay		Clay Fighter 2 - Judgment Clay (USA).png	
+U	ClayFighter: Tournament Edition		Clay Fighter - Tournament Edition (USA).png	
+U	Claymates		Claymates (USA).png	
+U	Cliffhanger		Cliffhanger (USA).png	
+J	Clock Tower			Clock Tower (Japan).png
+J	ClockWerx			Clockwerx (Japan).png
+U	Clue		Clue (USA).png	
+J	Columns			
+J	Computer Nōryoku Kaiseki: Ultra Baken			Computer Nouryoku Kaiseki - Ultra Baken (Japan).png
+UJ	Congo's Caper	Tatakae Genshijin 2: Rūkī no Bōken	Congo's Caper (USA).png	Tatakae Genshijin 2 - Rookie no Bouken (Japan).png
+UJ	Contra III: The Alien Wars	Contra Spirits	Contra III - The Alien Wars (USA).png	Contra Spirits (Japan).png
+J	Conveni Wars Barcode Battler Senki: Super Senshi Shutsugeki Seyo!			Conveni Wars Barcode Battler Senki - Super Senshi Shutsugeki seyo! (Japan).png
+UJ	Cool Spot		Cool Spot (USA).png	Cool Spot (Japan).png
+U	Cool World		Cool World (USA).png	
+J	Coron Land			Coron Land (Japan).png
+J	Cosmo Gang the Puzzle			Cosmo Gang - The Puzzle (Japan).png
+J	Cosmo Gang the Video			Cosmo Gang - The Video (Japan).png
+J	Cosmo Police Galivan II: Arrow of Justice			Cosmo Police Galivan II - Arrow of Justice (Japan).png
+J	Crayon Shin-chan 2: Daimaō no Gyakushū			Crayon Shin-chan 2 - Daimaou no Gyakushuu (Japan).png
+J	Crayon Shin-chan: Arashi wo Yobu Enji			Crayon Shin-chan - Arashi o Yobu Enji (Japan).png
+J	Crayon Shin-chan: Nagagutsu Dobon‼			
+J	Crystal Beans from Dungeon Explorer			Crystal Beans from Dungeon Explorer (Japan).png
+J	Cu-On-Pa SFC			Cu-On-Pa SFC (Japan).png
+U	Cutthroat Island		Cutthroat Island (USA).png	
+J	Cyber Knight			Cyber Knight (Japan).png
+J	Cyber Knight II: Chikyū Teikoku no Yabō			Cyber Knight II - Chikyuu Teikoku no Yabou (Japan).png
+UJ	Cyber Spin	New Century GPX Saiba Fomyura	Cyber Spin (USA).png	Cyber Spin (USA).png
+UJ	Cybernator	Assault Suits Valken	Cybernator (USA).png	Cybernator (USA).png
+J	Cyborg 009			Cyborg 009 (Japan).png
+UJ	D-Force	Dimension Force	D-Force (USA).png	Dimension-Force (Japan) (En).png
+J	Dōkyūsei 2			Doukyuusei 2 (Japan) (NP).png
+U	Daffy Duck: The Marvin Missions		Daffy Duck - The Marvin Missions (USA).png	
+J	Dai-3-Ji Sūpā Robotto Taisen			
+J	Dai-4-Ji Sūpā Robotto Taisen			
+J	Daibakushō: Jinsei Gekijō			Daibakushou Jinsei Gekijou (Japan).png
+J	Daibakushō: Jinsei Gekijō - DokiDoki Seishun Hen			Daibakushou Jinsei Gekijou - Dokidoki Seishun Hen (Japan).png
+J	Daibakushō: Jinsei Gekijō - Ōedo Nikki			Daibakushou Jinsei Gekijou - Ooedo Nikki (Japan).png
+J	Daibakushō: Jinsei Gekijō - Zukkoke SalaryMan Hen			Daibakushou Jinsei Gekijou - Zukkoke Salaryman Hen (Japan).png
+J	Daikaijū Monogatari			Daikaijuu Monogatari (Japan).png
+J	Daikaijū Monogatari II			Daikaijuu Monogatari II (Japan).png
+J	Daisenryaku Expert			Daisenryaku Expert (Japan).png
+J	Daisenryaku Expert WWII: War in Europe			Daisenryaku Expert WWII - War in Europe (Japan).png
+J	Darius Force			Darius Force (Japan) (En).png
+UJ	Darius Twin		Darius Twin (USA).png	Darius Twin (Japan).png
+J	Dark Half			Dark Half (Japan).png
+J	Dark Kingdom			Dark Kingdom (Japan).png
+J	Dark Law			Dark Law - Meaning of Death (Japan).png
+J	Deae Tonosama Appare Ichiban			Deae Tonosama - Appare Ichiban (Japan).png
+J	Dear Boys			Dear Boys (Japan).png
+J	Death Brade			Death Brade (Japan).png
+J	Dekitate High School			Dekitate High School (Japan).png
+U	Demolition Man		Demolition Man (USA).png	
+UJ	Demon's Crest	Demon's Blazon: Makaimura Monshō-hen	Demon's Crest (USA).png	Demon's Blazon - Makaimura Monshou Hen (Japan).png
+U	Dennis the Menace		Dennis the Menace (USA).png	
+J	Der Langrisser			Langrisser, Der (Japan).png
+J	Derby Jockey 2			Derby Jockey 2 (Japan).png
+J	Derby Jockey: Kishu Ō he no Michi			Derby Jockey - Kishu Ou e no Michi (Japan).png
+J	Derby Stallion 96			Derby Stallion 96 (Japan).png
+J	Derby Stallion 98			Derby Stallion 98 (Japan) (NP).png
+J	Derby Stallion II			Derby Stallion II (Japan).png
+J	Derby Stallion III			Derby Stallion III (Japan).png
+UJ	Desert Strike	Desert Strike: Wangan Sakusen	Desert Strike - Return to the Gulf (USA).png	Desert Strike - Wangan Sakusen (Japan).png
+J	Dezaemon BSX Version - BS-X Shooting			
+J	Dharma Dojo			Dharma Doujou (Japan).png
+UJ	DinoCity	Dinowars Kyōryū Ōkoku e no Daibōken	Dino City (USA).png	Dinowars - Kyouryuu Oukoku e no Daibouken (Japan).png
+U	Dirt Trax FX		Dirt Trax FX (USA).png	
+J	Dokapon 3-2-1: Arashi o Yobu Yūjō			Dokapon 3-2-1 - Arashi o Yobu Yuujou (Japan).png
+J	Dokapon Gaiden: Honō no Audition			Dokapon Gaiden - Honoo no Audition (Japan).png
+J	Dolucky no Kusayakiu			Dolucky no Kusayakiu (Japan).png
+J	Dolucky no Puzzle Tour '94			Dolucky no Puzzle Tour '94 (Japan).png
+J	Dolucky's A-League Soccer			
+J	Donald Duck no Mahō no Bōshi			Donald Duck no Mahou no Boushi (Japan).png
+UJ	Donkey Kong Country	Super Donkey Kong	Donkey Kong Country (USA).png	Super Donkey Kong (Japan).png
+UJ	Donkey Kong Country 2: Diddy's Kong Quest	Super Donkey Kong 2: Dixie & Diddy	Donkey Kong Country 2 - Diddy's Kong Quest (USA) (En,Fr).png	Super Donkey Kong 2 - Dixie _ Diddy (Japan).png
+UJ	Donkey Kong Country 3: Dixie Kong's Double Trouble	Super Donkey Kong 3: Nazo no Krems Shima	Donkey Kong Country 3 - Dixie Kong's Double Trouble! (USA) (En,Fr).png	Donkey Kong Country 3 - Dixie Kong's Double Trouble! (USA) (En,Fr).png
+U	Donkey Kong Country: Blockbuster World Video Game Championship II			
+UJ	DOOM		Doom (USA).png	Doom (Japan) (En).png
+U	Doom Troopers		Doom Troopers - Mutant Chronicles (USA).png	
+UJ	Doomsday Warrior	Taiketsu!! Brass Numbers	Doomsday Warrior (USA).png	Taiketsu!! Brass Numbers (Japan).png
+J	Doraemon 2: Nobita no Toys Land Daibouken			Doraemon 2 - Nobita no Toys Land Daibouken (Japan).png
+J	Doraemon 3: Nobita to Toki no Hougyoku			Doraemon 3 - Nobita to Toki no Hougyoku (Japan).png
+J	Doraemon 4: Nobita to Toki no Okoku			Doraemon 4 - Nobita to Tsuki no Oukoku (Japan).png
+J	Doraemon: Nobita to Yōsei no Kuni			Doraemon - Nobita to Yousei no Kuni (Japan).png
+J	DoReMi Fantasy: Milon no DokiDoki Daibouken			Do-Re-Mi Fantasy - Milon no Dokidoki Daibouken (Japan).png
+J	Dossun! Ganseki Battle			Dossun! Ganseki Battle (Japan).png
+U	Double Dragon V: The Shadow Falls		Double Dragon V - The Shadow Falls (USA).png	
+J	Down the World: Mervil's Ambition			Down the World - Mervil's Ambition (Japan).png
+J	Downtown Nekketsu Baseball Monogatari: Yakyū de Shōbu da! Kunio-kun			Downtown - Nekketsu Baseball Monogatari - Yakyuu de Shoubu da! Kunio-kun (Japan).png
+J	Dr. Mario			Dr. Mario (Japan) (En) (NP).png
+J	Dragon Ball Z: Hyper Dimension			Dragon Ball Z - Hyper Dimension (Japan).png
+J	Dragon Ball Z: Super Butōden			Dragon Ball Z - Super Butouden (Japan).png
+J	Dragon Ball Z: Super Butōden 2			Dragon Ball Z - Super Butouden 2 (Japan).png
+J	Dragon Ball Z: Super Butōden 3			Dragon Ball Z - Super Butouden 3 (Japan).png
+J	Dragon Ball Z Super Gokuden: Kakusei-Hen			Dragon Ball Z - Super Gokuu Den - Kakusei Hen (Japan).png
+J	Dragon Ball Z Super Gokuden: Totsugeki-Hen			Dragon Ball Z - Super Gokuu Den - Totsugeki Hen (Japan).png
+J	Dragon Ball Z: Super Saiya Densetsu			Dragon Ball Z - Super Saiya Densetsu (Japan).png
+J	Dragon Knight 4			Dragon Knight 4 (Japan).png
+J	Dragon Quest I & II			Dragon Quest I _ II (Japan).png
+J	Dragon Quest III: Soshite Densetsu e...			Dragon Quest III - Soshite Densetsu e... (Japan).png
+J	Dragon Quest V: Tenkū no Hanayome			Dragon Quest V - Tenkuu no Hanayome (Japan).png
+J	Dragon Quest VI: Maboroshi no Daichi			Dragon Quest VI - Maboroshi no Daichi (Japan).png
+J	Dragon's Earth			Dragon's Earth (Japan).png
+UJ	Dragon's Lair	Dragon's Magic	Dragon's Lair (USA).png	Dragon's Magic (Japan) (En).png
+J	Dragon Slayer: Eiyū Densetsu			Dragon Slayer - Eiyuu Densetsu (Japan).png
+J	Dragon Slayer: Eiyū Densetsu II			Dragon Slayer - Eiyuu Densetsu II (Japan).png
+U	Dragon: The Bruce Lee Story		Dragon - The Bruce Lee Story (USA).png	
+UJ	Dragon View	Super Drakkhen	Dragon View (USA).png	Super Drakkhen (Japan).png
+UJ	Drakkhen		Drakkhen (USA).png	Drakkhen (Japan).png
+J	Dream Probe			
+U	Dream T.V.		Dream T.V. (USA).png	
+J	Dual Orb			Dual Orb - Seirei Tama Densetsu (Japan).png
+J	Dual Orb II			Dual Orb II (Japan).png
+J	Dun Quest: Mashin Fūin no Densetsu			Dun Quest - Majin Fuuin no Densetsu (Japan).png
+UJ	Dungeon Master		Dungeon Master (USA).png	Dungeon Master (Japan).png
+J	Dynamaite: The Las Vegas			Dynamaite the Las Vegas (Japan).png
+J	Dynamic Stadium			Dynamic Stadium (Japan).png
+J	DynamiTracer			
+UJ	E.V.O.: Search for Eden	46 Okunen Monogatari ~Harukanaru Eden E~	E.V.O. - Search for Eden (USA).png	46 Okunen Monogatari - Harukanaru Eden e (Japan).png
+UJ	Earth Defense Force	Super E.D.F.: Earth Defense Force	Earth Defense Force (USA).png	Earth Defense Force (USA).png
+J	Earth Light			Earth Light (Japan).png
+J	Earth Light: Luna Strike			Earth Light - Luna Strike (Japan).png
+UJ	EarthBound	Mother 2: Gīgu no Gyakushū	EarthBound (USA).png	Mother 2 - Gyiyg no Gyakushuu (Japan).png
+UJ	Earthworm Jim		Earthworm Jim (USA).png	Earthworm Jim (Japan).png
+U	Earthworm Jim 2		Earthworm Jim 2 (USA).png	
+J	Edo no Kiba			Edono Kiba (Japan).png
+U	Eek! The Cat		Eek! The Cat (USA).png	
+J	Eien no Filena			Eien no Filerna (Japan).png
+J	Elfaria			Elfaria - The Isle of the Blest (Japan).png
+J	Elfaria II			Elfaria II - The Quest of the Meld (Japan).png
+UJ	Elite Soccer	World Cup Striker	Elite Soccer (USA).png	World Cup Striker (Japan).png
+J	Emerald Dragon			Emerald Dragon (Japan).png
+J	EMIT Vol. 1: Toki no Maigo			Emit Vol. 1 - Toki no Maigo (Japan).png
+J	Energy Breaker			Energy Breaker (Japan).png
+UJ	Equinox	Solstice II	Equinox (USA).png	Solstice II (Japan).png
+J	Esparks: Ijikū Kara no Raihōsha			Esparks - Ijikuu kara no Raihousha (Japan).png
+U	ESPN Baseball Tonight		ESPN Baseball Tonight (USA).png	
+U	ESPN SpeedWorld		ESPN Speedworld (USA).png	
+U	Exertainment Mountain Bike Rally + Speed Racer		Exertainment Mountain Bike Rally + Speed Racer (USA).png	
+UJ	Extra Innings	Hakunetsu Puro Yakyū Ganba Rīgu	Extra Innings (USA).png	Extra Innings (USA).png
+J	F-1 Grand Prix			F-1 Grand Prix (Japan).png
+J	F-1 Grand Prix Part II			F-1 Grand Prix - Part II (Japan).png
+J	F-1 Grand Prix Part III			F-1 Grand Prix - Part III (Japan).png
+UJ	F-ZERO	F-Zero	F-Zero (USA).png	F-Zero (Japan) (En).png
+UJ	F1 Pole Position	Human Grand Prix	F1 Pole Position (USA).png	Human Grand Prix (Japan) (En).png
+UJ	F1 ROC II: Race of Champions	Exhaust Heat II: F-1 Driver no Kiseki	F1-ROC II - Race of Champions (USA).png	F1-ROC II - Race of Champions (USA).png
+UJ	F1 ROC: Race of Champions	Exhaust Heat	F1 ROC - Race of Champions (USA).png	Exhaust Heat (Japan) (En).png
+U	Faceball 2000		Faceball 2000 (USA).png	
+J	Famicom Bunko: Hajimari no Mori			
+J	Famicom Tantei Club Part II: Ushiro ni Tatsu Shōjo			
+U	Family Dog		Family Dog (USA).png	
+U	Family Feud		Family Feud (USA).png	
+J	Farland Story			Farland Story (Japan).png
+J	Farland Story 2			Farland Story 2 (Japan).png
+UJ	Fatal Fury	Garō Densetsu	Fatal Fury (USA).png	Garou Densetsu - Shukumei no Tatakai (Japan).png
+UJ	Fatal Fury 2	Garō Densetsu 2: Aratanaru Tatakai	Fatal Fury 2 (USA).png	Garou Densetsu 2 - Aratanaru Tatakai (Japan).png
+UJ	Fatal Fury Special	Garō Densetsu Special	Fatal Fury Special (USA).png	Garou Densetsu Special (Japan).png
+J	Feda: The Emblem of Justice			Feda - The Emblem of Justice (Japan).png
+UJ	FIFA International Soccer		FIFA International Soccer (USA).png	FIFA International Soccer (Japan).png
+U	FIFA Soccer 96		FIFA Soccer 96 (USA) (En,Fr,De,Es,It,Sv).png	
+U	FIFA Soccer 97		FIFA Soccer 97 (USA) (En,Fr,De,Es,It,Sv).png	
+UJ	Fighter's History		Fighter's History (USA) (Rev 1).png	Fighter's History (Japan).png
+J	Fighter's History: Mizoguchi Kiki Ippatsu‼			Fighter's History - Mizoguchi Kikiippatsu!! (Japan).png
+UJ	Final Fantasy II	Final Fantasy IV	Final Fantasy II (USA).png	Final Fantasy IV (Japan).png
+UJ	Final Fantasy III	Final Fantasy VI	Final Fantasy III (USA).png	Final Fantasy VI (Japan).png
+UJ	Final Fantasy Mystic Quest	Final Fantasy USA: Mystic Quest	Final Fantasy - Mystic Quest (USA).png	Final Fantasy USA - Mystic Quest (Japan).png
+J	Final Fantasy V			Final Fantasy V (Japan).png
+UJ	Final Fight		Final Fight (USA).png	Final Fight (Japan).png
+UJ	Final Fight 2		Final Fight 2 (USA).png	Final Fight 2 (Japan).png
+UJ	Final Fight 3	Final Fight Tough	Final Fight 3 (USA).png	Final Fight Tough (Japan).png
+UJ	Final Fight Guy		Final Fight Guy (USA).png	Final Fight Guy (Japan).png
+J	Final Set			Finalset (Japan).png
+J	Final Stretch			Final Stretch (Japan).png
+J	Fire Emblem: Monshō no Nazo			Fire Emblem - Monshou no Nazo (Japan).png
+J	Fire Emblem: Seisen no Keifu			Fire Emblem - Seisen no Keifu (Japan).png
+J	Fire Emblem: Thracia 776			Fire Emblem - Thracia 776 (Japan).png
+UJ	Firepower 2000	Super SWIV	Firepower 2000 (USA).png	Super SWIV (Japan) (En).png
+UJ	Firestriker	Holy Striker	FireStriker (USA).png	Holy Striker (Japan).png
+J	First Queen: Ornic Senki			First Queen - Ornic Senki (Japan).png
+UJ	First Samurai		First Samurai (USA).png	First Samurai (Japan).png
+UJ	Flashback: The Quest for Identity	Flashback	Flashback - The Quest for Identity (USA) (En,Fr,De).png	Flashback (Japan).png
+J	Flying Hero: Bugyuru no Daibōken			Flying Hero - Bugyuru no Daibouken (Japan).png
+J	Fortune Quest: Dice wo Korogase			Fortune Quest - Dice o Korogase (Japan).png
+UJ	Frank Thomas Big Hurt Baseball	Big Hurt Baseball	Frank Thomas Big Hurt Baseball (USA).png	Frank Thomas Big Hurt Baseball (Japan) (En).png
+U	Frantic Flea		Frantic Flea (USA).png	
+U	Frogger		Frogger (USA).png	
+J	Front Mission			Front Mission (Japan).png
+J	Front Mission: Gun Hazard			Front Mission Series - Gun Hazard (Japan).png
+UJ	Full Throttle: All-American Racing	Full Power	Full Throttle - All-American Racing (USA).png	Full Power (Japan).png
+U	Fun 'n Games		Fun 'n Games (USA).png	
+J	Fune Tarō			Fune Tarou (Japan).png
+J	Fushigi no Dungeon 2: Fūrai no Shiren			Fushigi no Dungeon 2 - Fuurai no Shiren (Japan).png
+J	G-O-D: Mezame yoto Yobu Koe ga Kikoe			G.O.D - Mezame yo to Yobu Koe ga Kikoe (Japan).png
+J	Gaia Saver: Hero Saidai no Sakusen			Gaia Saver - Hero Saidai no Sakusen (Japan).png
+J	Gakkō de atta Kowai Hanashi			Gakkou de Atta Kowai Hanashi (Japan).png
+J	Galaxy Robo			Galaxy Robo (Japan).png
+J	Galaxy Wars			Galaxy Wars (Japan) (En).png
+J	Gamble Hōrōki			
+J	Gambler Jiko Chūshinha 2: Dorapon Quest			Gambler Jiko Chuushinha 2 - Dorapon Quest (Japan).png
+J	Gambler Jiko Chūshinha: Mahjong Kōisen			Gambler Jiko Chuushinha - Mahjong Kouisen (Japan).png
+J	Game no Tatsujin			Game no Tatsujin (Japan).png
+J	Game no Tatsujin: The Shanghai			Game no Tetsujin - The Shanghai (Japan).png
+J	Gamera: Gyaos Gekimetsu Sakusen			Gamera - Gyaos Gekimetsu Sakusen (Japan).png
+J	Ganbare! Daiku no Gen-san			Ganbare! Daiku no Gen-san (Japan).png
+J	Ganbare Goemon 2: Kiteretsu Shōgun Magginesu			Ganbare Goemon 2 - Kiteretsu Shougun Magginesu (Japan).png
+J	Ganbare Goemon 3: Shishijyūrokubei no Karakuri Manji Katame			Ganbare Goemon 3 - Shishi Juurokubee no Karakuri Manjigatame (Japan).png
+J	Ganbare Goemon Kirakira Dōchū: Boku ga Dancer ni Natta Wake			Ganbare Goemon Kirakira Douchuu - Boku ga Dancer ni Natta Wake (Japan).png
+J	GanGan GanChan			Gangan Gan-chan (Japan).png
+J	Ganpuru: Gunman's Proof			Ganpuru - Gunman's Proof (Japan).png
+J	Ganso Pachi-Slot Nippon Ichi			Ganso Pachi-Slot Nihonichi (Japan).png
+J	Ganso Pachinko Ō			Ganso Pachinko Ou (Japan).png
+UJ	Garry Kitchen's Super Battletank: War in the Gulf	Super Battletank	Garry Kitchen's Super Battletank - War in the Gulf (USA).png	Super Battletank (Japan).png
+J	GD Leen			Gdleen (Japan).png
+J	GeGeGe no Kitarō: Fukkatsu! Tenma-Daiō			Gegege no Kitarou - Fukkatsu! Tenma Daiou (Japan).png
+J	GeGeGe no Kitarō: Yōkai Donjara			
+J	Gekisō Sentai CarRanger: Zenkai! Racer-senshi!			
+J	Gekitotsu Dangan Jidōsha Kessen: Battle Mobile			Gekitotsu Dangan Jidousha Kessen - Battle Mobile (Japan).png
+UJ	Gemfire	Super Royal Blood	Gemfire (USA).png	Super Royal Blood (Japan).png
+UJ	Genghis Khan II: Clan of the Gray Wolf	Aoki Ōkami to Shiroki Mejika: Genchō Hishi	Genghis Khan II - Clan of the Gray Wolf (USA).png	Genghis Khan II - Clan of the Gray Wolf (USA).png
+J	Genjū Ryodan			Genjuu Ryodan (Japan) (NP).png
+J	Genocide 2			Genocide 2 (Japan).png
+J	Getsumen no Anubis			Getsumen no Anubis (Japan).png
+J	Ghost Chaser Densei			Ghost Chaser Densei (Japan).png
+J	Ghost Sweeper Mikami: Joreishi wa Nice Body			
+UJ	Ghoul Patrol		Ghoul Patrol (USA).png	Ghoul Patrol (Japan).png
+J	Ginga Eiyū Densetsu			Ginga Eiyuu Densetsu (Japan).png
+J	Ginga Sengoku Gun'yūden Rai			Ginga Sengoku Gunyuuden Rai (Japan).png
+J	Gintama Oyakata no Jissen Pachinko Hisshōhō			
+J	Gionbana			Gionbana (Japan).png
+J	Go Go Ackman			Go Go Ackman (Japan).png
+J	Go! Go! Ackman 2			Go Go Ackman 2 (Japan).png
+J	Go! Go! Ackman 3			Go Go Ackman 3 (Japan).png
+J	Go! Go! Dodge League			Go! Go! Dodge League (Japan).png
+UJ	Goal!	Super Cup Soccer	Goal! (USA).png	Super Cup Soccer (Japan) (En).png
+U	Gods		Gods (USA).png	
+J	Godzilla: Kaijū Daikessen			
+J	Gokinjo Bōkentai			Gokinjo Boukentai (Japan).png
+J	Gokujō Parodius			Gokujou Parodius (Japan).png
+J	Gon			Gon (Japan).png
+UJ	Goof Troop	Goofy to Max: Kaizokujima no Daibouken	Goof Troop (USA).png	Goofy to Max - Kaizoku-jima no Daibouken (Japan).png
+UJ	GP-1		GP-1 (USA).png	GP-1 (Japan) (En).png
+UJ	GP-1: Part II	GP-1: Rapid Stream	GP-1 - Part II (USA).png	GP-1 - Part II (USA).png
+UJ	Gradius III		Gradius III (USA).png	Gradius III (Japan) (En).png
+J	Granhistoria			Granhistoria - Genshi Sekaiki (Japan).png
+J	GT Racing			GT Racing (Japan).png
+J	Gulliver Boy			
+UJ	GunForce		GunForce (USA).png	GunForce (Japan) (En).png
+J	Gurume Sentai Barayarō			
+J	Hōkago in Beppin Jogakuin			Houkago in Beppin Jogakuin (Japan).png
+J	Hōrai Gakuen no Bōken! The Adventure of Hōrai High School			
+J	Haō Taikei Ryū Knight: Lord of Paladin			Haou Taikei Ryuu Knight - Lord of Paladin (Japan).png
+J	Habu Meijin no Omoshiro Shōgi			Habu Meijin no Omoshiro Shougi (Japan).png
+UJ	Hagane: The Final Conflict		Hagane - The Final Conflict (USA).png	Hagane - The Final Conflict (USA).png
+J	Haisei Mahjong Ryōga			Haisei Mahjong - Ryouga (Japan).png
+J	Hakunetsu Pro Yakyū '94 Ganba League 3			Hakunetsu Pro Yakyuu '94 - Ganba League 3 (Japan).png
+J	Hakunetsu Pro Yakyū Ganba League '93			Hakunetsu Pro Yakyuu '93 - Ganba League (Japan).png
+J	Hamelin no Violin Hiki			Hameln no Violin Hiki (Japan).png
+J	Hana no Keiji: Kumo no Kanata ni			Hana no Keiji - Kumo no Kanata ni (Japan).png
+J	Hanafuda Ō			Hanafuda Ou (Japan).png
+J	Hanjuku Hero: Aa, Sekaiyo Hanjukunare...!			Hanjuku Hero - Ah, Sekai yo Hanjuku Nare...!! (Japan).png
+J	Harapeko Bakka			Harapeko Bakka (Japan).png
+U	HardBall III		HardBall III (USA).png	
+UJ	Harley's Humongous Adventure	Kagakusha Harley no Haran Banjou	Harley's Humongous Adventure (USA).png	Kagakusha Harley no Haran Banjou (Japan) (En).png
+UJ	Harvest Moon	Bokujō Monogatari	Harvest Moon (USA).png	Bokujou Monogatari (Japan).png
+J	Hashire Hebereke			Hashire Hebereke (Japan).png
+J	Hat Trick Hero 2			Hat Trick Hero 2 (Japan).png
+J	Hatayama Hacchi no Pro Yakyū News! Jitsumeiban			Hatayama Hatch no Pro Yakyuu News! - Jitsumei Ban (Japan).png
+J	Hayazashi Nidan Morita Shogi			Hayazashi Nidan Morita Shougi (Japan).png
+J	Hayazashi Nidan Morita Shogi 2			Hayazashi Nidan Morita Shougi 2 (Japan).png
+U	Head-On Soccer		Head-On Soccer (USA).png	
+J	Hebereke no Oishii Puzzle			
+J	Hebereke no Popūn			Hebereke no Popoon (Japan).png
+J	Heisei Gunjin Shogi			Heisei Gunjin Shougi (Japan).png
+J	Heisei Inu Monogatari Bow: Pop'n Smash			Heisei Inu Monogatari Bow - Pop'n Smash!! (Japan).png
+J	Heisei Shin Oniga Shima: Kōhen			Heisei Shin Onigashima - Kouhen (Japan).png
+J	Heiwa Pachinko World			Heiwa Pachinko World (Japan).png
+J	Heiwa Pachinko World 2			Heiwa Pachinko World 2 (Japan).png
+J	Heiwa Pachinko World 3			Heiwa Pachinko World 3 (Japan).png
+J	Heiwa Parlor! Mini 8			Heiwa Parlor! Mini 8 - Pachinko Jikki Simulation Game (Japan).png
+J	Heracles no Eikō III: Kamigami no Chinmoku			Heracles no Eikou III - Kamigami no Chinmoku (Japan).png
+J	Heracles no Eikō IV: Kamigami kara no Okurimono			Heracles no Eikou IV - Kamigami kara no Okurimono (Japan).png
+J	Hero Senki: Project Olympus			Hero Senki - Project Olympus (Japan).png
+J	Hiōden: Mamono-tachi tono Chikai			Hiouden - Mamono-tachi to no Chikai (Japan).png
+J	Hi no Ōji: Yamato Takeru			Hi no Ouji - Yamato Takeru (Japan).png
+J	Hiroki Matsukata no Super Trawling			Matsukata Hiroki no Super Trawling (Japan).png
+J	Hiryu no Ken S: Hyper Version			Hiryuu no Ken S - Hyper Version (Japan).png
+J	Hissatsu Pachinko Collection			Hissatsu Pachinko Collection (Japan).png
+J	Hissatsu Pachinko Collection 2			Hissatsu Pachinko Collection 2 (Japan).png
+J	Hissatsu Pachinko Collection 3			Hissatsu Pachinko Collection 3 (Japan).png
+J	Hissatsu Pachinko Collection 4			Hissatsu Pachinko Collection 4 (Japan).png
+J	Hisshō 777 Fighter 2: Pachi Slot Maruhi Jōhō			Hisshou 777 Fighter II - Pachi-Slot Maruhi Jouhou (Japan).png
+J	Hisshō 777 Fighter III: Kokuryū Ō no Fukkatsu			Hisshou 777 Fighter III - Kokuryuu Ou no Fukkatsu (Japan).png
+J	Hisshō 777 Fighter: Pachi Slot Ryūgū Densetsu			Hisshou 777 Fighter - Pachi-Slot Ryuuguu Densetsu (Japan).png
+J	Hisshō! Pachi-Slot Fun			Hisshou Pachi-Slot Fun (Japan).png
+U	Hit the Ice		Hit the Ice - VHL - The Official Video Hockey League (USA).png	
+J	Hokuto no Ken 5: Tenma Ryūsei Den Ai Zesshō			Hokuto no Ken 5 - Tenma Ryuuseiden Ai Zetsu Shou (Japan).png
+J	Hokuto no Ken 6: Gekitō Denshōken — Haō e no Michi			Hokuto no Ken 6 - Gekitou Denshouken Haou e no Michi (Japan).png
+J	Hokuto no Ken 7: Seiken Retsuden — Denshōsha e no Michi			Hokuto no Ken 7 - Seiken Retsuden Denshousha e no Michi (Japan).png
+J	Holy Umbrella: Dondera no Mūbo‼			Holy Umbrella - Dondera no Mubou!! (Japan).png
+UJ	Home Alone		Home Alone (USA).png	Home Alone (Japan).png
+U	Home Alone 2: Lost in New York		Home Alone 2 - Lost in New York (USA).png	
+U	Home Improvement		Home Improvement - Power Tool Pursuit! (USA).png	
+J	Honō no Tōkyūji: Dodge Danpei			Honoo no Toukyuuji - Dodge Danpei (Japan).png
+J	Honkaku Mahjong: Tetsuman			Honkaku Mahjong - Tetsuman (Japan).png
+J	Honkaku Mahjong: Tetsuman II			Honkaku Mahjong - Tetsuman II (Japan).png
+J	Honkaku Shogi: Fūunji Ryūō			Honkaku Shougi - Fuuunji Ryuuou (Japan).png
+J	Honkakuha Igo: Gosei			Honkakuha Igo - Gosei (Japan).png
+J	Honkakuha Taikyoku Shogi: Shogi Club			
+J	Honke Hanafuda			Honke Hanafuda (Japan).png
+J	Honke Sankyo Fever Jikki Simulation			Honke Sankyo Fever - Jikki Simulation (Japan).png
+J	Honke Sankyo Fever Jikki Simulation 2			Honke Sankyo Fever 2 - Jikki Simulation (Japan).png
+J	Honke Sankyo Fever Jikki Simulation 3			Honke Sankyo Fever 3 - Jikki Simulation (Japan).png
+UJ	Hook		Hook (USA).png	Hook (Japan).png
+J	Human Baseball			Human Baseball (Japan).png
+J	Human Grand Prix II			Human Grand Prix II (Japan) (En).png
+J	Human Grand Prix III: F1 Triple Battle			Human Grand Prix III - F1 Triple Battle (Japan) (En).png
+J	Human Grand Prix IV: F-1 Dream Battle			Human Grand Prix IV - F1 Dream Battle (Japan) (En).png
+U	Hurricanes		Hurricanes (USA).png	
+J	Hyper Iria			Hyper Iria (Japan).png
+UJ	HyperZone		HyperZone (USA).png	HyperZone (Japan) (En).png
+J	Idea no Hi			Idea no Hi (Japan).png
+J	Igo Club			Igo Club (Japan).png
+J	Ihatovo Monogatari			Ihatov Monogatari (Japan).png
+UJ	Illusion of Gaia	Gaia Gensōki	Illusion of Gaia (USA).png	Gaia Gensouki (Japan).png
+J	Illvanian no Shiro: Ruins of Illvanian			Illvanian no Shiro (Japan).png
+UJ	Imperium	Kidō Soukou Daion	Imperium (USA).png	Kidou Soukou Dion (Japan).png
+U	Incantation		Incantation (USA).png	
+UJ	Indiana Jones' Greatest Adventures		Indiana Jones' Greatest Adventures (USA).png	Indiana Jones' Greatest Adventures (Japan).png
+UJ	Inindo: Way of the Ninja	Inindou Datou Nobunaga	Inindo - Way of the Ninja (USA).png	Inindo - Way of the Ninja (USA).png
+U	Inspector Gadget		Inspector Gadget (USA).png	
+UJ	International Superstar Soccer	Jikkyō World Soccer: Perfect Eleven	International Superstar Soccer (USA).png	Jikkyou World Soccer - Perfect Eleven (Japan).png
+UJ	International Superstar Soccer Deluxe	Jikkyō World Soccer 2: Fighting Eleven	International Superstar Soccer Deluxe (USA).png	Jikkyou World Soccer 2 - Fighting Eleven (Japan).png
+J	Ippatsu Gyakuten: Keiba - Keirin - Kyōtei			Ippatsu Gyakuten (Japan).png
+J	Iron Commando: Kōtetsu no Senshi			Iron Commando - Koutetsu no Senshi (Japan).png
+J	Iso Zuri: Ritō Hen			Isozuri - Ritou Hen (Japan).png
+J	Itō Hatasu Roku-Dan no Shogi Dojo			Itou Hatasu Rokudan no Shougi Doujou (Japan).png
+J	Itadaki Street 2: Neon Sign wa Bara Iro ni			Itadaki Street 2 - Neon Sign wa Barairo ni (Japan).png
+J	J.League '96 Dream Stadium			J.League '96 Dream Stadium (Japan).png
+J	J.League Excite Stage '95			J.League Excite Stage '95 (Japan).png
+J	J.League Excite Stage '96			J.League Excite Stage '96 (Japan).png
+J	J.League Soccer: Prime Goal			J.League Soccer Prime Goal (Japan).png
+J	J.League Soccer: Prime Goal 2			J.League Soccer Prime Goal 2 (Japan).png
+J	J.League Soccer: Prime Goal 3			J.League Soccer Prime Goal 3 (Japan).png
+J	J.League Super Soccer			J.League Super Soccer (Japan).png
+J	J.League Super Soccer '95: Jikkyō Stadium			J.League Super Soccer '95 - Jikkyou Stadium (Japan).png
+U	J.R.R. Tolkien's The Lord of the Rings: Volume 1		J.R.R. Tolkien's The Lord of the Rings - Volume 1 (USA).png	
+J	Jōshō Mahjong Tenpai			Joushou Mahjong Tenpai (Japan).png
+J	Jaleco Rally: Big Run — The Supreme 4WD Challenge			Jaleco Rally Big Run - The Supreme 4WD Challenge (Japan) (En).png
+U	James Bond Jr.		James Bond Jr (USA).png	
+J	Jammes			Jammes (Japan).png
+J	Janyūki: Gokū Randa			Janyuuki - Gokuu Randa (Japan).png
+U	Jeopardy!		Jeopardy! (USA).png	
+U	Jeopardy! Deluxe Edition		Jeopardy! - Deluxe Edition (USA).png	
+U	Jeopardy! Sports Edition		Jeopardy! - Sports Edition (USA).png	
+J	Jikkyō Keiba Simulation: Stable Star			
+J	Jikkyō Oshaberi Parodius			Jikkyou Oshaberi Parodius (Japan).png
+J	Jikkyō Powerful Pro Yakyū 2			Jikkyou Powerful Pro Yakyuu 2 (Japan).png
+J	Jikkyō Powerful Pro Yakyū 3			Jikkyou Powerful Pro Yakyuu 3 (Japan).png
+J	Jikkyō Powerful Pro Yakyū 3 '97-Haru			Jikkyou Powerful Pro Yakyuu 3 - '97 Haru (Japan).png
+J	Jikkyō Powerful Pro Yakyū '94			Jikkyou Powerful Pro Yakyuu '94 (Japan).png
+J	Jikkyō Powerful Pro Yakyū '96 Kaimakuban			Jikkyou Powerful Pro Yakyuu '96 - Kaimaku Ban (Japan).png
+J	Jikkyō Powerful Pro Yakyū Basic '98			Jikkyou Powerful Pro Yakyuu - Basic Ban '98 (Japan).png
+U	Jim Power: The Lost Dimension in 3-D		Jim Power - The Lost Dimension in 3D (USA).png	
+J	Jissen Kyōtei			Jissen Kyoutei (Japan).png
+J	Jissen! Mahjong Shinan			Jissen! Mahjong Shinan (Japan).png
+J	Jissen! Pachi-Slot Hisshōhō!			Jissen! Pachi-Slot Hisshouhou! (Japan).png
+J	Jissen! Pachi-Slot Hisshōhō! 2			Jissen! Pachi-Slot Hisshouhou! 2 (Japan).png
+J	Jissen! Pachi-Slot Hisshōhō! Classic			Jissen! Pachi-Slot Hisshouhou! Classic (Japan).png
+J	Jissen Pachi-Slot Hisshōhō! Twin			Jissen Pachi-Slot Hisshouhou! Twin (Japan).png
+J	Jissen Pachi-Slot Hisshōhō! Twin Vol. 2			Jissen Pachi-Slot Hisshouhou! Twin Vol. 2 (Japan).png
+J	Jissen Pachi-Slot Hisshōhō! Yamasa Densetsu			Jissen! Pachi-Slot Hisshouhou! Yamasa Densetsu (Japan).png
+J	Jissen Pachinko Hisshōhō! 2			Jissen Pachinko Hisshouhou! 2 (Japan).png
+UJ	Joe & Mac	Joe & Mac: Tatakae Genshijin	Joe _ Mac (USA).png	Joe _ Mac - Tatakae Genshijin (Japan).png
+UJ	Joe & Mac 2: Lost in the Tropics	Tatakae Genshinjin Surī: Shuyaku wa Yappari Jō to Makku	Joe _ Mac 2 - Lost in the Tropics (USA).png	Joe _ Mac 2 - Lost in the Tropics (USA).png
+J	JoJo no Kimyou na Bouken			JoJo no Kimyou na Bouken (Japan).png
+J	JRA PAT			
+UJ	Judge Dredd		Judge Dredd (USA).png	Judge Dredd (Japan) (En).png
+J	Jumpin' Derby			Jumpin' Derby (Japan).png
+J	Jungle King Tar-chan: Sekai Manyū Dai Kakutō no Maki			
+UJ	Jungle Strike		Jungle Strike (USA).png	Jungle Strike (USA).png
+J	Jungle Wars 2: Kodai Mahō Atimos no Nazo			Jungle Wars 2 - Kodai Mahou Atimos no Nazo (Japan).png
+UJ	Jurassic Park		Jurassic Park (USA).png	Jurassic Park (Japan).png
+U	Jurassic Park Part 2: The Chaos Continues		Jurassic Park Part 2 - The Chaos Continues (USA) (En,Fr,De,It).png	
+UJ	Justice League Task Force		Justice League Task Force (USA).png	Justice League Task Force (Japan) (En).png
+J	Jyutei Senki			
+J	Kōichi Nakano Kanshū: Keirin Ō			Nakano Kouichi Kanshuu Keirin Ou (Japan).png
+J	Kōryū Densetsu Villgust: Kieta Shōjo			Kouryuu Densetsu Villgust - Kieta Shoujo (Japan).png
+J	Kōryū no Mimi			Kouryuu no Mimi (Japan).png
+J	Kōryaku Casino Bar			Kouryaku Casino Bar (Japan).png
+J	Kōshien 2			Koushien 2 (Japan).png
+J	Kōshien 3			Koushien 3 (Japan).png
+J	Kōshien 4			Koushien 4 (Japan).png
+J	Kōsoku Shikō: Shogi Ō			Kousoku Shikou Shougi Ou (Japan).png
+J	Kōtetsu no Kishi			Koutetsu no Kishi (Japan).png
+J	Kōtetsu no Kishi 2: Sabaku no Rommel Shōgun			Koutetsu no Kishi 2 - Sabaku no Rommel Gundan (Japan).png
+J	Kōtetsu no Kishi 3: Gekitotsu Europe Sensen			Koutetsu no Kishi 3 - Gekitotsu Europe Sensen (Japan).png
+UJ	Ka-blooey	Bombuzal	Ka-blooey (USA).png	Bombuzal (Japan).png
+J	Kabuki-chō Reach Mahjong: Tonpūsen			Kabuki Chou Reach Mahjong Tonpuusen (Japan).png
+J	Kabuki Rocks			Kabuki Rocks (Japan).png
+J	Kachō Kōsaku Shima: Super Business Adventure			
+J	Kai: Tsukikomori			
+J	Kaite Tsukutte Asoberu: Dezaemon			Kaite Tsukutte Asoberu Dezaemon (Japan).png
+J	Kaizō Chōjin Shubibinman Zero			
+J	Kakinoki Shogi			Kakinoki Shougi (Japan).png
+J	Kamaitachi no Yoru			Kamaitachi no Yoru (Japan).png
+J	Kamen Rider			Kamen Rider (Japan).png
+J	Kamen Rider SD: Sortie‼ Rider Machines			
+J	Katō Ichi-Ni-San Kudan: Shogi Club			
+J	Kat's Run: Zen-Nippon K Car Senshuken			Kat's Run - Zen-Nihon K-Car Senshuken (Japan).png
+J	Kawa no Nushi Tsuri 2			Kawa no Nushi Tsuri 2 (Japan).png
+U	Kawasaki Caribbean Challenge		Kawasaki Caribbean Challenge (USA).png	
+U	Kawasaki Superbike Challenge		Kawasaki Superbike Challenge (USA).png	
+J	Keeper			Keeper (Japan).png
+J	Keiba Eight Special			Keiba Eight Special (Japan).png
+J	Keiba Eight Special 2			Keiba Eight Special 2 (Japan).png
+J	Keiba Yosō Baken Renkinjutsu			
+U	Ken Griffey Jr. Presents Major League Baseball		Ken Griffey Jr. Presents Major League Baseball (USA).png	
+U	Ken Griffey Jr.'s Winning Run		Ken Griffey Jr.'s Winning Run (USA).png	
+UJ	Kendo Rage	Makeruna! Makendō	Kendo Rage (USA).png	Makeruna! Makendou (Japan).png
+J	Kenyū Densetsu Yaiba			Kenyuu Densetsu Yaiba (Japan).png
+J	Kero Kero Keroppi no Bōken Nikki: Nemureru Mori no Keroleen			Kero Kero Keroppi no Bouken Nikki - Nemureru Mori no Keroleen (Japan).png
+J	Kessen! Dokapon Ōkoku IV: Densetsu no Yūsha Tachi			Kessen! Dokapon Oukoku IV - Densetsu no Yuusha-tachi (Japan).png
+J	Kidō Keisatsu Patlabor			Kidou Keisatsu Patlabor (Japan).png
+UJ	Kid Klown in Crazy Chase	Kid Klown no Crazy Chase	Kid Klown in Crazy Chase (USA).png	Kid Klown no Crazy Chase (Japan).png
+J	Kidō Senshi Gundam: Cross Dimension 0079			Kidou Senshi Gundam - Cross Dimension 0079 (Japan).png
+J	Kidō Senshi Gundam F91: Formula Senki 0122			Kidou Senshi Gundam F91 - Formula Senki 0122 (Japan).png
+J	Kidō Senshi Z-Gundam: Away to the NewType			Kidou Senshi Z Gundam - Away to the Newtype (Japan).png
+J	Kikō Keisatsu Metal Jack			Kikou Keisatsu Metal Jack (Japan).png
+J	Kikuni Masahiko no Jantōshi Dora Ō			Kikuni Masahiko no Jantoushi Doraou (Japan).png
+J	Kikuni Masahiko no Jantōshi Dora Ō 2			Kikuni Masahiko no Jantoushi Doraou 2 (Japan).png
+U	Killer Instinct		Killer Instinct (USA).png	
+J	Kindai Mahjong Special			Kindai Mahjong Special (Japan).png
+UJ	King Arthur's World	Royal Conquest	King Arthur's World (USA).png	Royal Conquest (Japan).png
+U	King Arthur & the Knights of Justice		King Arthur _ The Knights of Justice (USA).png	
+U	King of Dragons		King of Dragons (USA).png	
+UJ	King of the Monsters		King of the Monsters (USA).png	King of the Monsters (Japan).png
+UJ	King of the Monsters 2		King of the Monsters 2 (USA).png	King of the Monsters 2 (USA).png
+J	Kingyo Chūihō! Tobidase! Game Gakuen			Kingyo Chuuihou! - Tobidase! Game Gakuen (Japan).png
+J	Kinnikuman: Dirty Challenger			Kinnikuman - Dirty Challenger (Japan).png
+J	Kirby no Kirakira Kizzu			
+U	Kirby's Avalanche		Kirby's Avalanche (USA).png	
+UJ	Kirby's Dream Course	Kirby Bowl	Kirby's Dream Course (USA).png	Kirby Bowl (Japan).png
+UJ	Kirby's Dream Land 3	Hoshi no Kirby 3	Kirby's Dream Land 3 (USA).png	Hoshi no Kirby 3 (Japan).png
+UJ	Kirby Super Star	Hoshi no Kirby Super Deluxe	Kirby Super Star (USA).png	Hoshi no Kirby Super Deluxe (Japan).png
+J	Kishin Dōji Zenki: Battle Raiden			Kishin Douji Zenki - Battle Raiden (Japan).png
+J	Kishin Dōji Zenki: Denei Raibu			Kishin Douji Zenki - Denei Raibu (Japan).png
+J	Kishin Dōji Zenki: Tenchi Meidō			Kishin Douji Zenki - Tenchi Meidou (Japan).png
+J	Kishin Korinden Oni			Kishin Kourinden Oni (Japan).png
+J	Kiteretsu Daihyakka: Chōjikū Sugoroku			Kiteretsu Daihyakka - Choujikuu Sugoroku (Japan).png
+J	KlockWorx			
+UJ	Knights of the Round		Knights of the Round (USA).png	Knights of the Round (Japan).png
+J	Koi wa Balance: Tatoeba K-kun no Tabou na Ichinichi-hen			
+J	KONAE-chan no DokiDoki Penguin Kazoku			
+J	Konpeki no Kantai			Konpeki no Kantai (Japan).png
+UJ	Krusty's Super Fun House	Krusty World	Krusty's Super Fun House (USA).png	Krusty World (Japan).png
+J	Kunio-kun no Dodgeball da yo Zen'in Shūgō!			Kunio-kun no Dodge Ball Da yo Zenin Shuugou! (Japan).png
+J	Kunio no Oden			Kunio no Oden (Japan).png
+J	Kyōraku - Sanyō - Toyomaru Parlor! Parlor!			
+J	Kyōraku - Sanyō - Toyomaru Parlor! Parlor! 2			
+J	Kyōraku - Sanyō - Toyomaru Parlor! Parlor! 3			
+J	Kyōraku - Sanyō - Toyomaru Parlor! Parlor! 4			
+J	Kyōraku - Sanyō - Toyomaru Parlor! Parlor! 5			
+J	Kyūyaku Megami Tensei			Kyuuyaku Megami Tensei (Japan).png
+UJ	Kyle Petty's No Fear Racing	Circuit USA	Kyle Petty's No Fear Racing (USA).png	Circuit USA (Japan).png
+J	Lady Stalker: Kako Kara no Chōsen			Lady Stalker - Kako kara no Chousen (Japan).png
+UJ	Lagoon		Lagoon (USA).png	Lagoon (Japan).png
+U	Lamborghini American Challenge		Lamborghini American Challenge (USA).png	
+J	Laplace no Ma			Laplace no Ma (Japan).png
+J	Lasabirdie: Get in the Hole			
+U	Last Action Hero		Last Action Hero (USA).png	
+J	Last Bible III			Last Bible III (Japan).png
+J	Leading Company			Leading Company (Japan).png
+J	Leading Jockey			Leading Jockey (Japan).png
+J	Leading Jockey 2			Leading Jockey 2 (Japan).png
+U	Legend		Legend (USA).png	
+UJ	Lemmings		Lemmings (USA).png	Lemmings (Japan) (En).png
+UJ	Lemmings 2: The Tribes		Lemmings 2 - The Tribes (USA).png	Lemmings 2 - The Tribes (Japan).png
+J	Lennus II: Fūin no Shito			Lennus II - Fuuin no Shito (Japan).png
+UJ	Lester the Unlikely	Odekake Lester: Lelele no Le	Lester the Unlikely (USA).png	Odekake Lester - Lelele no Le (^^; (Japan).png
+UJ	Lethal Enforcers		Lethal Enforcers (USA).png	Lethal Enforcers (Japan).png
+U	Lethal Weapon		Lethal Weapon (USA).png	
+J	Libble Rabble			Libble Rabble (Japan).png
+UJ	Liberty or Death	Dokuritsu Sensou: Liberty or Death	Liberty or Death (USA).png	Dokuritsu Sensou - Liberty or Death (Japan).png
+J	Light Fantasy			Light Fantasy (Japan).png
+J	Light Fantasy II			Light Fantasy II (Japan).png
+J	Little Magic			Little Magic (Japan).png
+J	Little Master: Niji Iro no Maseki			Little Master - Nijiiro no Maseki (Japan).png
+J	Live A Live			Live A Live (Japan).png
+UJ	Lock On	Super Air Diver	Lock On (USA).png	Super Air Diver (Japan).png
+J	Lode Runner Twin: Justy to Liberty no Daibōken			Lode Runner Twin - Justy to Liberty no Daibouken (Japan).png
+J	Logos Panic: Goaisatu			Logos Panic Goaisatsu (Japan).png
+U	Looney Tunes B-Ball		Looney Tunes B-Ball (USA).png	
+J	Lord Monarch			Lord Monarch (Japan).png
+UJ	Lord of Darkness	Super Nobunaga no Yabō: Bushō Fūunroku	Lord of Darkness (USA).png	Super Nobunaga no Yabou - Bushou Fuuunroku (Japan).png
+U	Lost Vikings 2		Lost Vikings 2 (USA).png	
+J	Love Quest			Love Quest (Japan).png
+UJ	Lufia II: Rise of the Sinistrals	Estpolis Denki II	Lufia II - Rise of the Sinistrals (USA).png	Estpolis Denki II (Japan).png
+UJ	Lufia & the Fortress of Doom	Estpolis Denki	Lufia _ the Fortress of Doom (USA).png	Estpolis Denki (Japan).png
+J	Lupin III: Densetsu no Hihō o Oe!			
+J	Märchen Adventure Cotton 100%			
+J	Mōryō Senki MADARA 2			Mouryou Senki Madara 2 (Japan).png
+J	Madō Monogatari: Hanamaru Daiyōchienji			Madou Monogatari - Hanamaru Daiyouchienji (Japan).png
+J	Madara Saga: Yōchien Senki Madara			
+U	Magic Boy		Magic Boy (USA).png	
+UJ	Magic Sword		Magic Sword (USA).png	Magic Sword (Japan).png
+J	Magical Drop			Magical Drop (Japan).png
+J	Magical Drop 2			Magical Drop 2 (Japan).png
+J	Magical Pop'n			Magical Pop'n (Japan).png
+J	Magical ☆ Tarurūto-kun: Magic Adventure			Magical Taruruuto-kun - Magic Adventure (Japan).png
+J	Magna Braban: Henreki no Yusha			Magna Braban - Henreki no Yuusha (Japan).png
+J	Mahōjin Guru Guru			Mahoujin Guruguru (Japan).png
+J	Mahōjin Guru Guru 2			Mahoujin Guruguru 2 (Japan).png
+J	Mahō Poi Poi Poitto!			Mahou Poi Poi Poitto! (Japan).png
+J	Mahjong Club			Mahjong Club (Japan).png
+J	Mahjong Goku Tenjiku			Mahjong Gokuu Tenjiku (Japan).png
+J	Mahjong Hanjōki			Mahjong Hanjouki (Japan).png
+J	Mahjong Hishouden: Shin Naki no Ryuu			Mahjong Hishouden - Shin Naki no Ryuu (Japan).png
+J	Mahjong Sengoku Monogatari			Mahjong Sengoku Monogatari (Japan).png
+J	Mahjong Taikai II			Mahjong Taikai II (Japan).png
+J	Majikku Naito Reiāsu			
+J	Majin Tensei			Majin Tensei (Japan).png
+J	Majin Tensei II: Spiral Nemesis			Majin Tensei II - Spiral Nemesis (Japan).png
+J	Majyūō			
+J	Maka Maka			Maka Maka (Japan).png
+J	Makeruna! Makendō 2: Kimero Yōkai Sōri			Makeruna! Makendou 2 - Kimero! Youkai Souridaijin (Japan).png
+U	Mario is Missing!		Mario Is Missing! (USA).png	
+J	Mario no Super Picross			Mario no Super Picross (Japan).png
+UJ	Mario Paint		Mario Paint (Europe).png	Mario Paint (Japan, USA).png
+U	Mario's Early Years: Fun with Letters		Mario's Early Years - Fun with Letters (USA).png	
+U	Mario's Early Years: Fun with Numbers		Mario's Early Years - Fun with Numbers (USA).png	
+U	Mario's Early Years: Preschool Fun		Mario's Early Years - Preschool Fun (USA).png	
+U	Mario's Time Machine		Mario's Time Machine (USA).png	
+J	Mario to Wario			Mario to Wario (Japan) (En).png
+J	Marmalade Boy			Marmalade Boy (Japan).png
+UJ	Marvel Super Heroes in War of the Gems		Marvel Super Heroes in War of the Gems (USA).png	Marvel Super Heroes in War of the Gems (USA).png
+J	Marvelous: Mouhitotsu no Takarajima			Marvelous - Mouhitotsu no Takara-jima (Japan).png
+U	Mary Shelley's Frankenstein		Mary Shelley's Frankenstein (USA).png	
+J	Masaki Takemiya Kudan no Igo Taishō			Takemiya Masaki Kudan no Igo Taishou (Japan).png
+J	Maten Densetsu: Senritsu no Ooparts			Maten Densetsu - Senritsu no Ooparts (Japan).png
+U	Math Blaster: Episode 1		Math Blaster - Episode 1 (USA).png	
+J	Matsumura Kuni Hiroden: Saikyo no Rekishi o Nurikaero!			Matsumura Kunihiro Den - Saikyou no Rekishi o Nurikaero! (Japan).png
+UJ	Maui Mallard in Cold Shadow	Donald in Maui Mallard	Maui Mallard in Cold Shadow (USA).png	Maui Mallard in Cold Shadow (USA).png
+J	Mazinger Z			Mazinger Z (Japan).png
+UJ	MechWarrior	Battletech	MechWarrior (USA).png	BattleTech (Japan).png
+UJ	MechWarrior 3050	Battletech 3050	MechWarrior 3050 (USA).png	BattleTech 3050 (Japan).png
+J	Mega-Lo-Mania: Jikū Daisenryaku			Mega lo Mania - Jikuu Daisenryaku (Japan).png
+UJ	Mega Man 7	RockMan 7: Shukumei no Taiketsu!	Mega Man 7 (USA).png	Rockman 7 - Shukumei no Taiketsu! (Japan).png
+UJ	Mega Man Soccer	RockMan's Soccer	Mega Man Soccer (USA).png	Rockman's Soccer (Japan).png
+UJ	Mega Man X	RockMan X	Mega Man X (USA).png	Rockman X (Japan).png
+UJ	Mega Man X2	RockMan X2	Mega Man X2 (USA).png	Rockman X2 (Japan).png
+UJ	Mega Man X3	RockMan X3	Mega Man X3 (USA).png	Rockman X3 (Japan).png
+J	Melfand Stories			Melfand Stories (Japan).png
+U	Metal Combat: Falcon's Revenge		Metal Combat - Falcon's Revenge (USA).png	
+UJ	Metal Marines	Militia	Metal Marines (USA).png	Militia (Japan).png
+J	Metal Max 2			Metal Max 2 (Japan).png
+J	Metal Max Returns			Metal Max Returns (Japan).png
+U	Metal Morph		Metal Morph (USA).png	
+J	Metal Slader Glory: Director's Cut			Metal Slader Glory - Director's Cut (Japan) (NP).png
+U	Metal Warriors		Metal Warriors (USA).png	
+UJ	Michael Andretti's Indy Car Challenge		Michael Andretti's IndyCar Challenge (USA).png	Michael Andretti's IndyCar Challenge (Japan).png
+U	Michael Jordan: Chaos in the Windy City		Michael Jordan - Chaos in the Windy City (USA).png	
+UJ	Mickey Mania		Mickey Mania (Europe).png	Mickey Mania (Europe).png
+J	Mickey no Tokyo Disneyland Daibōken			Mickey no Tokyo Disneyland Daibouken (Japan).png
+U	Mickey's Ultimate Challenge		Mickey's Ultimate Challenge (USA).png	
+J	Mickey to Donald Magical Adventure 3			Mickey to Donald - Magical Adventure 3 (Japan).png
+U	Micro Machines		Micro Machines (USA).png	
+U	Midway Presents Arcade's Greatest Hits: The Atari Collection 1			
+J	Might and Magic: Book II			Might and Magic - Book II (Japan).png
+U	Might and Magic III: Isles of Terra		Might and Magic III - Isles of Terra (USA).png	
+UJ	Mighty Morphin Power Rangers		Mighty Morphin Power Rangers (USA).png	Mighty Morphin Power Rangers (Japan) (En).png
+U	Mighty Morphin Power Rangers: The Fighting Edition		Mighty Morphin Power Rangers - The Fighting Edition (USA).png	
+U	Mighty Morphin Power Rangers: The Movie		Mighty Morphin Power Rangers - The Movie (USA).png	
+J	Milandra			Milandra (Japan).png
+J	Mini-Yonku Let's & Go‼ Power WGP 2			Mini Yonku Let's _ Go!! - Power WGP 2 (Japan).png
+J	Mini-Yonku Shining Scorpion: Let's & Go‼			Mini Yonku Shining Scorpion - Let's _ Go!! (Japan).png
+J	Miracle Casino Paradise			Miracle Casino Paradise (Japan).png
+J	Miracle Girls			Miracle Girls (Japan).png
+J	Miyaji Shachō no Pachinko Fan: Shōri Sengen 2			Miyaji Shachou no Pachinko Fan - Shouri Sengen 2 (Japan).png
+UJ	MLBPA Baseball	Fighting Baseball	MLBPA Baseball (USA).png	Fighting Baseball (Japan).png
+J	Mobile Fighter G-Gundam			
+J	Mobile Suit Gundam V-Gundam			
+U	Mohawk & Headphone Jack		Mohawk _ Headphone Jack (USA).png	
+J	Momotaro Dentetsu Happy			Momotarou Dentetsu Happy (Japan).png
+UJ	Monopoly		Monopoly (USA).png	Monopoly (Japan).png
+J	Monstania			Monstania (Japan).png
+J	Monster Maker III: Hikari no Majutsushi			Monster Maker III - Hikari no Majutsushi (Japan).png
+J	Monster Maker Kids: Ōsama ni Naritai			Monster Maker Kids - Ousama ni Naritai (Japan).png
+UJ	Mortal Kombat	Mortal Kombat: Shinken Kourin Densetsu	Mortal Kombat (USA).png	Mortal Kombat - Shinken Kourin Densetsu (Japan) (En).png
+U	Mortal Kombat 3		Mortal Kombat 3 (USA).png	
+UJ	Mortal Kombat II	Mortal Kombat II: Kyūkyoku Shinken	Mortal Kombat II (USA).png	Mortal Kombat II - Kyuukyoku Shinken (Japan) (En).png
+J	Motoko-chan no Wonder Kitchen			Motoko-chan no Wonder Kitchen (Japan).png
+J	Motteke Oh! Dorobō			Motteke Oh! Dorobou (Japan).png
+UJ	Mr. Do!		Mr. Do! (USA).png	Mr. Do! (Japan).png
+UJ	Mr. Nutz		Mr. Nutz (USA) (En,Fr).png	Mr. Nutz (Japan).png
+U	Ms. Pac-Man		Ms. Pac-Man (USA).png	
+J	Mujintō Monogatari			Mujintou Monogatari (Japan).png
+UJ	Musya	Gōsō Jinrai Densetsu Musha	Musya - The Classic Japanese Tale of Horror (USA).png	Gousou Jinrai Densetsu - Musha (Japan).png
+J	Mystery Circle			Mystery Circle (Japan).png
+J	Mystic Ark			Mystic Ark (Japan).png
+J	Nage Libre: Seijaku no Suishin			Nage Libre - Seijaku no Suishin (Japan).png
+J	Naki no Ryū: Mahjong Hishō-den			Naki no Ryuu - Mahjong Hishouden (Japan).png
+J	Namco Open			
+J	Nangoku Shōnen Papuwa-kun			Nangoku Shounen Papuwa-kun (Japan).png
+J	Naruhodo! The World			Naruhodo! The World (Japan).png
+J	Natsuki Crisis Battle			Natsuki Crisis Battle (Japan).png
+J	Naxat Super Pinball: Jaki Hakai			
+J	Nekketsu Tairiku: Burning Heroes			Nekketsu Tairiku Burning Heroes (Japan).png
+J	Neugier: Umi to Kaze no Kodō			Neugier - Umi to Kaze no Kodou (Japan).png
+J	New Yatterman: Nandai Kandai Yajirobe			New Yatterman - Nandai Kandai Yajirobee (Japan).png
+U	Newman/Haas Indy Car featuring Nigel Mansell		Newman Haas IndyCar featuring Nigel Mansell (USA).png	
+J	Nice de Shot			Nice de Shot (Japan).png
+J	Nichibutsu Arcade Classics			Nichibutsu Arcade Classics (Japan).png
+J	Nichibutsu Arcade Classics 2: Heiankyo Alien			Nichibutsu Arcade Classics 2 - Heiankyou Alien (Japan).png
+J	Nichibutsu Collection 1			Nichibutsu Collection 1 (Japan).png
+J	Nichibutsu Collection 2			Nichibutsu Collection 2 (Japan).png
+U	Nickelodeon GUTS		Nickelodeon GUTS (USA).png	
+J	Nigel Mansell IndyCar			Nigel Mansell IndyCar (Japan) (En).png
+UJ	Nigel Mansell's World Championship Racing	Nigel Mansell F-1 Challenge	Nigel Mansell's World Championship Racing (USA).png	Nigel Mansell F-1 Challenge (Japan).png
+UJ	Ninja Gaiden Trilogy	Ninja Ryūkenden Tomoe	Ninja Gaiden Trilogy (USA).png	Ninja Ryuuken Den Tomoe (Japan).png
+UJ	Ninja Warriors	The Ninja Warriors Again	Ninjawarriors (USA).png	Ninjawarriors Again, The (Japan).png
+J	Nintama Rantarō			Nintama Rantarou (Japan).png
+J	Nintama Rantarō 2			Nintama Rantarou 2 (Japan).png
+J	Nintama Rantarō 3			Nintama Rantarou 3 (Japan).png
+J	Nintama Rantarō Special			Nintama Rantarou Special (Japan).png
+U	Nintendo PowerFest '94			
+J	Nishijin Pachinko 3			Nishijin Pachinko 3 (Japan).png
+J	Nishijin Pachinko Monogatari			Nishijin Pachinko Monogatari (Japan).png
+J	Nishijin Pachinko Monogatari 2			Nishijin Pachinko Monogatari 2 (Japan).png
+U	No Escape		No Escape (USA).png	
+J	Nobuhiro Takeda no Super League Soccer			Takeda Nobuhiro no Super League Soccer (Japan).png
+J	Nobunaga Kōki			
+J	Nobunaga no Yabō: Haōden			Nobunaga no Yabou - Haouden (Japan).png
+J	Nobunaga no Yabō: Tenshōki			Nobunaga no Yabou - Tenshouki (Japan).png
+UJ	Nobunaga's Ambition	Super Nobunaga no Yabō: Zenkokuban	Nobunaga's Ambition (USA).png	Super Nobunaga no Yabou - Zenkoku Ban (Japan).png
+UJ	Nolan Ryan's Baseball	Super Stadium	Nolan Ryan's Baseball (USA).png	Super Stadium (Japan).png
+J	Nomark Baku Haitō: Shijō Saikyō no Jakushi Tatsu			
+J	Nontan to Issho: KuruKuru Puzzle			Nontan to Issho - Kurukuru Puzzle (Japan).png
+UJ	Nosferatu		Nosferatu (USA).png	Nosferatu (Japan).png
+J	Numbers Paradise			Numbers Paradise (Japan).png
+J	O-Chan no Oekaki Logic			Ou-chan no Oekaki Logic (Japan).png
+U	Obitus		Obitus (USA).png	
+J	Oda Nobunaga: Haō no Gundan			Oda Nobunaga - Haou no Gundan (Japan).png
+J	Oekaki Logic			Oekaki Logic (Japan) (NP).png
+J	Oekaki Logic 2			Oekaki Logic 2 (Japan) (NP).png
+UJ	Ogre Battle: The March of the Black Queen	Densetsu no Ogre Battle: The March of the Black Queen	Ogre Battle - The March of the Black Queen (USA).png	Densetsu no Ogre Battle - The March of the Black Queen (Japan).png
+J	Olivia's Mystery			
+UJ	On the Ball	Cameltry	On the Ball (USA).png	Cameltry (Japan).png
+J	Ongaku Tsukūru: Kanadēru			Ongaku Tsukuru Kanadeeru (Japan).png
+UJ	Operation Europe: Path to Victory	Europa Sensen		
+UJ	Operation Logic Bomb: The Ultimate Search & Destroy	Ikari no Yousai	Operation Logic Bomb - The Ultimate Search _ Destroy (USA).png	Ikari no Yousai (Japan).png
+U	Operation Thunderbolt		Operation Thunderbolt (USA).png	
+J	Oraga Land Shusai: Best Farmer Shūkaku-Sai			Oraga Land Shusai - Best Farmer Shuukakusai (Japan).png
+J	Osamu Higashio Kanshū Super Pro Yakyū Stadium			Higashio Osamu Kanshuu Super Pro Yakyuu Stadium (Japan).png
+U	Oscar		Oscar (USA).png	
+J	Osu‼ Karatebu			
+J	Othello World			Othello World (Japan).png
+J	Otoboke Ninja Colosseum			Otoboke Ninja Colosseum (Japan).png
+J	Otogirisō			Otogirisou (Japan).png
+UJ	Out of This World	Outer World	Out of this World (USA).png	Outer World (Japan).png
+U	Out to Lunch		Out to Lunch (USA).png	
+U	Outlander		Outlander (USA).png	
+UJ	P.T.O.	Teitoku no Ketsudan	P.T.O. - Pacific Theater of Operations (USA).png	Teitoku no Ketsudan (Japan).png
+UJ	P.T.O. II: Pacific Theater of Operations	Teitoku no Ketsudan	P.T.O. II - Pacific Theater of Operations (USA).png	Teitoku no Ketsudan (Japan).png
+U	Pac-Attack		Pac-Attack (USA).png	
+UJ	Pac-In-Time		Pac-In-Time (USA).png	Pac-In-Time (Japan).png
+UJ	Pac-Man 2: The New Adventures	Hello! Pac-Man	Pac-Man 2 - The New Adventures (USA).png	Hello! Pac-Man (Japan).png
+J	Pachi-Slot Gambler			Pachi-Slot Gambler (Japan).png
+J	Pachi-Slot Kanzen Kōryaku: Universal Shindai Nyūka Volume 1			Pachi-Slot Kanzen Kouryaku - Universal Shindai Nyuuka Volume 1 (Japan).png
+J	Pachi-Slot Kenkyū			Pachi-Slot Kenkyuu (Japan).png
+J	Pachi-Slot Land: Pachi Pachi Coin no Densetsu			Pachi-Slot Land - Pachipachi Coin no Densetsu (Japan).png
+J	Pachi-Slot Love Story			Pachi-Slot Love Story (Japan).png
+J	Pachi-Slot Monogatari: Paru Kōgyō Special			Pachi-Slot Monogatari - PAL Kougyou Special (Japan).png
+J	Pachi-Slot Monogatari: Universal Special			Pachi-Slot Monogatari - Universal Special (Japan).png
+J	Pachinko Challenger			Pachinko Challenger (Japan).png
+J	Pachinko Fan: Shōri Sengen			Pachinko Fan - Shouri Sengen (Japan).png
+J	Pachinko Maruhi Hisshōhō			Pachinko Maruhi Hisshouhou (Japan).png
+J	Pachinko Monogatari 2: Nagoya Shachihoko no Teiō			Pachinko Monogatari 2 - Nagoya Shachihoko no Teiou (Japan).png
+J	Pachinko Monogatari: Pachi-Slot Moaru Deyo‼			Pachinko Monogatari - Pachi-Slot mo Aru deyo!! (Japan).png
+J	Pachinko Ren Chan Tengoku: Super CR Special			Pachinko Ren-chan Tengoku - Super CR Special (Japan).png
+J	Pachinko Tetsujin: Shichiban Shōbu			
+J	Pachinko Wars			Pachinko Wars (Japan).png
+J	Pachinko Wars 2			Pachinko Wars II (Japan).png
+J	Pachio-kun Special			Pachio-kun Special (Japan).png
+J	Pachio-kun Special 2			Pachio-kun Special 2 (Japan).png
+J	Pachio-kun Special 3			Pachio-kun Special 3 (Japan).png
+U	Packy & Marlon		Packy _ Marlon (USA) (En,Fr,Es).png	
+UJ	Paladin's Quest	Lennus: Kodai Kikai no Kioku	Paladin's Quest (USA).png	Lennus - Kodai Kikai no Kioku (Japan).png
+J	Panic in Nakayoshi World			Panic in Nakayoshi World (Japan).png
+U	Paperboy 2		Paperboy 2 (USA).png	
+J	Parlor! Mini			Parlor! Mini - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 2			Parlor! Mini 2 - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 3			Parlor! Mini 3 - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 4			Parlor! Mini 4 - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 5			Parlor! Mini 5 - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 6			Parlor! Mini 6 - Pachinko Jikki Simulation Game (Japan).png
+J	Parlor! Mini 7			Parlor! Mini 7 - Pachinko Jikki Simulation Game (Japan).png
+J	Parodius Da! Shinwa kara Owarai e			Parodius Da! - Shinwa kara Owarai e (Japan).png
+UJ	Phalanx	Phalanx: The Enforce Fighter A-144	Phalanx (USA).png	Phalanx - The Enforce Fighter A-144 (Japan) (En).png
+U	Phantom 2040		Phantom 2040 (USA).png	
+J	PICO PICO Pirates			
+J	Picross NP Vol. 1			
+J	Picross NP Vol. 2			
+J	Picross NP Vol. 3			
+J	Picross NP Vol. 4			
+J	Picross NP Vol. 5			
+J	Picross NP Vol. 6			
+J	Picross NP Vol. 7			
+J	Picross NP Vol. 8			
+UJ	Pieces	Jigsaw Party	Pieces (USA).png	Jigsaw Party (Japan).png
+J	Pikinya!			Pikiinya! (Japan).png
+UJ	Pilotwings		Pilotwings (USA).png	Pilotwings (Japan).png
+UJ	Pinball Dreams	Pinball Pinball	Pinball Dreams (USA).png	Pinball Pinball (Japan).png
+U	Pinball Fantasies		Pinball Fantasies (USA).png	
+UJ	Pink Goes to Hollywood	Pink Panther	Pink Goes to Hollywood (USA).png	Pink Panther (Japan) (En).png
+UJ	Pinocchio		Pinocchio (USA).png	Pinocchio (Japan).png
+J	Pipe Dream			Pipe Dream (Japan).png
+U	Pit-Fighter		Pit-Fighter (USA).png	
+UJ	Pitfall: The Mayan Adventure	Pitfall: Mayan no Daibouken	Pitfall - The Mayan Adventure (USA).png	Pitfall - Maya no Daibouken (Japan) (En).png
+UJ	Plok		Plok (USA).png	Plok! (Japan).png
+UJ	Pocky & Rocky	KiKi KaiKai: Nazo no Kuro Manto	Pocky _ Rocky (USA).png	Pocky _ Rocky (USA).png
+UJ	Pocky & Rocky 2	Kiki Kaikai: Tsukiyo Soushi	Pocky _ Rocky 2 (USA).png	Kikikai-kai - Tsukiyo Soushi (Japan).png
+J	Poi Poi Ninja World			
+J	Pokonyan! Henpokorin Adventure			Pokonyan! - Henpokorin Adventure (Japan).png
+J	Pop'n TwinBee			Pop'n TwinBee (Japan).png
+J	Popeye: Ijiwaru Majo Seahag no Maki			Popeye - Ijiwaru Majo Sea Hag no Maki (Japan).png
+J	Popful Mail			Popful Mail (Japan).png
+J	Popoitto Hebereke			Popoitto Hebereke (Japan).png
+UJ	Populous		Populous (USA).png	Populous (Japan).png
+J	Populous II: Trials of the Olympian Gods			Populous II - Trials of the Olympian Gods (Japan).png
+U	Porky Pig's Haunted Holiday		Porky Pig's Haunted Holiday (USA).png	
+UJ	Power Instinct	Gouketsuji Ichizoku	Power Instinct (USA).png	Gouketsuji Ichizoku (Japan).png
+J	Power Lode Runner			Power Lode Runner (Japan) (NP).png
+J	Power Monger: Mashou no Bouryaku			PowerMonger - Mashou no Bouryaku (Japan).png
+UJ	Power Moves	Power Athlete	Power Moves (USA).png	Power Athlete (Japan) (En).png
+J	Power of the Hired			Power of the Hired (Japan).png
+U	Power Piggs of the Dark Age		Power Piggs of the Dark Age (USA).png	
+U	Power Rangers Zeo: Battle Racers		Power Rangers Zeo - Battle Racers (USA).png	
+J	Power Sōkoban			Power Soukoban (Japan).png
+UJ	Prehistorik Man		Prehistorik Man (USA) (En,Fr,Es).png	Prehistorik Man (USA) (En,Fr,Es).png
+U	Primal Rage		Primal Rage (USA).png	
+UJ	Prince of Persia		Prince of Persia (USA).png	Prince of Persia (Japan).png
+U	Prince of Persia 2: The Shadow and the Flame		Prince of Persia 2 - The Shadow _ the Flame (USA) (Beta).png	
+J	Princess Maker: Legend of Another World			Princess Maker - Legend of Another World (Japan).png
+J	Princess Minerva			Princess Minerva (Japan).png
+J	Pro Kishi Jinsei Simulation: Shogi no Hanamichi			Pro Kishi Jinsei Simulation - Shougi no Hanamichi (Japan).png
+J	Pro Mahjong Kiwame			Pro Mahjong Kiwame (Japan).png
+J	Pro Mahjong Kiwame II			Pro Mahjong Kiwame II (Japan).png
+J	Pro Mahjong Kiwame III			Pro Mahjong Kiwame III (Japan).png
+J	Pro Mahjong Tsuwamono			Pro Mahjong Tsuwamono (Japan).png
+J	Pro Yakyū Nettō: Puzzle Stadium			Pro Yakyuu Nettou Puzzle Stadium (Japan).png
+J	Pro Yakyū Star			Pro Yakyuu Star (Japan).png
+U	Push-Over		Push-Over (USA).png	
+J	Puzzle'n Desu!			Puzzle'n Desu! (Japan).png
+J	Puzzle Nintama Rantarō: Ninjutsu Gakuen Puzzle no Maki			
+UJ	Q*bert 3		Q-bert 3 (USA).png	Q-bert 3 (Japan).png
+J	Rōdosu-tō Senki			
+J	R no Shosai			
+UJ	R-Type III: The Third Lightning		R-Type III - The Third Lightning (Japan) (En).png	R-Type III - The Third Lightning (Japan) (En).png
+U	Race Drivin'		Race Drivin' (USA).png	
+J	Radical Dreamers			
+UJ	Radical Psycho Machine Racing		Radical Psycho Machine Racing (USA).png	Radical Psycho Machine Racing (USA).png
+U	Radical Rex		Radical Rex (USA).png	
+UJ	Raiden Trad	Raiden Densetsu	Raiden Trad (USA).png	Raiden Densetsu (Japan).png
+U	Rampart		Rampart (USA).png	
+J	Ranma ½: Akaneko-dan teki Hihou			Ranma 1-2 - Akanekodan Teki Hihou (Japan).png
+J	Ranma ½: Chōgi Rambuhen			Ranma 1-2 - Chougi Ranbu Hen (Japan).png
+UJ	Ranma ½: Hard Battle	Ranma ½: Bakuretsu Rantōhen	Ranma 1-2 - Hard Battle (USA).png	Ranma 1-2 - Bakuretsu Rantou Hen (Japan).png
+J	Ranma ½: Ougi Jaanken			Ranma 1-2 - Ougi Jaanken (Japan).png
+U	Rap Jam: Volume One		Rap Jam - Volume One (USA) (En,Fr,Es).png	
+U	Realm		Realm (USA).png	
+UJ	Redline F-1 Racer	Aguri Suzuki no F-1 Super Driving	Redline F-1 Racer (USA).png	Suzuki Aguri no F-1 Super Driving (Japan) (En).png
+J	Rejoice: Aretha Ōkoku no Kanata			Rejoice - Aretha Oukoku no Kanata (Japan).png
+U	Relief Pitcher		Relief Pitcher (USA).png	
+J	Rendering Ranger: R²			Rendering Ranger R2 (Japan) (En).png
+J	Res Arcana Diana Ray: Uranai no Meikyū			Res Arcana - Diana Ray - Uranai no Meikyuu (Japan).png
+J	Reverse Kids			
+UJ	Revolution X		Revolution X (USA).png	Revolution X (Japan).png
+U	Rex Ronan: Experimental Surgeon		Rex Ronan - Experimental Surgeon (USA) (En,Es).png	
+J	Rieko Saibara no Mahjong Hōrōki			Saibara Rieko no Mahjong Hourouki (Japan).png
+J	Rin Kaihō Kudan no Igo Taidō			Rin Kaihou Kudan no Igo Taidou (Japan).png
+J	Ring ni Kakero			Ring ni Kakero (Japan) (NP).png
+UJ	Rise of the Phoenix	Kōryūki	Rise of the Phoenix (USA).png	Kouryuuki (Japan).png
+UJ	Rise of the Robots		Rise of the Robots (USA).png	Rise of the Robots (Japan) (En).png
+UJ	Rival Turf!	Rushing Beat	Rival Turf! (USA).png	Rushing Beat (Japan).png
+U	Road Riot 4WD		Road Riot 4WD (USA).png	
+UJ	Road Runner's Death Valley Rally	Looney Tunes: Road Runner vs. Wile E. Coyote	Road Runner's Death Valley Rally (USA).png	Looney Tunes - Road Runner vs Wile E. Coyote (Japan).png
+U	RoboCop 3		RoboCop 3 (USA).png	
+U	RoboCop Versus The Terminator		RoboCop versus The Terminator (USA).png	
+UJ	Robotrek	Slap Stick	Robotrek (USA).png	Slap Stick (Japan).png
+UJ	Rock n' Roll Racing		Rock n' Roll Racing (USA).png	Rock n' Roll Racing (Japan).png
+J	RockMan & Forte			Rockman _ Forte (Japan).png
+U	Rocko's Modern Life: Spunky's Dangerous Day		Rocko's Modern Life - Spunky's Dangerous Day (USA).png	
+UJ	Rocky Rodent	Nitro Punks: Might Heads	Rocky Rodent (USA).png	Nitropunks - Might Heads (Japan).png
+UJ	Roger Clemens' MVP Baseball	MVP Baseball	Roger Clemens' MVP Baseball (USA).png	MVP Baseball (Japan) (En).png
+J	Rokudenashi Blues: Taiketsu! Tōkyō Shitennō			Rokudenashi Blues - Taiketsu! Tokyo Shitennou (Japan).png
+UJ	Romance of the Three Kingdoms II	Super San Goku Shi II	Romance of the Three Kingdoms II (USA).png	Super Sangokushi II (Japan).png
+UJ	Romance of the Three Kingdoms III: Dragon of Destiny	Sangokushi III	Romance of the Three Kingdoms III - Dragon of Destiny (USA).png	Sangokushi III (Japan).png
+UJ	Romance of the Three Kingdoms IV: Wall of Fire	Sangokushi IV	Romance of the Three Kingdoms IV - Wall of Fire (USA).png	Sangokushi IV (Japan).png
+J	Romancing SaGa			Romancing Sa-Ga (Japan).png
+J	Romancing SaGa 2			Romancing Sa-Ga 2 (Japan).png
+J	Romancing SaGa 3			Romancing Sa-Ga 3 (Japan).png
+J	RPG Tsukūru 2			RPG Tsukuru 2 (Japan).png
+J	RPG Tsukūru: Super Dante			RPG Tsukuru - Super Dante (Japan).png
+J	Rudora no Hihou			
+J	Ruin Arm			Ruin Arm (Japan).png
+U	Run Saber		Run Saber (USA).png	
+J	Ryūkiheidan Danzarb			Ryuuki Heidan Danzarb (Japan).png
+J	Ryūko no Ken 2			Ryuuko no Ken 2 (Japan).png
+J	Sōgō Kakutōgi: Astral Bout			Sougou Kakutougi - Astral Bout (Japan).png
+J	Sōgō Kakutōgi: Astral Bout 2 — The Total Fighters			Sougou Kakutougi - Astral Bout 2 - The Total Fighters (Japan).png
+J	Sōgō Kakutōgi Rings: Astral Bout 3			Sougou Kakutougi Rings - Astral Bout 3 (Japan).png
+J	Sōkō Kihei Votoms: The Battling Road			Soukou Kihei Votoms - The Battling Road (Japan).png
+J	Sūpā Robotto Taisen EX			
+J	Saikōsoku Shikō Shōgi Mahjong			Saikousoku Shikou Shougi Mahjong (Japan).png
+J	Saikyō: Nobuhiko Takada			Saikyou - Takada Nobuhiko (Japan).png
+J	Sakurai Shōichi no Jankiryū: Mahjong Hisshōhō			Sakurai Shouichi no Jankiryuu Mahjong Hisshouhou (Japan).png
+J	Same Game			Same Game (Japan).png
+UJ	Samurai Shodown	Samurai Spirits	Samurai Shodown (USA).png	Samurai Spirits (Japan).png
+J	Sangokushi Eiketsuden			Sangokushi Eiketsuden (Japan).png
+J	Sangokushi Seishi: Tenbu Spirits			Sangokushi Seishi - Tenbu Spirits (Japan).png
+J	Sankyo Fever! Fever!			Sankyo Fever! Fever! (Japan).png
+J	Sanrio Shanghai			Sanrio Shanghai (Japan).png
+J	Sanrio World Smash Ball!			Sanrio World Smash Ball! (Japan).png
+J	Sansara Naga 2			
+J	Satella-Q Kokumin no Q Nichi			
+J	Satoru Nakajima F-1 Hero '94			
+J	Satoru Nakajima Super F-1 Hero			
+U	Scooby-Doo Mystery		Scooby-Doo Mystery (USA).png	
+J	SD F-1 Grand Prix			SD F-1 Grand Prix (Japan).png
+J	SD Gundam 2			
+J	SD Gundam G Next			SD Gundam G Next (Japan).png
+J	SD Gundam Gaiden 2: Entaku no Kishi			SD Gundam Gaiden 2 - Entaku no Kishi (Japan).png
+J	SD Gundam Gaiden: Knight Gundam Monogatari — Ōinaru Isan			SD Gundam Gaiden - Knight Gundam Monogatari - Ooinaru Isan (Japan).png
+J	SD Gundam Generation: Gryps Senki			
+J	SD Gundam GX			SD Gundam GX (Japan).png
+J	SD Gundam Power Formation Puzzle			SD Gundam - Power Formation Puzzle (Japan).png
+J	SD Hiryu no Ken			SD Hiryuu no Ken (Japan).png
+J	SD Kidō Senshi Gundam: V Sakusen Shidō			SD Kidou Senshi Gundam - V Sakusen Shidou (Japan).png
+J	SD The Great Battle			SD The Great Battle - Aratanaru Chousen (Japan).png
+J	SD Ultra Battle: Seven Densetsu			
+U	seaQuest DSV		SeaQuest DSV (USA).png	
+U	Secret of Evermore		Secret of Evermore (USA).png	
+UJ	Secret of Mana	Seiken Densetsu 2	Secret of Mana (USA).png	Seiken Densetsu 2 (Japan).png
+J	Seifuku Densetsu: Pretty Fighter			Seifuku Densetsu Pretty Fighter (Japan).png
+J	Seijū Maden: Beasts & Blades			Seijuu Maden Beasts _ Blades (Japan).png
+J	Seiken Densetsu 3			Seiken Densetsu 3 (Japan).png
+J	Sengoku Denshou			Sengoku Denshou (Japan).png
+J	Sengoku no Hasha			Sengoku no Hasha - Tenkafubu e no Michi (Japan).png
+J	Sgt. Saunders' Combat!			Sgt. Saunders' Combat! (Japan).png
+J	Shōnen Ashibe: Goma-chan no Yūenchi Daibōken			Shounen Ashibe - Goma-chan no Yuuenchi Daibouken (Japan).png
+J	Shōnen Ninja Sasuke			Shounen Ninja Sasuke (Japan).png
+J	Shōnin yo Taishi wo Idake‼			Shounin yo, Taishi o Idake!! (Japan).png
+J	Shūshoku Game			Shuushoku Game (Japan).png
+UJ	Shadowrun		Shadowrun (USA).png	Shadowrun (Japan) (En,Ja).png
+J	Shanghai: Banri no Chōjō			Shanghai - Banri no Choujou (Japan).png
+UJ	Shanghai II: Dragon's Eye	Super Shanghai: Dragon's Eye	Shanghai II - Dragon's Eye (USA).png	Super Shanghai - Dragon's Eye (Japan) (HOT B).png
+J	Shanghai III			Shanghai III (Japan).png
+UJ	Shien's Revenge	Shien: The Blade Chaser	Shien's Revenge (USA).png	Shien - The Blade Chaser (Japan).png
+J	Shigeru Mizuki no Yōkai Hyakkiyakō			Mizuki Shigeru no Youkai Hyakkiyakou (Japan).png
+J	Shigetaka Kashiwagi no Top Water Bassing			Kashiwagi Shigetaka no Top Water Bassing (Japan).png
+J	Shijō Saikyō League Serie A: Ace Striker			Shijou Saikyou League Serie A - Ace Striker (Japan).png
+J	Shijō Saikyō no Quiz Ō Ketteisen Super			Shijou Saikyou no Quiz Ou Ketteisen Super (Japan).png
+J	Shiki Eiyūden			
+J	Shin Ikkaku Senkin			Shin Ikkakusenkin (Japan).png
+J	Shin Kidō Senshi Gundam W: Endless Duel			Shin Kidou Senki Gundam W - Endless Duel (Japan).png
+J	Shin Mahjong			Shin Mahjong (Japan).png
+J	Shin Megami Tensei			Shin Megami Tensei (Japan).png
+J	Shin Megami Tensei if...			Shin Megami Tensei if... (Japan).png
+J	Shin Megami Tensei II			Shin Megami Tensei II (Japan).png
+J	Shin Momotarō Densetsu			Shin Momotarou Densetsu (Japan).png
+J	Shin Nekketsu Kōha: Kunio-tachi no Banka			Shin Nekketsu Kouha - Kunio-tachi no Banka (Japan).png
+J	Shin SD Sengokuden: Daishōgun Retsuden			Shin SD Sengokuden - Daishougun Retsuden (Japan).png
+J	Shin Seikoku: La Wares			
+J	Shin Shogi Club			Shin Shougi Club (Japan).png
+J	Shin Togenkyo			
+J	Shinseiki Odysselya			Shinseiki Odysselya (Japan).png
+J	Shinseiki Odysselya 2			Shinseiki Odysselya II (Japan).png
+J	Shinzui Taikyoku Igo: Go Sennin			Shinzui Taikyoku Igo - Go Sennin (Japan).png
+J	Shiroi Ringu he: Twinkle Little Star			Shiroi Ring e - Twinkle Little Star (Japan).png
+J	Shodai Nekketsu Kōha Kunio-kun			Shodai Nekketsu Kouha Kunio-kun (Japan).png
+J	Shodan Morita Shogi			Shodan Morita Shougi (Japan).png
+J	Shodankurai Nintei: Shodan Pro Mahjong			
+J	Shogi Furinkazan			Shougi Fuurinkazan (Japan).png
+J	Shogi Saikyō			Shougi Saikyou (Japan).png
+J	Shogi Saikyō II: Jissen Taikyoku Hen			Shougi Saikyou II - Jissen Taikyoku Hen (Japan).png
+J	Shogi Zanmai			Shougi Zanmai (Japan).png
+J	Shutokō Battle 2: Drift King			
+J	Shutokō Battle '94: Drift King			
+UJ	Sid Meier's Civilization		Sid Meier's Civilization (USA).png	Sid Meier's Civilization (USA).png
+UJ	Side Pocket		Side Pocket (USA).png	Side Pocket (Japan) (En).png
+J	Silva Saga II: The Legend of Light and Darkness			Silva Saga II - The Legend of Light and Darkness (Japan).png
+UJ	SimAnt		SimAnt (Japan).png	SimAnt (Japan).png
+UJ	SimCity		SimCity (USA).png	SimCity (Japan).png
+UJ	SimCity 2000		SimCity 2000 (Japan).png	SimCity 2000 (Japan).png
+J	SimCity Jr.			SimCity Jr. (Japan).png
+UJ	SimEarth: The Living Planet		SimEarth - The Living Planet (USA).png	SimEarth - The Living Planet (Japan).png
+J	Simulation Pro Yakyū			Simulation Pro Yakyuu (Japan).png
+U	Sink or Swim			
+U	Sküljagger: Revolt of the Westicans		Skuljagger - Revolt of the Westicans (USA).png	
+UJ	Skyblazer	Karuraō	Skyblazer (USA).png	Karura Ou (Japan).png
+J	Slayers			Slayers (Japan).png
+UJ	Smart Ball	Jerry Boy	Smart Ball (USA).png	Jerry Boy (Japan).png
+J	Snoopy Concert			Snoopy Concert (Japan).png
+U	Snow White in Happily Ever After		Snow White in Happily Ever After (USA).png	
+U	Soldiers of Fortune		Soldiers of Fortune (USA).png	
+J	Solid Runner			Solid Runner (Japan).png
+J	Song Master			Song Master (Japan).png
+UJ	Sonic Blast Man		Sonic Blast Man (USA).png	Sonic Blast Man (Japan).png
+UJ	Sonic Blast Man II		Sonic Blast Man II (USA).png	Sonic Blast Man II (Japan).png
+J	Soreyuke Ebisumaru Karakuri Meiro: Kieta Goemon no Nazo‼			Soreyuke Ebisumaru Karakuri Meiro - Kieta Goemon no Nazo!! (Japan).png
+UJ	SOS	Septentrion	SOS (USA).png	Septentrion (Japan).png
+J	Sotsugyō Bangai Hen: Nee Mahjong Shiyo!			Sotsugyou Bangai Hen - Nee Mahjong Shiyo! (Japan).png
+UJ	Soul Blazer	Soul Blader	Soul Blazer (USA).png	Soul Blader (Japan).png
+J	Soul & Sword			Soul _ Sword (Japan).png
+J	Sound Novel Tsukuru			Sound Novel Tsukuru (Japan).png
+UJ	Space Ace		Space Ace (USA).png	Space Ace (Japan) (En).png
+UJ	Space Invaders	Space Invaders: The Original Game	Space Invaders (USA).png	Space Invaders - The Original Game (Japan).png
+UJ	Space Megaforce	Super Aleste	Space Megaforce (USA).png	Super Aleste (Japan).png
+UJ	Spanky's Quest	Hansei Zaru: Jirō-kun no Daibouken	Spanky's Quest (USA).png	Hansei Zaru Jiro-kun no Daibouken (Japan).png
+J	Spark World			Spark World (Japan).png
+UJ	Sparkster		Sparkster (USA).png	Sparkster (Japan).png
+U	Spawn: The Video Game			
+U	Spectre		Spectre (USA).png	
+U	Speed Racer in My Most Dangerous Adventures		Speed Racer in My Most Dangerous Adventures (USA).png	
+U	Speedy Gonzales: Los Gatos Bandidos		Speedy Gonzales - Los Gatos Bandidos (USA).png	
+U	Spider-Man		Spider-Man (USA).png	
+U	Spider-Man and the X-Men in Arcade's Revenge			
+U	Spider-Man & Venom: Maximum Carnage		Spider-Man - Venom - Maximum Carnage (USA).png	
+UJ	Spindizzy Worlds		Spindizzy Worlds (USA).png	Spindizzy Worlds (Japan) (En).png
+J	Spriggan Powered			Spriggan Powered (Japan).png
+J	Sprinter Monogatari: Mezase Ikkaku Sennkinn			Sprinter Monogatari - Mezase!! Ikkakusenkin (Japan).png
+J	St Andrews: Eikō to Rekishi no Old Course			St. Andrews - Eikou to Rekishi no Old Course (Japan).png
+UJ	Star Fox		Star Fox (USA).png	Star Fox (Japan).png
+U	Star Fox: Super Weekend		Star Fox - Super Weekend (USA).png	
+J	Star Ocean			Star Ocean (Japan).png
+U	Star Trek: Deep Space Nine – Crossroads of Time		Star Trek - Deep Space Nine - Crossroads of Time (USA).png	
+U	Star Trek: Starfleet Academy – Starship Bridge Simulator		Star Trek - Starfleet Academy - Starship Bridge Simulator (USA).png	
+UJ	Star Trek: The Next Generation - Future's Past	Shin Star Trek: The Next Generation: Ooinaru Isan IFD no Nazo o Oe	Star Trek - The Next Generation - Future's Past (USA).png	Star Trek - The Next Generation - Future's Past (USA).png
+J	Stardust Suplex			Stardust Suplex (Japan).png
+UJ	Stargate		Stargate (USA).png	Stargate (Japan).png
+J	Stealth			Stealth (Japan).png
+U	Steel Talons		Steel Talons (USA).png	
+U	Sterling Sharpe: End 2 End		Sterling Sharpe - End 2 End (USA).png	
+UJ	Stone Protectors		Stone Protectors (USA).png	Stone Protectors (Japan).png
+UJ	Street Combat	Ranma ½: Chōnai Gekitōhen	Street Combat (USA).png	Ranma 1-2 - Chounai Gekitou Hen (Japan).png
+UJ	Street Fighter Alpha 2	Street Fighter Zero 2	Street Fighter Alpha 2 (USA).png	Street Fighter Zero 2 (Japan).png
+UJ	Street Fighter II: The World Warrior	Street Fighter II	Street Fighter II (USA).png	Street Fighter II (Japan).png
+UJ	Street Fighter II Turbo		Street Fighter II Turbo (USA).png	Street Fighter II Turbo (Japan).png
+UJ	Street Racer		Street Racer (USA).png	Street Racer (Japan) (En).png
+UJ	Strike Gunner S.T.G.		Strike Gunner S.T.G (USA).png	Strike Gunner S.T.G (Japan) (En).png
+UJ	Stunt Race FX	Wild Trax	Stunt Race FX (USA) (Rev 1).png	Wild Trax (Japan) (Rev 1).png
+J	Sugoi Hebereke			Sugoi Hebereke (Japan).png
+J	Sugoro Quest++ Dicenics			Sugoro Quest++ - Dicenics (Japan).png
+J	Sugoroku Ginga Senki			Sugoroku Ginga Senki (Japan).png
+U	Sunset Riders		Sunset Riders (USA).png	
+J	Supapoon			Supapoon (Japan).png
+J	Supapoon DX			Supapoon DX (Japan).png
+UJ	Super Adventure Island	Takahashi Meijin no Daibōken Jima	Super Adventure Island (USA).png	Takahashi Meijin no Daibouken-jima (Japan).png
+UJ	Super Adventure Island II	Takahashi Meijin no Daibōken Jima Tsū	Super Adventure Island II (USA).png	Takahashi Meijin no Daibouken-jima II (Japan).png
+J	Super Air Diver 2			Super Air Diver 2 (Japan).png
+U	Super Alfred Chicken		Super Alfred Chicken (USA).png	
+J	Super Back to the Future Part II			Super Back to the Future Part II (Japan).png
+J	Super Baken Ō '95			Super Baken Ou '95 (Japan).png
+U	Super Baseball 2020		2020 Super Baseball (USA).png	
+UJ	Super Baseball Simulator 1.000	Super Ultra Baseball	Super Baseball Simulator 1.000 (USA).png	Super Ultra Baseball (Japan).png
+UJ	Super Bases Loaded	Super Professional Baseball	Super Bases Loaded (USA).png	Super Professional Baseball (Japan).png
+UJ	Super Bases Loaded 2	Super 3D Baseball	Super Bases Loaded 2 (USA).png	Super 3D Baseball (Japan).png
+UJ	Super Bases Loaded 3: License to Steal		Super Bases Loaded 3 - License to Steal (USA).png	Super Bases Loaded 3 - License to Steal (USA).png
+UJ	Super Batter Up	Super Famista	Super Batter Up (USA).png	Super Famista (Japan).png
+U	Super Battleship		Super Battleship (USA).png	
+UJ	Super Battletank 2		Super Battletank 2 (USA).png	Super Battletank 2 (Japan).png
+J	Super Bikkuriman			Super Bikkuriman (Japan).png
+J	Super Birdie Rush			Super Birdie Rush (Japan).png
+UJ	Super Bomberman		Super Bomberman (USA).png	Super Bomberman (USA).png
+UJ	Super Bomberman 2		Super Bomberman 2 (USA).png	Super Bomberman 2 (USA).png
+J	Super Bomberman 3			Super Bomberman 3 (Europe).png
+J	Super Bomberman 4			Super Bomber Man 4 (Japan).png
+J	Super Bomberman 5			Super Bomber Man 5 (Japan).png
+J	Super Bomberman: Panic Bomber W			Super Bomber Man - Panic Bomber W (Japan).png
+J	Super Bombliss			Super Bombliss (Japan) (En).png
+UJ	Super Bonk	Super Genjin	Super Bonk (USA).png	Super Genjin (Japan).png
+UJ	Super Bowling		Super Bowling (USA).png	Super Bowling (Japan) (En).png
+UJ	Super Buster Bros.	Super Pang	Super Buster Bros. (USA).png	Super Pang (Japan).png
+UJ	Super Caesars Palace	Super Casino: Caesars Palace	Super Caesars Palace (USA).png	Super Casino - Caesars Palace (Japan).png
+J	Super Casino 2			Super Casino 2 (Japan).png
+J	Super Castles			Super Castles (Japan).png
+UJ	Super Castlevania IV	Akumajō Dracula	Super Castlevania IV (USA).png	Akumajou Dracula (Japan).png
+UJ	Super Chase H.Q.	Super H.Q. Criminal Chaser	Super Chase H.Q. (USA).png	Super H.Q. - Criminal Chaser (Japan).png
+J	Super Chinese Fighter			Super Chinese Fighter (Japan).png
+J	Super Chinese World 2: Uchū Ichi Butō Taikai			Super Chinese World 2 - Uchuuichi Butou Taikai (Japan).png
+J	Super Chinese World 3: Chō Jigen Daisakusen			Super Chinese World 3 - Chou Jigen Daisakusen (Japan).png
+U	Super Conflict: The Mideast		Super Conflict (USA).png	
+UJ	Super Double Dragon	Return of Double Dragon	Super Double Dragon (USA).png	Return of Double Dragon (Japan) (En).png
+J	Super Double Yakuman			Super Double Yakuman (Japan).png
+J	Super Double Yakuman II			Super Double Yakuman II (Japan).png
+J	Super Drift Out			Super Drift Out - World Rally Championships (Japan) (En).png
+J	Super Dunk Star			Super Dunk Star (Japan) (En).png
+J	Super F1 Circus			Super F1 Circus (Japan).png
+J	Super F1 Circus 2			Super F1 Circus 2 (Japan).png
+J	Super F1 Circus 3			Super F1 Circus 3 (Japan).png
+J	Super F1 Circus Gaiden			Super F1 Circus Gaiden (Japan).png
+J	Super F1 Circus Limited			Super F1 Circus Limited (Japan).png
+J	Super Famicom Wars			Super Famicom Wars (Japan) (NP).png
+J	Super Family Circuit			Super Family Circuit (Japan).png
+J	Super Family Gerende			
+J	Super Famista 2			Super Famista 2 (Japan).png
+J	Super Famista 3			Super Famista 3 (Japan).png
+J	Super Famista 4			Super Famista 4 (Japan).png
+J	Super Famista 5			Super Famista 5 (Japan).png
+J	Super Formation Soccer 94			Super Formation Soccer 94 - World Cup Edition (Japan).png
+J	Super Formation Soccer 95: della Serie A			Super Formation Soccer 95 della Serie A (Japan).png
+J	Super Formation Soccer 96: World Club Edition			Super Formation Soccer 96 - World Club Edition (Japan).png
+J	Super Formation Soccer II			Super Formation Soccer II (Japan).png
+J	Super Gachapon World: SD Gundam X			Super Gachapon World - SD Gundam X (Japan).png
+UJ	Super Game Boy		Super Game Boy (World) (Rev 2).png	Super Game Boy (Japan).png
+J	Super Genjin 2			Super Genjin 2 (Japan).png
+UJ	Super Ghouls 'n Ghosts	Chōmakaimura	Super Ghouls'n Ghosts (USA).png	Chou Makaimura (Japan).png
+UJ	Super Goal! 2	Nobuhiro Takeda no Super Cup Soccer	Super Goal! 2 (USA).png	Takeda Nobuhiro no Super Cup Soccer (Japan).png
+UJ	Super Godzilla	Chō-Gojira	Super Godzilla (USA).png	Chou Gojira - Super Godzilla (Japan).png
+J	Super Gomoku Narabe: Renju			Super Gomoku Narabe - Renju (Japan).png
+J	Super Gomoku Shogi			Super Gomoku Shougi - Jouseki Kenkyuu Hen (Japan).png
+J	Super Gussun Oyoyo			Super Gussun Oyoyo (Japan).png
+J	Super Gussun Oyoyo 2			Super Gussun Oyoyo 2 (Japan).png
+J	Super Hanafuda			Super Hanafuda (Japan).png
+J	Super Hanafuda 2			Super Hanafuda 2 (Japan).png
+J	Super Honmei: G1 Seiha			Super Honmei - GI Seiha (Japan).png
+J	Super Igo Go-Ō			Super Igo - Go Ou (Japan).png
+J	Super Indy Champ			Super Indy Champ (Japan).png
+UJ	Super James Pond	Super James Pond II	Super James Pond (USA).png	Super James Pond II (Japan).png
+J	Super Jangō			Super Jangou (Japan).png
+J	Super Jinsei Game			Super Jinsei Game (Japan).png
+J	Super Jinsei Game 2			Super Jinsei Game 2 (Japan).png
+J	Super Jinsei Game 3			Super Jinsei Game 3 (Japan).png
+J	Super Kōkō Yakyū: Ichikyū Jikkon			
+J	Super Keiba			Super Keiba (Japan).png
+J	Super Keiba 2			Super Keiba 2 (Japan).png
+J	Super Keirin			Super Keirin (Japan).png
+J	Super Kick Off			Super Kick Off (Japan).png
+J	Super Kyūkyoku Harikiri Stadium			Super Kyuukyoku Harikiri Stadium (Japan).png
+J	Super Kyūkyoku Harikiri Stadium 2			Super Kyuukyoku Harikiri Stadium 2 (Japan).png
+J	Super Kyōsōba: Kaze no Sylphid			Super Kyousouba - Kaze no Sylphid (Japan).png
+J	Super Kyōtei			Super Kyoutei (Japan).png
+J	Super Kyōtei 2			Super Kyoutei 2 (Japan).png
+J	Super Loopz			Super Loopz (Japan).png
+J	Super Mad Champ			Super Mad Champ (Japan).png
+J	Super Mahjong			Super Mahjong (Japan).png
+J	Super Mahjong 2: Honkaku 4Jin Uchi			Super Mahjong 2 - Honkaku 4-nin Uchi! (Japan).png
+J	Super Mahjong 3: Karakuchi			Super Mahjong 3 - Karakuchi (Japan).png
+J	Super Mahjong Taikai			Super Mahjong Taikai (Japan).png
+UJ	Super Mario All-Stars	Super Mario Collection	Super Mario All-Stars (USA).png	Super Mario Collection (Japan).png
+U	Super Mario All-Stars + Super Mario World		Super Mario All-Stars + Super Mario World (USA).png	
+UJ	Super Mario Kart		Super Mario Kart (USA).png	Super Mario Kart (Japan).png
+UJ	Super Mario RPG: Legend of the Seven Stars	Super Mario RPG	Super Mario RPG - Legend of the Seven Stars (USA).png	Super Mario RPG (Japan).png
+UJ	Super Mario World	Super Mario World: Super Mario Bros. 4	Super Mario World (USA).png	Super Mario World - Super Mario Bros. 4 (Japan).png
+UJ	Super Mario World 2: Yoshi's Island	Super Mario: Yoshi Island	Super Mario World 2 - Yoshi's Island (USA).png	Super Mario World 2 - Yoshi's Island (USA).png
+UJ	Super Metroid		Super Metroid (Europe) (En,Fr,De).png	Super Metroid (Japan, USA) (En,Ja).png
+J	Super Momotaro Dentetsu DX			Super Momotarou Dentetsu DX (Japan).png
+J	Super Momotaro Dentetsu II			Super Momotarou Dentetsu II (Japan).png
+J	Super Momotaro Dentetsu III			Super Momotarou Dentetsu III (Japan).png
+J	Super Nazo Puyo 2: Rulue no Tetsuwan Hanjyōki			Super Nazo Puyo Tsuu - Rulue no Tetsuwan Hanjouki (Japan).png
+J	Super Nazo Puyo: Rulue no Roux			Super Nazo Puyo - Rulue no Roux (Japan).png
+J	Super Nichibutsu Mahjong			Super Nichibutsu Mahjong (Japan).png
+J	Super Nichibutsu Mahjong 2: Zenkoku Seiha Hen			Super Nichibutsu Mahjong 2 - Zenkoku Seiha Hen (Japan).png
+J	Super Nichibutsu Mahjong 3: Yoshimoto Gekijō Hen			Super Nichibutsu Mahjong 3 - Yoshimoto Gekijou Hen (Japan).png
+J	Super Nichibutsu Mahjong 4: Kiso Kenkyu Hen			Super Nichibutsu Mahjong 4 - Kisokenkyuu Hen (Japan).png
+UJ	Super Ninja Boy	Super Chinese World	Super Ninja Boy (USA).png	Super Chinese World (Japan).png
+J	Super Ninja-kun			Super Ninja-kun (Japan).png
+U	Super Nova		Super Nova (USA).png	
+UJ	Super Off Road		Super Off Road (USA).png	Super Off Road (Japan) (En).png
+UJ	Super Off Road: the Baja	Super 4WD: the Baja	Super Off Road - The Baja (USA).png	Super 4WD - The Baja (Japan).png
+J	Super Okuman Chōja Game: The Game of Billionaire			
+J	Super Pachi-Slot Mahjong			Super Pachi-Slot Mahjong (Japan).png
+J	Super!! Pachinko			Super!! Pachinko (Japan).png
+J	Super Pachinko Taisen			Super Pachinko Taisen (Japan).png
+UJ	Super Pinball: Behind the Mask		Super Pinball - Behind the Mask (USA).png	Super Pinball - Behind the Mask (Japan).png
+J	Super Pinball II: The Amazing Odyssey			Super Pinball II - The Amazing Odyssey (Japan).png
+J	Super Power League			Super Power League (Japan).png
+J	Super Power League 2			Super Power League 2 (Japan).png
+J	Super Power League 3			Super Power League 3 (Japan).png
+J	Super Power League 4			Super Power League 4 (Japan).png
+J	Super Professional Baseball II			Super Professional Baseball II (Japan).png
+UJ	Super Putty	Putty Moon	Super Putty (USA).png	Putty Moon (Japan).png
+J	Super Puyo Puyo			Super Puyo Puyo (Japan).png
+J	Super Puyo Puyo Tsū			Super Puyo Puyo Tsuu (Japan).png
+J	Super Puyo Puyo Tsū Remix			Super Puyo Puyo Tsuu Remix (Japan).png
+U	Super R.B.I. Baseball		Super R.B.I. Baseball (USA).png	
+UJ	Super R-Type		Super R-Type (USA).png	Super R-Type (Japan) (En).png
+J	Super Real Mahjong PIV			Super Real Mahjong PIV (Japan).png
+J	Super Real Mahjong PV: Paradise			Super Real Mahjong PV Paradise - All-Star 4-nin Uchi (Japan).png
+J	Super Robot Wars Gaiden: Masō Kishin — The Lord of Elemental			Super Robot Taisen Gaiden - Masou Kishin - The Lord of Elemental (Japan).png
+J	Super Rugby			Super Rugby (Japan).png
+J	Super Sōkoban			Super Soukoban (Japan).png
+J	Super Sangokushi			Super Sangokushi (Japan).png
+UJ	Super Scope 6		Super Scope 6 (USA).png	Super Scope 6 (Japan).png
+J	Super Shogi			Super Shougi (Japan).png
+J	Super Shogi 2			Super Shougi 2 (Japan).png
+J	Super Shogi 3: Kitaihei			Super Shougi 3 - Kitaihei (Japan).png
+UJ	Super Slap Shot		Super Slap Shot (USA).png	Super Slap Shot (Japan) (En).png
+UJ	Super Smash TV	Smash TV	Super Smash T.V. (USA).png	Smash T.V. (Japan) (En).png
+UJ	Super Soccer	Super Formation Soccer	Super Soccer (USA).png	Super Formation Soccer (Japan).png
+UJ	Super Soccer Champ	Hat Trick Hero	Super Soccer Champ (USA).png	Hat Trick Hero (Japan) (En).png
+UJ	Super Solitaire		Super Solitaire (USA) (En,Fr,De,Es,It).png	Super Solitaire (USA) (En,Fr,De,Es,It).png
+UJ	Super Star Wars		Super Star Wars (USA).png	Super Star Wars (Japan).png
+UJ	Super Star Wars: Return of the Jedi	Super Star Wars: Jedi no Fukushuu	Super Star Wars - Return of the Jedi (USA).png	Super Star Wars - Jedi no Fukushuu (Japan).png
+UJ	Super Star Wars: The Empire Strikes Back	Super Star Wars: Teikoku no Gyakushuu	Super Star Wars - The Empire Strikes Back (USA).png	Super Star Wars - Teikoku no Gyakushuu (Japan).png
+UJ	Super Street Fighter II: The New Challengers		Super Street Fighter II - The New Challengers (Japan).png	Super Street Fighter II - The New Challengers (Japan).png
+UJ	Super Strike Eagle	F-15 Super Strike Eagle	Super Strike Eagle (USA).png	F-15 Super Strike Eagle (Japan) (En).png
+J	Super Tekkyu Fight!			Super Tekkyuu Fight! (Japan).png
+J	Super Tetris 2 + Bombliss			Super Tetris 2 + Bombliss (Japan) (En).png
+J	Super Tetris 2 + Bombliss: Gentei Han			Super Tetris 2 + Bombliss (Japan) (En).png
+J	Super Tetris 3			Super Tetris 3 (Japan) (En).png
+UJ	Super Troll Islands		Super Troll Islands (USA).png	Super Troll Islands (USA).png
+J	Super Trump Collection			Super Trump Collection (Japan).png
+J	Super Trump Collection 2			Super Trump Collection 2 (Japan).png
+J	Super Tsume Shogi 1000			Super Tsumeshougi 1000 (Japan).png
+UJ	Super Turrican		Super Turrican (USA).png	Super Turrican (Japan) (En).png
+U	Super Turrican 2		Super Turrican 2 (USA).png	
+J	Super Ultra Baseball 2			Super Ultra Baseball 2 (Japan).png
+J	Super Uno			Super Uno (Japan).png
+UJ	Super Valis IV	Super Valis: Akaki Tsuki no Otome	Super Valis IV (USA).png	Super Valis - Akaki Tsuki no Otome (Japan).png
+J	Super Variable Geo			Super Variable Geo (Japan).png
+J	Super Wagyan Land			Super Wagyan Land (Japan).png
+J	Super Wagyan Land 2			Super Wagyan Land 2 (Japan).png
+U	Super Widget		Super Widget (USA).png	
+J	Super Yakyū Dō			Super Yakyuudou (Japan).png
+J	Super Zugan 2: Tsukanpo Fighter			Super Zugan 2 - Tsukanpo Fighter (Japan).png
+J	Super Zugan: Hakotenjō Kara no Shōtaijō			Super Zugan - Hakotenjou kara no Shoutaijou (Japan).png
+J	Super Ōzumō: Netsusen Daiichiban			
+J	Sutobasu Yarō Shō			Sutobasu Yarou Show (Japan).png
+J	Sutte Hakkun			Sutte Hakkun (Japan).png
+UJ	Suzuka 8 Hours		Suzuka 8 Hours (USA).png	Suzuka 8 Hours (Japan) (En).png
+U	SWAT Kats: The Radical Squadron		SWAT Kats - The Radical Squadron (USA).png	
+J	Sword World SFC			Sword World SFC (Japan).png
+J	Sword World SFC 2			Sword World SFC 2 - Inishie no Kyojin Densetsu (Japan).png
+UJ	Syndicate		Syndicate (USA).png	Syndicate (Japan).png
+J	Syvalion			Syvalion (Japan).png
+J	Tōge Densetsu: Saisoku Battle			Touge Densetsu - Saisoku Battle (Japan).png
+UJ	T2: The Arcade Game		T2 - The Arcade Game (USA).png	T2 - The Arcade Game (Japan).png
+J	Table Game Dai-Shūgō‼ Shogi Mahjong Hanafuda			
+J	Tactical Soccer			Tactical Soccer (Japan).png
+J	Tactics Ogre: Let Us Cling Together			Tactics Ogre - Let Us Cling Together (Japan).png
+J	Tadaima Yūsha Boshūchū Okawari			Tadaima Yuusha Boshuuchuu Okawari (Japan).png
+J	Taekwon-Do			Taekwon-Do (Japan) (Ja,Ko).png
+J	Taikō Risshiden			Taikou Risshiden (Japan).png
+J	Taikyoku Igo: Goliath			Taikyoku Igo - Goliath (Japan).png
+J	Taikyoku Igo: Idaten			Taikyoku Igo - Idaten (Japan).png
+J	Tales of Phantasia			Tales of Phantasia (Japan).png
+J	Tamagotchi Town			
+J	Tarot Mystery			Tarot Mystery (Japan).png
+U	Taz-Mania		Taz-Mania (USA).png	
+UJ	Tecmo Secret of the Stars	Aqutallion	Tecmo Secret of the Stars (USA).png	Aqutallion (Japan).png
+UJ	Tecmo Super Baseball		Tecmo Super Baseball (USA).png	Tecmo Super Baseball (Japan) (En).png
+UJ	Teenage Mutant Ninja Turtles IV: Turtles in Time	Teenage Mutant Ninja Turtles: Turtles in Time	Teenage Mutant Ninja Turtles IV - Turtles in Time (USA).png	Teenage Mutant Ninja Turtles - Turtles in Time (Japan).png
+UJ	Teenage Mutant Ninja Turtles: Tournament Fighters	Teenage Mutant Ninja Turtles: Mutant Warriors	Teenage Mutant Ninja Turtles - Tournament Fighters (USA).png	Teenage Mutant Ninja Turtles - Mutant Warriors (Japan).png
+J	Tekichū Keiba Juku			Tekichuu Keiba Juku (Japan).png
+J	Tenchi Muyō! Game Hen			Tenchi Muyou! - Game Hen (Japan).png
+J	Tenchi Sōzō			Tenchi Souzou (Japan).png
+J	Tenchi wo Kurau: Sangokushi Gunyūden			Tenchi o Kurau - Sangokushi Gunyuuden (Japan).png
+J	Tengai Makyō Zero			Tengai Makyou Zero (Japan).png
+J	Tenshi no Uta: Shiroki Tsubasa no Inori			Tenshi no Uta - Shiroki Tsubasa no Inori (Japan).png
+U	Terminator 2: Judgment Day		Terminator 2 - Judgment Day (USA).png	
+U	Test Drive II: The Duel		Duel, The - Test Drive II (USA).png	
+UJ	Tetris 2	Tetris Flash	Tetris 2 (USA).png	Tetris Flash (Japan).png
+UJ	Tetris Attack	Panel de Pon	Tetris Attack (USA) (En,Ja).png	Panel de Pon (Japan).png
+J	Tetris Butō Gaiden			
+U	Tetris & Dr. Mario		Tetris _ Dr. Mario (USA).png	
+J	Tetsuwan Atom			Tetsuwan Atom (Japan).png
+UJ	The 7th Saga	Elnard	7th Saga, The (USA).png	Elnard (Japan).png
+UJ	The Addams Family		Addams Family, The (USA).png	Addams Family, The (Japan).png
+U	The Addams Family: Pugsley's Scavenger Hunt		Addams Family, The - Pugsley's Scavenger Hunt (USA).png	
+U	The Adventures of Batman & Robin		Adventures of Batman _ Robin, The (USA).png	
+U	The Adventures of Dr. Franken		Adventures of Dr. Franken, The (USA).png	
+UJ	The Adventures of Kid Kleets	Soccer Kid	Adventures of Kid Kleets, The (USA) (En,Fr,Es).png	Soccer Kid (Japan).png
+U	The Adventures of Mighty Max		Adventures of Mighty Max, The (Europe).png	
+U	The Adventures of Rocky and Bullwinkle and Friends		Adventures of Rocky and Bullwinkle and Friends, The (USA).png	
+J	The Amazing Spider-Man: Lethal Foes			Amazing Spider-Man, The - Lethal Foes (Japan).png
+J	The Atlas: Renaissance Voyager			Atlas, The - Renaissance Voyager (Japan).png
+J	The Blue Crystal Rod			Blue Crystalrod, The (Japan).png
+UJ	The Blues Brothers		Blues Brothers, The (USA).png	Blues Brothers, The (Japan).png
+U	The Brainies		Brainies, The (USA).png	
+UJ	The Chessmaster		Chessmaster, The (USA).png	Chessmaster, The (Japan).png
+UJ	The Combatribes		Combatribes, The (USA).png	Combatribes, The (Japan).png
+U	The Death and Return of Superman		Death and Return of Superman, The (USA).png	
+J	The Firemen			Firemen, The (Japan).png
+U	The Flintstones		Flintstones, The (USA) (En,Fr,De,Es,It).png	
+UJ	The Flintstones: The Treasure of Sierra Madrock		Flintstones, The - The Treasure of Sierra Madrock (USA).png	Flintstones, The - The Treasure of Sierra Madrock (Japan).png
+J	The Great Battle Gaiden 2: Matsuri da Wasshoi			Great Battle Gaiden 2, The - Matsuri da Wasshoi (Japan).png
+J	The Great Battle II: Last Fighter Twin			Great Battle II, The - Last Fighter Twin (Japan).png
+J	The Great Battle III			Great Battle III, The (Japan).png
+J	The Great Battle IV			Great Battle IV, The (Japan).png
+J	The Great Battle V			Great Battle V, The (Japan).png
+UJ	The Great Circus Mystery Starring Mickey & Minnie		Great Circus Mystery Starring Mickey _ Minnie, The (USA).png	Great Circus Mystery Starring Mickey _ Minnie, The (USA).png
+U	The Great Waldo Search		Great Waldo Search, The (USA).png	
+J	The Heian Fūunden			Heian Fuuunden (Japan).png
+UJ	The Hunt for Red October		Hunt for Red October, The (USA).png	Hunt for Red October, The (USA).png
+UJ	The Ignition Factor	Fire Fighting	Ignition Factor, The (USA).png	Fire Fighting (Japan).png
+UJ	The Incredible Crash Dummies	The Incredible Crash Dummies: Slick Bouya no Daichousen	Incredible Crash Dummies, The (USA).png	Incredible Crash Dummies, The (USA).png
+U	The Incredible Hulk		Incredible Hulk, The (USA).png	
+UJ	The Irem Skins Game	Major Title	Irem Skins Game, The (USA).png	Major Title (Japan).png
+U	The Itchy & Scratchy Game		Itchy _ Scratchy Game, The (USA).png	
+UJ	The Jetsons: Invasion of the Planet Pirates	Yokai Buster: Ruka no Daibouken	Jetsons, The - Invasion of the Planet Pirates (USA).png	Youkai Buster - Ruka no Daibouken (Japan).png
+UJ	The Jungle Book		Jungle Book, The (USA).png	Jungle Book, The (Japan) (En).png
+J	The King of Dragons			King of Dragons, The (Japan).png
+J	The King of Rally			King of Rally, The (Japan).png
+J	The Last Battle			Last Battle, The (Japan).png
+UJ	The Lawnmower Man	Virtual Wars	Lawnmower Man, The (USA).png	Virtual Wars (Japan).png
+UJ	The Legend of the Mystical Ninja	Ganbare Goemon: Yukihime Kyūshutsu Emaki	Legend of the Mystical Ninja, The (USA).png	Ganbare Goemon - Yuki Hime Kyuushutsu Emaki (Japan).png
+UJ	The Legend of Zelda: A Link to the Past	Zelda no Densetsu: Kamigami no Triforce	Legend of Zelda, The - A Link to the Past (USA).png	Zelda no Densetsu - Kamigami no Triforce (Japan).png
+UJ	The Lion King		Lion King, The (USA).png	Lion King, The (Japan).png
+UJ	The Lost Vikings	The Lost Vikings: Viking no Daimeiwaku	Lost Vikings, The (USA).png	Lost Vikings, The (USA).png
+UJ	The Magical Quest starring Mickey Mouse	Mickey no Magical Adventure	Magical Quest Starring Mickey Mouse, The (USA).png	Mickey no Magical Adventure (Japan).png
+J	The Mahjong Tōhaiden			Mahjong Touhaiden, The (Japan).png
+UJ	The Mask	Mask	Mask, The (USA).png	Mask (Japan).png
+U	The Miracle Piano Teaching System		Miracle Piano Teaching System, The (USA).png	
+J	The Monopoly Game 2			Monopoly Game 2, The (Japan).png
+U	The Pagemaster		Pagemaster, The (USA).png	
+UJ	The Peace Keepers	Rushing Beat Shura	Peace Keepers, The (USA).png	Rushing Beat Shura (Japan).png
+U	The Pirates of Dark Water		Pirates of Dark Water, The (USA).png	
+U	The Ren & Stimpy Show: Buckaroo$!		Ren _ Stimpy Show, The - Buckeroo$! (USA).png	
+U	The Ren & Stimpy Show: Fire Dogs		Ren _ Stimpy Show, The - Fire Dogs (USA).png	
+U	The Ren & Stimpy Show: Time Warp		Ren _ Stimpy Show, The - Time Warp (USA).png	
+U	The Ren & Stimpy Show: Veediots!		Ren _ Stimpy Show, The - Veediots! (USA).png	
+UJ	The Rocketeer		Rocketeer, The (USA).png	Rocketeer, The (USA).png
+J	The Shinri Game 2			Shinri Game 2, The - Magical Trip (Japan).png
+J	The Shinri Game 3			Shinri Game 3, The (Japan).png
+J	The Shinri Game: Akuma no Kokoroji			Shinri Game, The - Akuma no Kokoroji (Japan).png
+UJ	The Simpsons: Bart's Nightmare	Bart no Fushigi na Yume no Daibouken	Simpsons, The - Bart's Nightmare (USA).png	Simpsons, The - Bart's Nightmare (USA).png
+U	The Sporting News: Baseball		Sporting News Baseball, The (USA).png	
+U	The Terminator		Terminator, The (USA).png	
+U	The Tick		Tick, The (USA).png	
+UJ	The Twisted Tales of Spike McFang	Chō Makai Taisen! Dorabotchan	Twisted Tales of Spike McFang, The (USA).png	Chou Makai Taisen! Dorabocchan (Japan).png
+U	The Untouchables		Untouchables, The (USA).png	
+U	The Wizard of Oz		Wizard of Oz, The (USA).png	
+J	Theme Park			Theme Park (Japan).png
+U	Thomas the Tank Engine & Friends: Adventure Series		Thomas the Tank Engine _ Friends (USA).png	
+J	Thoroughbred Breeder			Thoroughbred Breeder (Japan).png
+J	Thoroughbred Breeder II			Thoroughbred Breeder II (Japan).png
+J	Thoroughbred Breeder III			Thoroughbred Breeder III (Japan).png
+UJ	Thunder Spirits		Thunder Spirits (USA).png	Thunder Spirits (Japan) (En).png
+J	Thunderbirds: Kokusai Kyūjotai Shutsugeki Seyo‼			
+U	Time Slip		Time Slip (USA).png	
+U	Time Trax		Time Trax (USA).png	
+UJ	Timecop		Timecop (USA).png	Timecop (Japan).png
+U	Timon & Pumbaa's Jungle Games		Timon _ Pumbaa's Jungle Games (USA).png	
+U	Tin Star		Tin Star (USA).png	
+UJ	Tiny Toon Adventures: Buster Busts Loose!	Tiny Toon Adventures	Tiny Toon Adventures - Buster Busts Loose! (USA).png	Tiny Toon Adventures (Japan).png
+UJ	Tiny Toon Adventures: Wacky Sports Challenge	Tiny Toon Adventures: Dotabata Daiundoukai	Tiny Toon Adventures - Wacky Sports Challenge (USA).png	Tiny Toon Adventures - Dotabata Daiundoukai (Japan).png
+J	Tokimeki Memorial: Densetsu no Ki no Shita de			Tokimeki Memorial - Densetsu no Ki no Shita de (Japan).png
+J	Tokoro's Mahjong			Tokoro's Mahjong (Japan).png
+UJ	Tom and Jerry	Tom to Jerry	Tom and Jerry (USA).png	Tom to Jerry (Japan).png
+UJ	Tommy Moe's Winter Extreme: Skiing & Snowboarding	Ski Paradise with Snowboard	Tommy Moe's Winter Extreme - Skiing and Snowboarding (USA).png	Ski Paradise with Snowboard (Japan).png
+UJ	Tony Meola's Sidekicks Soccer	Ramos Ruy no World Wide Soccer	Tony Meola's Sidekicks Soccer (USA).png	Ramos Ruy no World Wide Soccer (Japan) (En).png
+UJ	Top Gear	Top Racer	Top Gear (USA).png	Top Racer (Japan) (En).png
+UJ	Top Gear 2	Top Racer 2	Top Gear 2 (USA).png	Top Racer 2 (Japan) (En).png
+UJ	Top Gear 3000	The Planet's Champ TG3000	Top Gear 3000 (USA).png	Planet's Champ TG 3000, The (Japan).png
+J	Top Management II			Top Management II (Japan).png
+J	Toride			Toride (Japan).png
+J	Torneko no Daibōken: Fushigi no Dungeon			Torneko no Daibouken - Fushigi no Dungeon (Japan).png
+U	Total Carnage		Total Carnage (USA).png	
+J	Tottemo! Lucky Man: Lucky Cookie Roulette de Totsugeki			Tottemo! Lucky Man - Lucky Cookie Roulette de Totsugekii (Japan).png
+J	Tower Dream			Tower Dream (Japan).png
+UJ	Toy Story		Toy Story (USA).png	Toy Story (Japan).png
+U	Toys		Toys - Let the Toy Wars begin! (USA).png	
+J	Traverse: Starlight & Prairie			Traverse - Starlight _ Prairie (Japan).png
+J	Treasure Conflix			
+J	Treasure Hunter G			Treasure Hunter G (Japan).png
+J	Trinea			Trinea (Japan).png
+U	Troddlers		Troddlers (USA).png	
+UJ	True Lies		True Lies (USA).png	True Lies (Japan) (En).png
+J	Tsuppari Ōzumō: Risshin Shusse-hen			Tsuppari Oozumou - Risshinshusse Hen (Japan).png
+J	Tsuri Tarō			Tsuri Tarou (Japan).png
+J	Tsuyoshi Shikkari Shinasai: Taisen Puzzle-dama			Tsuyoshi Shikkari Shinasai - Taisen Puzzle Dama (Japan).png
+UJ	Tuff E Nuff	Dead Dance	Tuff E Nuff (USA).png	Dead Dance (Japan).png
+J	Turf Hero			Turf Hero (Japan).png
+J	Turf Memories			Turf Memories (Japan).png
+UJ	Turn and Burn: No-Fly Zone	Super Dogfight	Turn and Burn - No-Fly Zone (USA).png	Super Dogfight (Japan).png
+J	Twinbee: Rainbow Bell Adventure			TwinBee - Rainbow Bell Adventure (Japan).png
+UJ	U.N. Squadron	Area 88	U.N. Squadron (USA).png	Area 88 (Japan).png
+J	Uchū no Kishi: Tekkaman Blade			Uchuu no Kishi Tekkaman Blade (Japan).png
+J	Uchū Race: Astro Go! Go!			Uchuu Race - Astro Go! Go! (Japan).png
+J	UFO Kamen Yakisoban: Kettler no Kuroi Inbō			U.F.O. Kamen Yakisoban - Kettler no Kuroi Inbou (Japan).png
+J	Ugoku E Ver. 2.0: Aryol			
+J	Ultima: Kyōryū Teikoku — The Savage Empire			
+UJ	Ultima: Runes of Virtue II	Ultima Gaiden: Kurokishi no Inbou	Ultima - Runes of Virtue II (USA).png	Ultima Gaiden - Kuro Kishi no Inbou (Japan).png
+UJ	Ultima: The Black Gate	Ultima VII: The Black Gate	Ultima - The Black Gate (USA).png	Ultima VII - The Black Gate (Japan).png
+UJ	Ultima: The False Prophet	Ultima VI: Itsuwari no Yogensha	Ultima - The False Prophet (USA).png	Ultima VI - Itsuwari no Yogensha (Japan).png
+UJ	Ultimate Fighter	Hiryū no Ken S: Golden Fighter	Ultimate Fighter (USA).png	Hiryuu no Ken S - Golden Fighter (Japan).png
+U	Ultimate Mortal Kombat 3		Ultimate Mortal Kombat 3 (USA).png	
+J	Ultra Baseball Jitsumeiban			Ultra Baseball Jitsumei Ban (Japan).png
+J	Ultra Baseball Jitsumeiban 2			Ultra Baseball Jitsumei Ban 2 (Japan).png
+J	Ultra Baseball Jitsumeiban 3			Ultra Baseball Jitsumei Ban 3 (Japan).png
+J	Ultra League: Moero! Soccer Daikessen‼			Ultra League - Moero! Soccer Daikessen!! (Japan).png
+J	Ultraman			Ultraman (Japan).png
+U	Ultraman		Ultraman (USA).png	
+J	Ultraseven			Ultra Seven (Japan).png
+J	Umi no Nushi Tsuri			Umi no Nushi Tsuri (Japan).png
+J	Umi Tsuri Mejin: Suzuki Hen			
+J	Umihara Kawase			Umihara Kawase (Japan).png
+UJ	Uncharted Waters	Daikōkai Jidai	Uncharted Waters (USA).png	Daikoukai Jidai II (Japan).png
+UJ	Uncharted Waters: New Horizons	Daikoukai Jidai II	Daikoukai Jidai II (Japan).png	Daikoukai Jidai II (Japan).png
+J	Undake 30: Same Game - Mario Version			
+J	Undercover Cops			Undercover Cops (Japan).png
+U	Uniracers		Uniracers (USA).png	
+U	Urban Strike		Urban Strike (USA).png	
+J	Ushio to Tora			Ushio to Tora (Japan).png
+UJ	Utopia: The Creation of a Nation	Utopia	Utopia - The Creation of a Nation (USA).png	Utopia (Japan).png
+UJ	Vegas Stakes	Las Vegas Dream	Vegas Stakes (USA).png	Vegas Stakes (USA).png
+U	Venom - Spider-Man: Separation Anxiety		Venom - Spider-Man - Separation Anxiety (USA).png	
+J	Verne World			Verne World (Japan).png
+UJ	Virtual Bart		Virtual Bart (USA).png	Virtual Bart (Japan) (En).png
+UJ	Vortex		Vortex (USA) (En,Es).png	Vortex (Japan) (En,Ja).png
+J	Vs. Collection			Vs. Collection (Japan).png
+J	Wagyan Paradise			Wagyan Paradise (Japan).png
+J	Waiwai de Q			
+J	Waiwai de Q - Aki no Daikanshasai!			
+J	Waka Taka Ōzumō: Brothers Dream Match			
+J	WakuWaku Ski Wonder Spur			Wakuwaku Ski Wonder Spur (Japan).png
+J	Wally wo Sagase! Ehon no Kuni no Daibōken			Wally o Sagase! - Ehon no Kuni no Daibouken (Japan).png
+U	War 2410		War 2410 (USA).png	
+U	War 3010: The Revolution		War 3010 - The Revolution (USA).png	
+J	Waratte Iitomo! Tamorin Pick			
+J	Wario no Mori Bakushō Version			
+J	Wario no Mori: Event Ban Ver. 2			
+J	Wario no Mori: Futatabi			
+U	Wario's Woods		Wario's Woods (USA).png	
+UJ	Warlock		Warlock (USA).png	Warlock (Japan) (En).png
+U	WarpSpeed		WarpSpeed (USA).png	
+U	Wayne's World		Wayne's World (USA).png	
+U	We're Back! A Dinosaur's Story		We're Back! - A Dinosaur's Story (USA).png	
+U	WeaponLord		WeaponLord (USA).png	
+J	Wedding Peach			Wedding Peach (Japan).png
+U	Wheel of Fortune		Wheel of Fortune (USA).png	
+U	Wheel of Fortune: Deluxe Edition		Wheel of Fortune - Deluxe Edition (USA).png	
+U	Where in the World is Carmen Sandiego?		Where in the World Is Carmen Sandiego (USA) (En,Fr,De,Es,It).png	
+U	Where in Time is Carmen Sandiego?		Where in Time Is Carmen Sandiego (USA) (En,Fr,De,Es,It).png	
+U	Whizz		Whizz (USA).png	
+U	Wild C.A.T.s			
+UJ	Wild Guns		Wild Guns (USA).png	Wild Guns (Japan).png
+UJ	WildSnake	Super Snakey	Wild Snake (USA).png	Super Snakey (Japan).png
+U	Williams Arcade's Greatest Hits		Williams Arcade's Greatest Hits (USA).png	
+UJ	Wing Commander		Wing Commander (USA).png	Wing Commander (Japan).png
+U	Wing Commander: The Secret Missions		Wing Commander - The Secret Missions (USA).png	
+UJ	Wings 2: Aces High	Sky Mission	Wings 2 - Aces High (USA).png	Sky Mission (Japan) (En).png
+J	Winning Post			Winning Post (Japan).png
+J	Winning Post 2			Winning Post 2 (Japan).png
+J	Winning Post 2: Program '96			Winning Post 2 - Program '96 (Japan).png
+J	Wizap!: Ankoku no Ō			Wizap! - Ankoku no Ou (Japan).png
+J	Wizardry Gaiden IV: Throb of the Demon's Heart			
+J	Wizardry I-II-III: The Story of Llylgamyn			
+UJ	Wizardry V: Heart of the Maelstrom		Wizardry V - Heart of the Maelstrom (USA).png	Wizardry V - Heart of the Maelstrom (USA).png
+J	Wizardry VI: Bane of the Cosmic Forge			
+U	Wolfchild		Wolfchild (USA).png	
+UJ	Wolfenstein 3D	Wolfenstein 3D: The Claw of Eisenfaust	Wolfenstein 3D (Europe).png	Wolfenstein 3D - The Claw of Eisenfaust (Japan).png
+UJ	Wolverine: Adamantium Rage	Wolverine	Wolverine - Adamantium Rage (USA).png	Wolverine (Japan) (En).png
+J	Wonder Project J: Kikai no Shōnen Pīno			Wonder Project J - Kikai no Shounen Pino (Japan).png
+J	Wondrous Magic			Wondrous Magic (Japan).png
+U	Wordtris		Wordtris (USA).png	
+J	World Class Rugby			World Class Rugby (Japan) (En).png
+J	World Class Rugby 2: Kokunai Gekitō Hen '93			World Class Rugby 2 - Kokunai Gekitou Hen '93 (Japan).png
+UJ	World Cup USA '94		World Cup USA 94 (USA) (En,Fr,De,Es,It,Nl,Pt,Sv).png	World Cup USA 94 (Japan) (En,Fr,De,Es,It,Nl,Pt,Sv).png
+UJ	World Heroes		World Heroes (USA).png	World Heroes (Japan).png
+UJ	World Heroes 2		World Heroes 2 (USA).png	World Heroes 2 (Japan).png
+UJ	World League Soccer	Pro Soccer	World League Soccer (USA).png	Pro Soccer (Japan).png
+UJ	World Soccer '94: Road to Glory	World Soccer	World Soccer 94 - Road to Glory (USA).png	World Soccer (Japan) (En).png
+J	Wrecking Crew '98			Wrecking Crew '98 (Japan).png
+UJ	X-Kaliber 2097	Sword Maniac	X-Kaliber 2097 (USA).png	Sword Maniac (Japan).png
+UJ	X-Men: Mutant Apocalypse		X-Men - Mutant Apocalypse (USA).png	X-Men - Mutant Apocalypse (Japan).png
+UJ	X-Zone		X Zone (Europe).png	X Zone (Japan, USA).png
+J	Xak: The Art of Visual Stage			Xak - The Art of Visual Stage (Japan).png
+J	Xandra no Daibōken: Valkyrie to no Deai			Xandra no Daibouken - Valkyrie to no Deai (Japan).png
+UJ	Xardion	Chou Kou Gasshin Sādion	Xardion (USA).png	Xardion (USA).png
+UJ	XBAND		XBAND (USA).png	XBAND (Japan).png
+J	Yūjin: Janjyu Gakuen			Yuujin Janjuu Gakuen (Japan).png
+J	Yūjin: Janjyu Gakuen 2			Yuujin Janjuu Gakuen 2 (Japan).png
+J	Yūjin no Furi Furi Girls			Yuujin no Furi Furi Girls (Japan).png
+J	Yū Yū Hakusho			Yu Yu Hakusho (Japan).png
+J	Yū Yū Hakusho 2: Kakutō no Sho			Yu Yu Hakusho 2 - Kakutou no Shou (Japan).png
+J	Yū Yū Hakusho Final: Makai Saikyō Retsuden			Yu Yu Hakusho Final - Makai Saikyou Retsuden (Japan).png
+J	Yūyu no Quiz de Go! Go!			Yuuyu no Quiz de Go! Go! (Japan).png
+J	Yadamon: Wonderland Dream			Yadamon - Wonderland Dreams (Japan).png
+J	Yakōchū			Yakouchuu (Japan).png
+J	YamYam			Yam Yam (Japan).png
+J	Yokoyama Mitsuteru: Sangokushi			Yokoyama Mitsuteru Sangokushi (Japan).png
+J	Yokoyama Mitsuteru: Sangokushi Bangi - Sugoroku Eiyūki			Yokoyama Mitsuteru Sangokushi Bangi - Sugoroku Eiyuu-ki (Japan).png
+J	Yokoyama Mitsuteru: Sangokushi II			Yokoyama Mitsuteru Sangokushi 2 (Japan).png
+J	Yokozuna Monogatari			Yokozuna Monogatari (Japan).png
+J	Yoshi No Panepon			
+UJ	Yoshi's Cookie	Yoshi no Cookie	Yoshi's Cookie (USA).png	Yoshi no Cookie (Japan).png
+UJ	Yoshi's Safari	Yoshi no Road Hunting	Yoshi's Safari (USA).png	Yoshi no Road Hunting (Japan).png
+U	Young Merlin		Young Merlin (USA).png	
+UJ	Ys III: Wanderers from Ys		Ys III - Wanderers from Ys (USA).png	Ys III - Wanderers from Ys (Japan).png
+J	Ys IV: Mask of the Sun			Ys IV - Mask of the Sun (Japan).png
+J	Ys V: Ushinawareta Suna no Miyako Kefin			Ys V - Ushinawareta Suna no Miyako Kefin (Japan).png
+J	Yu Yu Hakusho: Tokubetsu Hen			Yu Yu Hakusho - Tokubetsu Hen (Japan).png
+J	Yume Maboroshi no Gotoku			Yumemaboroshi no Gotoku (Japan).png
+J	Yume Meikyū: Kigurumi Daibōken			
+J	Yutaka Take G1 Memory			
+J	Zakuro no Aji			Zakuro no Aji (Japan).png
+J	Zan II: Spirits			Zan II Spirits (Japan).png
+J	Zan III Spirits			Zan III Spirits (Japan).png
+J	Zen-Nippon GT Senshuken			Zen-Nihon GT Senshuken (Japan).png
+J	Zengoku Jūdan Ultra Shinri Game			Zenkoku Juudan Ultra Shinri Game (Japan).png
+J	Zenkoku Kōkō Soccer			Zenkoku Koukou Soccer (Japan).png
+J	Zenkoku Kōkō Soccer 2			Zenkoku Koukou Soccer 2 (Japan).png
+U	Zero the Kamikaze Squirrel		Zero the Kamikaze Squirrel (USA).png	
+J	Zero4 Champ RR			Zero 4 Champ RR (Japan).png
+J	Zero4 Champ RR-Z			Zero 4 Champ RR-Z (Japan).png
+J	Zico Soccer			Zico Soccer (Japan).png
+J	Zig Zag Cat: Ostrich Club mo Oosawagi da			
+J	Zoku: The Legend of Bishin			
+U	Zombies Ate My Neighbors		Zombies Ate My Neighbors (USA).png	
+J	Zoo-tto Mahjong!			
+UJ	Zool: Ninja of the Nth Dimension	Zool no Yume Bouken	Zool - Ninja of the 'Nth' Dimension (USA).png	Zool no Yume Bouken (Japan).png
+U	Zoop		Zoop (USA).png	
+J	Ōzumō Tamashii			

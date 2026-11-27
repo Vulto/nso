@@ -67,3 +67,4 @@ embed/*/build/
 
 # Release artifacts
 /dist/
+build-release/

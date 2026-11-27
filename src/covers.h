@@ -10,6 +10,8 @@
 #ifndef NSO_COVERS_H
 #define NSO_COVERS_H
 
+#include <stddef.h>
+
 typedef struct {
     float x, y, width, height;
 } CoversRect;
@@ -25,11 +27,29 @@ int Covers_ReloadOrder(const CoversRect *slots, int count,
                        float viewH, float totalH, float cursorViewY,
                        int *out, int cap);
 
+/* Identity of a grid tile's cover: title plus box art path (or ROM). Used so
+ * textures and size metadata follow the game/group when a filter or grouping
+ * rebuilds the list, instead of staying tied to a slot index. */
+#ifndef COVER_KEY_MAX
+#define COVER_KEY_MAX 768
+#endif
+void Covers_Key(const char *title, const char *boxartPath, const char *rom,
+                char *dst, size_t n);
+/* from[i] is the old slot to move onto new slot i, or -1 if there is no
+ * match. Each old slot is used at most once. */
+void Covers_PlanMoves(const char oldK[][COVER_KEY_MAX], int oldN,
+                      const char newK[][COVER_KEY_MAX], int newN,
+                      int *from);
+
 #endif /* NSO_COVERS_H */
 
 #ifdef COVERS_IMPLEMENTATION
 #ifndef COVERS_IMPLEMENTATION_ONCE
 #define COVERS_IMPLEMENTATION_ONCE
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static int Covers_Contains(const int *a, int n, int v)
 {
@@ -84,6 +104,44 @@ int Covers_ReloadOrder(const CoversRect *slots, int count,
         if (!Covers_Contains(out, n, i)) out[n++] = i;
     }
     return n;
+}
+
+
+void Covers_Key(const char *title, const char *boxartPath, const char *rom,
+                char *dst, size_t n)
+{
+    const char *a = (title && title[0]) ? title : "";
+    const char *b = (boxartPath && boxartPath[0]) ? boxartPath
+                  : ((rom && rom[0]) ? rom : "");
+    if (!dst || n == 0) return;
+    snprintf(dst, n, "%s\t%s", a, b);
+}
+
+void Covers_PlanMoves(const char oldK[][COVER_KEY_MAX], int oldN,
+                      const char newK[][COVER_KEY_MAX], int newN,
+                      int *from)
+{
+    unsigned char *used;
+    int i, j;
+    if (!from) return;
+    if (newN < 0) newN = 0;
+    if (oldN < 0) oldN = 0;
+    for (i = 0; i < newN; i++) from[i] = -1;
+    if (!oldK || !newK || oldN <= 0 || newN <= 0) return;
+    used = (unsigned char *)calloc((size_t)oldN, 1);
+    if (!used) return;
+    for (i = 0; i < newN; i++) {
+        if (!newK[i][0]) continue;
+        for (j = 0; j < oldN; j++) {
+            if (used[j] || !oldK[j][0]) continue;
+            if (strcmp(oldK[j], newK[i]) == 0) {
+                from[i] = j;
+                used[j] = 1;
+                break;
+            }
+        }
+    }
+    free(used);
 }
 
 #endif /* COVERS_IMPLEMENTATION_ONCE */

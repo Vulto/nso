@@ -59,7 +59,7 @@ static const StatusDir status_dirs[] = {
     { "embed/bk", ST_RECOMP },
     { "repos/n64/bk", ST_RECOMP },
     { "repos/n64/Lighthouse/build-cmake", ST_NATIVE },
-    { "repos/gamecube/dusk", ST_NATIVE },
+    { "repos/gamecube/dusklight/build/linux-default-relwithdebinfo", ST_NATIVE },
     { "repos/gamecube/melee-pc", ST_NATIVE },
     { "repos/gamecube/metroidprime", ST_NATIVE },
     { "repos/gamecube/papercut", ST_NATIVE },

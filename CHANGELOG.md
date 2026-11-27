@@ -2,99 +2,227 @@
 
 All notable changes to NSO. Newest first. Versions follow the Git tags.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-27
 
-### Fixes
-- KEY_END again only opens the in-game End menu (same launcher keycode grab and SIGUSR1 path as before the Home toggle). KEY_HOME fades the systems menu in 0.15 s over the game and unloads games-grid covers (they load again when a system is entered). Other animations are unchanged.
-- KEY_HOME in-game was latched until KEY_END: the host idle path skipped the Home park/fade while the child still owned the screen, and a leftover park signal could freeze the game on re-entry. Home now parks and fades immediately, the launcher grabs Home/End with every Caps/NumLock combination, and Home only acts when a game is running or parked by Home. KEY_END on the systems menu quits NSO (and any parked game) through the normal shutdown path.
-- Toggling Hide unplayable now remaps each cover's slot size with the list (and reloads missing art in the background while the grid is still blurred), so covers fit their slots when the blur clears.
-- Creating a suspend point no longer changes the End menu or flashes the live game over it. The previous root cover was a full-window black/snapshot overlay. The game is now mapped off-screen (clipped as a child of the host, never XMapRaised) just long enough to accept Mednafen's save keys, then stopped and unmapped; the slot thumbnail is still the already-frozen frame. The End menu stays on screen as it is.
-- Home still toggles the main games menu when a Mednafen game or a reparented port has keyboard focus: the menu launcher grabs the Home key on the game window (the same X grab already used for End) and signals NSO, which parks or resumes with the existing exit and opening animations. The keyboard Home key in the NSO window is unchanged, and the gamepad Guide button is not used.
-- NSO and the unit tests compile with `-O3 -Werror`: GameSel's ROM/title pointers are initialized, CRT Geometry path buffers are large enough for a full data path, and dat URLs are formatted in a full-size local buffer before being copied to the caller.
-- The Home key toggles the main games menu from anywhere. The first press leaves submenus, settings, controls, the End menu or a running game and shows the grid (a running game is parked with the same exit animation as To Game Selection). The second press returns to where you were, resuming a parked game with the same opening animation.
-- Leaving a game no longer flashes the screen. A full-window black rectangle fades in over the still-visible game in 0.2 s; only then is the game closed or parked. Once it is gone and the visible covers are ready, that black rectangle shrinks into the game's cover in 0.15 s and reveals the grid. For Mednafen and reparented ports an override-redirect black window is raised above the child so the fade covers it (NSO's own draw sits under that window). The previous exit zoom unmapped the child and finished the shrink before a covering frame was drawn, which is what let a stale or empty frame show through.
-- Opening a game uses the same transition in reverse: a black rectangle grows from the selected cover to the full window in 0.15 s, the game is launched or resumed only once the screen is fully black, and after its first frame is showing the black fades out in 0.2 s. Child windows stay under the same overlay, with the same opacity-0 unmap, leftover sweep and focus return as on exit. The previous launch zoom (a dark panel growing out of the card into a 4:3 frame) is gone. Confirming "Close %s?" to open another game uses that same opening animation: the parked game is killed while still hidden and stopped (never remapped or resumed), behind the full black, then the new one launches.
-- The exit overlay is now dropped at opacity 0 before unmap (so picom cannot leave a faded ghost), leftover overlay windows from a previous leave are swept, and keyboard focus is returned to NSO after every exit.
+This release supports **emulated games only**. NSO is a Nintendo Switch
+Online-style frontend for playing your legally obtained ROMs on the desktop.
+Put each system's ROMs in that system's folder under `roms/` (for example
+`roms/NES`, `roms/SNES`, `roms/N64`, `roms/GameCube`, `roms/MegaDrive`). Folder
+names on disk must match exactly. ROMs may sit loose in the system folder or
+inside one level of per-game subfolders. Box art and covers are **not**
+shipped: scrape them yourself from the Emulated tab. This package is a single
+self-contained Linux binary (`make release`) so end users do not install
+libraries or unpack a data directory of UI art.
 
-### Performance
-- Mednafen CRT Geometry (two-pass): the 960×720 pass used a projection-matrix ortho, but Mednafen stores its window transform on MODELVIEW, so the CRT draw missed the FBO and the screen was black with CRT on. The pass now sets MODELVIEW, and the present uses the textured mask blit.
-- While a Mednafen game or a reparented port owns the screen, NSO no longer redraws the grid at 60 fps (it waits on input). End, the close prompt and park/resume still work; enter/leave animations still play.
-- When a game is running, NSO unloads interface images (covers and their CPU images, platform art, retro/pad/sort/sidebar textures, mosaic and blur targets) to free RAM. The current game's cover is kept so the launch and return-card animations still play. Fonts, the embed/rewind frames and CRT render targets are left alone. On return, covers reload in the background: the visible screen around the cursor first (starting as soon as the user presses the button to leave, during the exit animation), then the first and last screens of the list, then the middle, without blocking input or frames. The grid is shown only once that visible screen is complete — the previous frame is held, with no loading screen. The same visible-first reveal applies at startup, after the existing enter animation.
-- CRT Geometry is rendered at about 960×720 (4:3) into a non-MSAA target and scaled up, with the 2-pixel phosphor mask applied at the output. Applied in NSO, Mednafen (`tools/mednafen-nsocrt.patch`) and the hooked ports (SoH, Lighthouse, SpaghettiKart, Perfect Dark).
-- CRT Geometry is a plain On/Off toggle again. When it is on, the shader always uses the faster path (no 3-tap scanline filter, cheaper glow, no filmic tone map). The High quality path, the Off/High/Fast cycle and `<system>.crtgeom_fast` are gone; leftover keys in existing configs are ignored.
+### Systems and ROMs
 
-### Games
-- To Game Selection keeps the game paused in the background (embedded modules, Mednafen and external ports); starting it again resumes it instantly.
-- Starting another game asks "Close <game>?" (Yes / No) before closing the paused one. Only one game stays alive.
-- Quitting NSO closes the paused game.
+- Five systems on the main menu: NES, SNES, Nintendo 64, GameCube, and Mega
+  Drive (Genesis). Each has its own card, games grid, settings, and ROM folder.
+- ROM detection is the same as the games menu: it scans `roms/<System>/` for
+  loose ROM files and for one level of per-game folders, and it matches those
+  files to the catalog. GameCube uses the `GameCube` folder name.
+- Version grouping: several ROM revisions or region dumps of the same title can
+  appear as versions of one grid tile. Same-stem `.ips` / `.bps` / `.ups`
+  patches travel with their ROM and can be applied at launch without modifying
+  the original file.
+- Hide unplayable (per system) lists only games that can actually launch, and
+  does not load covers for hidden titles. Toggling it remaps cover slot sizes
+  so art still fits when the grid blur clears.
+- Favorites: in the Details card (X), Y toggles a heart on the current game.
+  Favorites are saved per system in `config/favorites-<id>.txt`. The sort menu
+  (T) can filter the grid to favorites only, together with any sort mode and
+  Hide unplayable. That filter is stored as `<id>.favorites` in `config/nso.cfg`.
+- The games grid capacity is computed from catalog sizes at compile time, so
+  adding titles no longer overflows the list and hides a system's games.
 
-## [0.2.0] - 2026-11-19
+### Playing a game
 
-Everything since `v0.1.0`.
+- NES, SNES and Mega Drive games run through NSO's tree Mednafen, with a
+  direct start, the NSO in-game menu, suspend points, and the Game Screen
+  options (Pixel Perfect, Scanlines, and CRT Geometry).
+- Mednafen opens ALSA's `default` device (not `hw:0`), so emulated games have
+  sound when launched from NSO.
+- Launch zoom: a dark panel grows out of the selected cover into the game.
+  Leaving a game fades to black, parks or stops the process, and shrinks back
+  into the cover. Open and exit transitions match each other.
+- The End key (and the existing in-game path) opens the NSO suspend menu:
+  Load / Create Suspend Point, Game Screen / CRT options where they apply, and
+  Quit. The left analog stick navigates that menu like the d-pad (deadzone,
+  edge, armed after centering).
+- Creating a suspend point no longer flashes the live game over the End menu.
+  The game is mapped off-screen just long enough to accept the save keys; the
+  slot thumbnail is the already-frozen frame.
+- Home (keyboard Home only) toggles the main systems menu over a running or
+  parked game, with a short fade, and unloads games-grid covers until you enter
+  a system again. On the systems menu, End quits NSO (and any parked game)
+  through the normal shutdown path. Home is grabbed on the game window the same
+  way End already was, including Caps/NumLock combinations.
+- Rewind (NES and SNES, Mednafen): hold ZL + ZR on the pad or Backspace on the
+  keyboard to rewind up to about 10 seconds. A short ZL + ZR tap still opens
+  the suspend menu. The rewind screen shrinks the game, raises a gray panel,
+  and shows a strip of one real thumbnail per second of history. The caption
+  bar follows "Show controls in game": it appears for the first five seconds of
+  a game and while rewinding. The game window stays full size when the bar is
+  hidden.
+- CRT Geometry (shader ported from MAME-PSGS, Apache-2.0) is available for
+  Mednafen and for games NSO draws itself. An End-menu sub-screen offers 12
+  sliders, per game, with a live preview. Rendering uses a ~960×720 4:3 pass
+  and a 2-pixel phosphor mask at the output. The Fast path is used; On/Off
+  remains a toggle. Mednafen CRT no longer goes black on the 960×720 pass.
+- While a game owns the screen, NSO does not keep redrawing the grid at 60 fps
+  (it waits on input). End, Home, the close prompt and park/resume still work;
+  enter/leave animations still play.
+- When a game is running, NSO unloads interface images (covers, platform art,
+  menu textures, mosaic and blur targets) to free RAM, keeping the current
+  game's cover for the return animation. Fonts and CRT targets stay loaded. On
+  return, covers reload in the background (visible screen first, no loading
+  screen). The same visible-first reveal applies at startup after the enter
+  animation.
 
-### Rewind (NES, SNES)
-- Rewind up to 10 seconds in Mednafen games.
-- Pad: hold ZL + ZR to rewind. A short ZL + ZR tap still opens the Suspend Menu.
-- Keyboard: hold Backspace to rewind.
-- The rewind screen follows the reference: the game shrinks, a gray panel rises, a strip of thumbnails runs along the bottom.
-- The strip shows one real game frame per second of history. The selected thumbnail is the current frame.
-- The caption bar follows "Show controls in game". It shows during the first 5 seconds of a game and while rewinding.
-- The game window is always full size when the bar is hidden.
+### Main menu
+
+- The system row uses large cards (about twice the earlier size), re-centered
+  and capped to fit the screen.
+- A dock bar on the main menu holds Downloads and Power. Power opens a
+  shutdown dialog with (A) OK / (B) cancel. The bar is content-sized, with a
+  5 px end pad and a 20 px gap between circles at 1920×1080 (circle 110 px,
+  vertical margin 4.5 px).
+- The dock cursor and the system-card select ring use the same pastel rainbow
+  rotating gradient (CPU SDF, not a backbuffer shader). Only one selection
+  indicator is on screen at a time (the card ring hides while the bar is
+  focused).
+- Entering a system (A on a card) plays a time-based transition: a tile ghost,
+  a dark gray layer, the Nintendo wordmark, and a crossfade to the games
+  screen. The enter animation is faster than before (covers still begin
+  loading on the A press). Leaving a system fades through the same gray to the
+  main menu. Games-menu input is ignored until the enter animation (tile delay
+  and grow) has finished, so S cannot be pressed mid-transition.
+- A click plays on A for every system; a per-system select jingle plays once
+  the system image is fully shown. The splash slides to the covers only after
+  that sound ends (or after 1 s if sound is off) and the covers are ready.
+- Menu sound effects (CC0 Kenney UI Audio) can be turned off in Settings.
+  English and Portuguese strings are included. A sound is treated as finished
+  only after its real length plus output latency.
+
+### Games grid and menus
+
+- A mosaic/grid of box arts, with a "?" placeholder when a cover is missing.
+  Page slides are linear and slightly faster than earlier builds.
+- Move mode (Y): tap or hold Y to lift a cover, move it between slots, A
+  confirms, B cancels. The cover glides; drop-slot markers show the target.
+- Sort panel (T, or C-Right on an N64 pad): custom order, title, release date,
+  last played, and play time, plus the Favorites filter and Hide unplayable
+  (Hide unplayable lives here, not in Settings). Release dates are scraped
+  together with covers.
+- Details (X): a two-column game info card with fade-in. Favorites toggle with
+  Y as described above.
+- Status and scraper menu (S) is a tabbed card on the current system, with the
+  same colors and frame as Details, slightly shorter. Y cycles tabs; the
+  legend is B Back, A Accept, Y Change tabs (Y uses the Nerd Font
+  `alpha_y_circle` glyph, matched in size and alignment to A and B). The
+  default tab is Statistics, so S still feels like the familiar status view.
+  Tabs sit inside the right panel. The status legend uses the same show/hide
+  animation as the other subtitle bars; only one legend bar is drawn at a
+  time.
+  - **Statistics:** playable percentage, type breakdown and the per-game list
+    for the current system (as in the previous status overlay).
+  - **Emulated:** lists the ROMs detected in `roms/<System>/`. The left side
+    shows the "Image scraping" title, **Download all box arts**, **Select
+    games**, live progress, and a large preview of the focused game's box art.
+    The right side lists the detected games (with thumbs when a cover already
+    exists). Download all scrapes missing box arts for every detected ROM.
+    Select games lets you check just some titles, with the same live preview,
+    then download box art for the selection. If a game has several candidate
+    images, a picker lets you choose one (A accept, B skip). The old "Replace
+    artbox" action is not in this tab. ROM files are never modified; only
+    cover images are written where the scraper already wrote them. If no ROMs
+    are found, the message names the real folder (for example `roms/NES`).
+  - **PC Ports** and **Decomps** tabs are present in the menu but this release
+    is for emulated games only.
+- The sidebar is a video-style rail with labelled items and a per-system
+  Settings panel (Game Screen, Controller, sound, and related rows). Image
+  scraping lives in the Emulated tab, not in the sidebar. Controller mapping
+  stays on Settings.
+- English and Portuguese UI throughout.
+
+### Box-art scraping
+
+- Covers are not included in the binary or the release archive. Users scrape
+  every image themselves.
+- From the Emulated tab you can download all missing box arts for the current
+  system's detected ROMs, or select a subset with a preview.
+- Live progress is shown for each step (index, dates, per-game title and
+  n/d). When two or more candidate images match a title, you choose one.
+- Matching understands other releases of the same game, trailing ", The", and
+  names that omit spaces. Catalog titles follow the scrape database names.
+- Curl retries (two retries, three seconds apart) and a longer timeout cover
+  flaky index and dat downloads.
+- Scraped covers and dates go to the usual image and config locations, not
+  into ROM files.
 
 ### Controllers
-- N64 pad over USB in S mode (8BitDo, hid-nintendo layout): recognized by layout, with the N64 mapping, labels and C buttons.
-- 8BitDo N64 mapping, C buttons as UI actions on every gamepad, N64-style hint bar.
-- The hint bar follows the connected controller and shows USB or Bluetooth.
-- A pop-up shows when a controller connects. USB connect glitches are ignored.
-- The Rumble setting now works. Embedded games export an optional Rumble Pak motor, played as an evdev force-feedback effect.
-- Rumble off: external games get `nso-norumble.so` preloaded, so SDL rumble does nothing.
-- The left analog stick navigates the in-game Suspend Menu like the d-pad.
 
-### Main menu and interface
-- System cards are twice as big. The row is re-centered and capped to fit.
-- Entering a system plays a timed transition: tile ghost, gray layer, Nintendo wordmark and flipping "PC Ports" letters, crossfade. Leaving fades back.
-- Sidebar with video-style rail icons, labelled menu and a per-system Settings panel. The gear icon is gone.
-- Details: new game info card with a frosted grid, two-column light panel and fade-in.
-- Move mode: hold or tap Y, A confirms, B cancels. The lifted cover glides between slots.
-- Sort panel: custom, title, release date, last played, play time.
-- Release dates are scraped with the covers and can be used to sort.
-- Port status overlay (S): counts per port type, legend and per-game list for the current system.
-- NES/SNES Settings: Game Screen cards with thumbnails. Pixel Perfect and Scanlines are independent toggles.
-- Menu sound effects (CC0 Kenney UI Audio) with a Sound on/off setting, English and Portuguese. A sound counts as finished after its real length.
-- Settings: "Hide unplayable" per system.
+- Per-system controller screens in Settings for NES, SNES, N64, and GameCube,
+  with on-screen pad art (including GameCube lines and the N64 controller
+  graphic).
+- Map Controls starts a Mednafen-style sequential capture: one prompt, a
+  blinking button, edge-triggered reading, a wait for all inputs to be
+  released before and between assignments, hold-to-skip, and Reset to
+  Defaults. Hold times are 0.9 s; leave the screen by holding B (a ring on
+  the hint bar's B glyph). Only a button's own bindings light it.
+- NES, SNES and N64 mappings are applied to Mednafen (and to any in-process
+  modules that read the same maps). Files are stored as `<system>.map.*`.
+- N64: 8BitDo N64 mapping, C buttons as UI actions, N64-style hints. The hint
+  bar follows the connected controller and shows USB or Bluetooth. A pop-up
+  appears when a pad connects; USB connect glitches are ignored. An 8BitDo
+  N64 in S mode over USB (hid-nintendo layout, even when it reports a Pro
+  Controller id) is recognized by layout (C buttons, no right stick) and
+  treated as an N64 pad. The Rumble setting works (evdev force-feedback).
+  With Rumble off, external processes can be started with `nso-norumble.so`
+  preloaded so SDL rumble does nothing.
+- Nerd Font C-Up / C-Down marks on the N64 hint bar, and the same hint style
+  for the status-menu Y button.
 
-### Games
-- In-process modules with NSO's pause menu, Load / Create Suspend Point, audio and a zoom out to the card: Super Mario Bros. (vanilla), Super Mario World, Super Mario 64, Star Fox 64 (Starship), Star Fox (SNES), Mega Man 3, AeroGauge.
-- NES and SNES games without a native port run in Mednafen: direct start, NSO menu, suspend points, Game Screen filters.
-- Every playable child game gets a direct start and the NSO menu (End or the Guide button).
-- Source builds with their own config and saves under `saves/n64/<port>`: Banjo-Kazooie, Mario Kart 64, Star Fox 64.
-- GoldenEye 007 runs through Project Midas, windowed, with the stored ROM.
-- Bomberman 64: The Second Attack starts with `--boot`.
-- Blast Corps and Perfect Dark launch from their port roots.
-- Static recompilations added for N64, SNES and NES.
-- Launch zoom for every game: a dark panel grows out of the card.
-- Catalog: 249 display-only N64 entries and 50 NES entries.
+### Self-contained Linux binary
 
-### Scraper
-- Settings > Image scraping > Select games: check ROMs, download covers and dates, install ports.
-- Loose title matching (other releases of the same game, trailing ", The", names without spaces).
-- Curl retries and longer timeouts for the flaky NES index and dat downloads.
-- Catalog titles are the scrape database names.
+- `make` still builds the normal developer `nso`, which loads fonts and UI
+  art from the tree next to the binary (or `NSO_BASE_DIR`).
+- `make release` builds `dist/nso`: a single binary with NSO's own assets
+  embedded (fonts, font licenses, main-menu system cards, UI icons and pad
+  art, and the title lists under `assets/data/`). Scrapable game box arts and
+  covers are **not** embedded and are **not** shipped.
+- Raylib is linked statically. glibc, OpenGL (`libGL` and related) and X11
+  (`libX11`, `libXtst`, `libXext` and their usual transitive libraries) stay
+  dynamic, as do `libm`, `libdl` and the dynamic linker. End users do not
+  need to install Raylib or unpack a UI-art directory.
+- At runtime the binary still uses `NSO_BASE_DIR` (or the directory of the
+  executable) for config, saves, logs, ROMs and scraped covers. It starts
+  even when that directory has no fonts or system art on disk.
 
-### Fixes
-- Games launch when the running binary was replaced on disk.
-- The menu launcher takes the child's first window that maps. This fixes N64Recomp ports that opened outside NSO.
-- The game window is never managed by the tiling window manager.
-- Quitting an external game from the NSO menu no longer shows a black cover or a second enter intro.
-- Status overlay heading no longer draws a "?".
-- Fixes for Star Fox 64, Wave Race 64 and 1080 cover matches.
+### Other changes and fixes since 0.1.0
 
-### Development
-- `make check` runs the tests headless and muted. `make test` then opens NSO on `:1`.
-- New tests: rewind animation, enter animation, status, sort, hide, game selection, launch, scrape, catalog.
-- `EMBED.md` documents the in-process module API.
-- `tools/game_install.sh` and `tools/n64rom.py` install ports and convert ROM byte order.
+- Interface images and covers unload while a game runs and reload on return,
+  as described above; this also applies when coming back from Home.
+- KEY_END only opens the in-game End menu again (same launcher keycode grab
+  and SIGUSR1 path). KEY_HOME is the systems-menu toggle described above.
+- Games still launch if the running NSO binary was replaced on disk
+  (`/proc/self/exe` would otherwise show `(deleted)`).
+- The menu launcher marks the child window override-redirect so a tiling
+  window manager does not steal it, reparents as soon as it maps, and uses
+  the first window that maps.
+- Quitting from the NSO menu no longer shows a black cover or a second enter
+  intro while the process is still shutting down.
+- Background blur on the side menu is stronger; Details and the status card
+  are unchanged.
+- The games-menu page slide is linear (constant speed) and a little faster.
+- `make check` runs the unit tests headless and muted. `make test` is the
+  developer helper that then opens NSO on the local display.
+- New and updated tests include rewind and enter animations, status, sort,
+  hide, favorites, game selection, launch, scrape, catalog, version scan,
+  pad map, CRT parameters, language, and sysstatus.
+- NSO and the tests compile with `-O3 -Werror`.
 
 ## [0.1.0] - 2026-11-10
+
 
 - First tagged version: a fresh clone is usable with text placeholders, cwd-independent paths, scrape directories and a README.

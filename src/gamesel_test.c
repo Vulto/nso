@@ -61,6 +61,7 @@ int main(void)
         }
     }
 
+    CHECK(strcmp(Gs_RomRoot(), "roms") == 0);
     CHECK(strcmp(Gs_RomFolder("nes"), "NES") == 0);
     CHECK(strcmp(Gs_RomFolder("n64"), "N64") == 0);
     CHECK(Gs_RomFolder("gamecube") == NULL);
@@ -84,7 +85,7 @@ int main(void)
         CHECK(Gs_RowPipeline("snes", "Super Mario World 2 - Yoshi's Island", "Super Mario World") == -1);
         CHECK(Gs_RowPipeline("n64", "Super Mario 64 (USA)", "Super Mario 64") >= 0);
         int smb = Gs_FindPipeline("nes", "Super Mario Bros");
-        CHECK(smb >= 0 && strcmp(Gs_CfgValue(&gs_pipelines[smb], "repos/roms/NES/x.nes"), "repos/roms/NES/x.nes") == 0);
+        CHECK(smb >= 0 && strcmp(Gs_CfgValue(&gs_pipelines[smb], "roms/NES/x.nes"), "roms/NES/x.nes") == 0);
         int smw = Gs_FindPipeline("snes", "Super Mario World");
         CHECK(smw >= 0 && strcmp(Gs_CfgValue(&gs_pipelines[smw], "x"), "repos/snes/smw") == 0);
         /* Blast Corps: the dumped ROM name installs it; playable needs its assets + stored ROM */

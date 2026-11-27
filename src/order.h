@@ -4,6 +4,13 @@
 #ifndef NSO_ORDER_H
 #define NSO_ORDER_H
 
+/* Standalone pure-C tests: capacity fallback. main.c defines the real
+ * MAX_GAMES from the catalog sizes before including this header. */
+#ifndef MAX_GAMES
+#define MAX_GAMES 4096
+#endif
+
+
 #include <stddef.h>
 
 typedef enum { ORDER_NAV_LEFT, ORDER_NAV_RIGHT, ORDER_NAV_UP, ORDER_NAV_DOWN } OrderNav;
@@ -67,10 +74,10 @@ void Order_Move(void *base, size_t size, int count, int from, int to)
 
 void Order_Perm(const char *text, const char *const *titles, int count, int *perm)
 {
-    unsigned char used[512] = {0};
+    unsigned char used[MAX_GAMES] = {0};
     int k = 0;
     if (!perm || count <= 0) return;
-    if (count > 512) count = 512;
+    if (count > MAX_GAMES) count = MAX_GAMES;
     for (const char *p = text; p && *p && titles;) {
         const char *e = strchr(p, '\n');
         size_t len = e ? (size_t)(e - p) : strlen(p);

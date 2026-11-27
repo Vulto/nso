@@ -6,6 +6,13 @@
 #ifndef NSO_HIDE_H
 #define NSO_HIDE_H
 
+/* Standalone pure-C tests: capacity fallback. main.c defines the real
+ * MAX_GAMES from the catalog sizes before including this header. */
+#ifndef MAX_GAMES
+#define MAX_GAMES 4096
+#endif
+
+
 #include <stdbool.h>
 
 /* perm[k] = index (into the games array) of the title placed k-th. `order`
@@ -61,9 +68,9 @@ int Hide_Clamp(int idx, int shown)
 void Hide_MergeOrder(const char *oldText, const char *const *titles, int count, int shown,
                      const char **out)
 {
-    int perm[512], next = 0;
+    int perm[MAX_GAMES], next = 0;
     if (!out || !titles || count <= 0) return;
-    if (count > 512) count = 512;
+    if (count > MAX_GAMES) count = MAX_GAMES;
     Order_Perm(oldText ? oldText : "", titles, count, perm);
     for (int k = 0; k < count; k++) {
         int t = perm[k];

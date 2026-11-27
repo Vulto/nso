@@ -157,12 +157,36 @@ int main(void)
     {
         char url[1024];
         const char *want =
-            "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%2064/"
-            "Named_Boxarts/Super%20Mario%2064%20%28USA%29.png";
+            "https://raw.githubusercontent.com/libretro/libretro-thumbnails/master/"
+            "Nintendo%20-%20Nintendo%2064/Named_Boxarts/Super%20Mario%2064%20%28USA%29.png";
         if (Scrape_ImageUrl(url, sizeof(url), "Nintendo - Nintendo 64",
                             "Super Mario 64 (USA).png") != 0
             || strcmp(url, want) != 0) {
             fprintf(stderr, "url %s\n", url);
+            fails++;
+        }
+    }
+    {
+        char url[1024];
+        const char *want =
+            "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_GameCube"
+            "/master/Named_Boxarts/Super%20Mario%20Sunshine%20%28USA%29.png";
+        if (Scrape_ImageUrl(url, sizeof(url), "Nintendo - GameCube",
+                            "Super Mario Sunshine (USA).png") != 0
+            || strcmp(url, want) != 0) {
+            fprintf(stderr, "gc url %s\n", url);
+            fails++;
+        }
+    }
+    {
+        char url[1024];
+        const char *want =
+            "https://raw.githubusercontent.com/libretro-thumbnails/Sega_-_Mega_Drive_-_Genesis"
+            "/master/Named_Boxarts/Sonic%20The%20Hedgehog%20%28USA%29.png";
+        if (Scrape_ImageUrl(url, sizeof(url), "Sega - Mega Drive - Genesis",
+                            "Sonic The Hedgehog (USA).png") != 0
+            || strcmp(url, want) != 0) {
+            fprintf(stderr, "md url %s\n", url);
             fails++;
         }
     }
@@ -257,6 +281,156 @@ int main(void)
         expect_match("Dr. Mario", (const char **)pnames, pcount, "Dr. Mario.dat");
         Scrape_FreeNames(pnames, pcount);
         free(pvals);
+    }
+
+    {   /* Mega Drive: subtitles, ~ aliases, versus/vs, articles, no sequel steal */
+        const char *md[] = {
+            "James Pond 3 - Operation Starfish (USA).png",
+            "James Pond 2 (USA).png",
+            "Super Mario World (USA).png",
+            "Super Mario World 2 - Yoshi's Island (USA).png",
+            "Batman (USA).png",
+            "Batman Returns (USA).png",
+            "Batman Forever (USA).png",
+            "Streets of Rage (USA).png",
+            "Streets of Rage 2 (USA).png",
+            "Streets of Rage II (Japan, Europe) (En,Ja) (Mega Drive Mini, Genesis Mini).png",
+            "Lions vs Tigers and the Playoffs (USA).png",
+            "Dinosaur's Tale, A (USA).png",
+            "Arch Rivals (USA).png",
+            "Arch Rivals - The Arcade Game (USA, Europe).png",
+            "Exo Squad (USA) (Beta).png",
+            "Exo Squad (USA).png",
+            "Itchy _ Scratchy Game, The (USA).png",
+        };
+        expect_match("James Pond 3", md, 17, "James Pond 3 - Operation Starfish (USA).png");
+        expect_match("Super Mario World", md, 17, "Super Mario World (USA).png");
+        expect_match("Batman", md, 17, "Batman (USA).png");
+        expect_match("Bare Knuckle - Ikari no Tetsuken ~ Streets of Rage", md, 17,
+                     "Streets of Rage (USA).png");
+        expect_match("Bare Knuckle II ~ Streets of Rage II", md, 17,
+                     "Streets of Rage 2 (USA).png");
+        expect_match("Lions versus Tigers and the Playoffs", md, 17,
+                     "Lions vs Tigers and the Playoffs (USA).png");
+        expect_match("A Dinosaur's Tale", md, 17, "Dinosaur's Tale, A (USA).png");
+        expect_match("Dinosaur's Tale, A", md, 17, "Dinosaur's Tale, A (USA).png");
+        expect_match("Arch Rivals - The Arcade Game", md, 17,
+                     "Arch Rivals - The Arcade Game (USA, Europe).png");
+        expect_match("Exo Squad", md, 17, "Exo Squad (USA).png");
+        expect_match("Itchy & Scratchy Game, The", md, 17,
+                     "Itchy _ Scratchy Game, The (USA).png");
+    }
+
+    {   /* GameCube: subtitle, publisher prefix, romanization, acronym, combo disc */
+        const char *gc[] = {
+            "All-Star Baseball 2003 (USA).png",
+            "Baseball 2003, The - Battle Ball Park Sengen Perfect Play Pro Yakyuu (Japan).png",
+            "DreamWorks _ Aardman Flushed Away (USA).png",
+            "Nick Jr. Dora the Explorer - Journey to the Purple Planet (USA).png",
+            "SeaWorld Adventure Parks - Shamu's Deep Sea Adventures (USA).png",
+            "TY the Tasmanian Tiger - Night of the Quinkan (USA).png",
+            "TY the Tasmanian Tiger 2 - Bush Rescue (USA).png",
+            "Generation of Chaos Exceed - Yami no Koujo Roze (Japan).png",
+            "Momotarou Dentetsu 12 - Nishi Nihon-hen mo Arimasse! (Japan).png",
+            "Gekitou Pro Yakyuu - Mizushima Shinji All Stars vs. Pro Yakyuu (Japan).png",
+            "Super Robot Taisen GC (Japan).png",
+            "UFC - Throwdown (USA).png",
+            "Legend of Zelda, The - The Wind Waker (USA).png",
+            "Metroid Prime (USA).png",
+            "Hobbit, The - The Prelude to the Lord of the Rings (USA).png",
+        };
+        int n = 15;
+        expect_match("The Baseball 2003", gc, n,
+                     "Baseball 2003, The - Battle Ball Park Sengen Perfect Play Pro Yakyuu (Japan).png");
+        expect_match("Flushed Away", gc, n, "DreamWorks _ Aardman Flushed Away (USA).png");
+        expect_match("Dora the Explorer: Journey to the Purple Planet", gc, n,
+                     "Nick Jr. Dora the Explorer - Journey to the Purple Planet (USA).png");
+        expect_match("Sea World: Shamu's Deep Sea Adventures", gc, n,
+                     "SeaWorld Adventure Parks - Shamu's Deep Sea Adventures (USA).png");
+        expect_match("Ty the Tasmanian Tiger 3: Night of the Quinkan", gc, n,
+                     "TY the Tasmanian Tiger - Night of the Quinkan (USA).png");
+        expect_match("Generation of Chaos Exceed: Yami no Miko Rose", gc, n,
+                     "Generation of Chaos Exceed - Yami no Koujo Roze (Japan).png");
+        expect_match("Momotaro Dentetsu 12", gc, n,
+                     "Momotarou Dentetsu 12 - Nishi Nihon-hen mo Arimasse! (Japan).png");
+        expect_match("Gekit\u014d Pro Yaky\u016b", gc, n,
+                     "Gekitou Pro Yakyuu - Mizushima Shinji All Stars vs. Pro Yakyuu (Japan).png");
+        expect_match("Super Robot Wars GC", gc, n, "Super Robot Taisen GC (Japan).png");
+        expect_match("Ultimate Fighting Championship: Throwdown", gc, n, "UFC - Throwdown (USA).png");
+        expect_match("The Legend of Zelda: The Wind Waker / Metroid Prime", gc, n,
+                     "Legend of Zelda, The - The Wind Waker (USA).png");
+        expect_match("The Hobbit", gc, n, "Hobbit, The - The Prelude to the Lord of the Rings (USA).png");
+    }
+
+    /* Alias stubs: short text pointing at the real Named_Boxarts file. */
+    {
+        const char *tmp = "/tmp/nso-scrape-alias-test";
+        char dst[128];
+        FILE *f = fopen(tmp, "wb");
+        if (f) { fputs("Bible Adventures (USA) (Unl).png", f); fclose(f); }
+        if (!Scrape_AliasTarget(tmp, dst, sizeof(dst)) ||
+            strcmp(dst, "Bible Adventures (USA) (Unl).png") != 0) {
+            fprintf(stderr, "alias target failed: %s\n", dst);
+            fails++;
+        }
+        if (Scrape_LooksLikeImage(tmp)) {
+            fprintf(stderr, "stub looked like image\n");
+            fails++;
+        }
+        f = fopen(tmp, "wb");
+        if (f) { fputs("../evil.png", f); fclose(f); }
+        if (Scrape_AliasTarget(tmp, dst, sizeof(dst))) {
+            fprintf(stderr, "alias accepted path\n");
+            fails++;
+        }
+        f = fopen(tmp, "wb");
+        if (f) { fwrite("\x89PNG\r\n\x1a\n", 1, 8, f); fclose(f); }
+        if (!Scrape_LooksLikeImage(tmp)) {
+            fprintf(stderr, "png magic missed\n");
+            fails++;
+        }
+        if (Scrape_AliasTarget(tmp, dst, sizeof(dst))) {
+            fprintf(stderr, "png accepted as alias\n");
+            fails++;
+        }
+        remove(tmp);
+    }
+
+    {
+        const char *names[] = {
+            "Super Mario Bros. 3 (USA).png",
+            "Super Mario Bros. (Japan).png",
+            "Super Mario Bros. (USA).png",
+            "Dr. Mario 64 (Japan).png",
+            "Dr. Mario 64 (USA).png",
+        };
+        const char *out[8];
+        int n = Scrape_CollectMatches("Super Mario Bros", names, 5, out, 8);
+        if (n != 2) {
+            fprintf(stderr, "collect Super Mario Bros count %d, want 2\n", n);
+            fails++;
+        } else {
+            int sawJp = 0, sawUs = 0, i;
+            for (i = 0; i < n; i++) {
+                if (strcmp(out[i], "Super Mario Bros. (Japan).png") == 0) sawJp = 1;
+                if (strcmp(out[i], "Super Mario Bros. (USA).png") == 0) sawUs = 1;
+            }
+            if (!sawJp || !sawUs) {
+                fprintf(stderr, "collect Super Mario Bros missed a region\n");
+                fails++;
+            }
+        }
+        n = Scrape_CollectMatches("Super Mario Bros. 3", names, 5, out, 8);
+        if (n != 1 || !out[0] || strcmp(out[0], "Super Mario Bros. 3 (USA).png") != 0) {
+            fprintf(stderr, "collect Super Mario Bros. 3 -> %s (n=%d)\n",
+                    (n > 0 && out[0]) ? out[0] : "(null)", n);
+            fails++;
+        }
+        n = Scrape_CollectMatches("No Such Game", names, 5, out, 8);
+        if (n != 0) {
+            fprintf(stderr, "collect missing title n=%d\n", n);
+            fails++;
+        }
     }
 
     return fails ? 1 : 0;

@@ -535,6 +535,9 @@ void Nso_PlatformInit(PlatformEntry *p)
     if (!p || !p->imagePath) {
         return;
     }
+    if (p->texture.id) {
+        return;
+    }
     /* Art is not shipped in the repo: no file -> no texture (name is drawn). */
     if (!FileExists(GetDataPath(p->imagePath))) {
         return;
