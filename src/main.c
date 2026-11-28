@@ -7665,16 +7665,13 @@ static void DrawEnterTransition(void) {
         float r = 0.0f;
         Rectangle tile = SystemTileRect(currentSystem, &r);
         const PlatformEntry *p = ActiveSystem()->platform;
-        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.5f * EnterAnim_GhostProgress(enterT);
+        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.2f * EnterAnim_GhostProgress(enterT);
         if (ga > 0.0f) {
             Rectangle g = { tile.x - tile.width * (k - 1.0f) * 0.5f, tile.y - tile.height * (k - 1.0f) * 0.5f,
                             tile.width * k, tile.height * k };
             Color bg = p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF);
-            for (int i = 3; i >= 1; i--) {   /* soft halo in the tile's colour */
-                float grow = tile.width * 0.03f * (float)i;
-                DrawRectangleRounded((Rectangle){ g.x - grow, g.y - grow, g.width + 2.0f * grow, g.height + 2.0f * grow },
-                                     MENU_CARD_ROUNDNESS, 16, Fade(bg, ga * 0.12f));
-            }
+            /* Switch-like press: small bounce (max 1.2x) and a smooth gaussian halo. */
+            DrawSoftShadow(g, MENU_CARD_ROUNDNESS, 16, ga);
             DrawRectangleRounded(g, MENU_CARD_ROUNDNESS, 16, Fade(bg, ga));
             if (p->texture.id != 0)
                 DrawSystemCardArt(p, g, MENU_CARD_ROUNDNESS * g.width, Fade(WHITE, ga));
