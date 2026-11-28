@@ -5457,6 +5457,8 @@ static void DrawSidebar(Color systemBg, Font font) {
     float slide = 0.5f - 0.5f * cosf(PI * railSlideT);
     bool slid = slide > 0.0f;
     if (slid) { rlPushMatrix(); rlTranslatef(-(sidebarWidth + 1.0f) * slide, 0.0f, 0.0f); }
+    /* Half-strength cover/legend shadow on the exposed edge; follows width and the move-mode slide. */
+    DrawSoftShadow((Rectangle){ 0.0f, 0.0f, sidebarWidth, sh }, 0.0f, 8, 0.5f);
     DrawRectangle(0, 0, (int)sidebarWidth, (int)sh, systemBg);
 
     BeginScissorMode(0, 0, (int)sidebarWidth, (int)sh);
