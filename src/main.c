@@ -3405,7 +3405,7 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     if (opacity <= 0.001f || !text) return;
 
     const float textPad = 10.0f;
-    float fontSize = (float)font.baseSize;
+    float fontSize = (float)font.baseSize + 1.0f;
     float spacing = 2.0f;
     char hintBuf[256];
     const char *draw = Nso_HintTextForProfile(Pad_ActiveProfile(), text, hintBuf, sizeof hintBuf);
@@ -3442,7 +3442,7 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     }
     float barW = textSize.x + textPad * 2.0f;
     if (barW < 40.0f) barW = 40.0f;
-    float barH = 55.0f;
+    float barH = 61.0f;
 
     float screenW = (float)GetScreenWidth();
     float baseY = (float)GetScreenHeight() - 75.0f;
