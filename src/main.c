@@ -2027,8 +2027,8 @@ static const char *InfoBar_Text(InfoBarId id) {
     }
 }
 
-/* Constant scale velocity (units/sec); grow 1→1.18 ≈ 0.10s. No exponential lerp. */
-static const float MOSAIC_SCALE_VEL = 1.8f;
+/* Constant scale velocity (units/sec); grow 1→1.18 ≈ 0.067s (1.5× the old 0.10s). No exponential lerp. */
+static const float MOSAIC_SCALE_VEL = 2.7f;
 /* Outline sits outside the image (draw at -1); keep cursor flush with content edge. */
 static const float MOSAIC_CURSOR_PAD = 1.0f;
 
