@@ -5606,18 +5606,30 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
             }
         } else {
             /* Selected cover only: soft shadow all around, fading in with
-             * the grow animation. 15 px falloff (6 × 2.5), 0.035 alpha. */
+             * the grow animation. 15 px gaussian falloff (16 × 0.9375),
+             * peak alpha 0.315 (1.5× the previous stacked 0.21). */
             float grow = (MOSAIC_SELECT_SCALE > 1.0f)
                 ? (scale - 1.0f) / (MOSAIC_SELECT_SCALE - 1.0f) : 1.0f;
             if (grow < 0.0f) grow = 0.0f;
             if (grow > 1.0f) grow = 1.0f;
             if (grow > 0.0f) {
-                for (int k = 1; k <= 6; k++) {
-                    float g = (float)k * 2.5f;
+                const int layers = 16;
+                const float radius = 15.0f;
+                const float step = radius / (float)layers;
+                const float peak = 0.315f;
+                const float sigma = radius / 2.2f;
+                float aEdge = expf(-(radius / sigma) * (radius / sigma));
+                float denom = 1.0f - aEdge;
+                for (int k = 1; k <= layers; k++) {
+                    float r0 = (float)(k - 1) * step;
+                    float r1 = (float)k * step;
+                    float a0 = expf(-(r0 / sigma) * (r0 / sigma));
+                    float a1 = expf(-(r1 / sigma) * (r1 / sigma));
+                    float alpha = peak * (a0 - a1) / denom;
                     DrawRectangleRounded(
-                        (Rectangle){ draw_x - g, draw_y_scaled - g,
-                                     scaled_w + 2.0f * g, scaled_h + 2.0f * g },
-                        0.04f, 6, Fade(BLACK, 0.035f * grow));
+                        (Rectangle){ draw_x - r1, draw_y_scaled - r1,
+                                     scaled_w + 2.0f * r1, scaled_h + 2.0f * r1 },
+                        0.04f, 8, Fade(BLACK, alpha * grow));
                 }
             }
         }
