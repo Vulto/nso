@@ -470,23 +470,24 @@ static inline int NsoMednafenArgvEx(const char *module, bool pixel, bool scanlin
                             "-sound.device", "sexyal-literal-default",
 #endif
                             rom };
-    /* Mega Drive's mednafen.cfg still has Mednafen's default OSD times
-     * (2500/2000 ms), so "-srwautoenable 1" shows "State rewinding
-     * functionality enabled." NES and SNES already have those times at 0
-     * in their NSO-managed cfg. Pass the same for md; do not edit the cfg. */
-    const char *mdOsd[] = {
+    /* Always pass OSD times 0 on the command line. A first-run Mednafen cfg
+     * (the release tree, a fresh install) keeps the defaults 2500/2000 ms, so
+     * "-srwautoenable 1" would otherwise show "State rewind functionality
+     * enabled." Dev NES/SNES cfgs already have 0; the flags are harmless there
+     * and cover existing release configs without editing them. */
+    const char *osdOff[] = {
         "-osd.message_display_time", "0",
         "-osd.state_display_time", "0",
     };
-    const int mdOsdN = (strcmp(module, "md") == 0) ? 4 : 0;
+    const int osdOffN = 4;
     const int count = (int)(sizeof(words) / sizeof(words[0]));
     for (i = 0; i < count; i++) {
         size_t len;
         if (i == count - 1) {   /* the ROM stays last: extra options go before it */
-            for (int e = 0; e < mdOsdN; e++) {
-                len = strlen(mdOsd[e]) + 1;
+            for (int e = 0; e < osdOffN; e++) {
+                len = strlen(osdOff[e]) + 1;
                 if (n >= max - 1 || used + len > cap) return 0;
-                memcpy(buf + used, mdOsd[e], len);
+                memcpy(buf + used, osdOff[e], len);
                 argv[n++] = buf + used;
                 used += len;
             }
