@@ -7657,11 +7657,11 @@ static void DrawEnterPortsText(float x, float cy, float size, float t, float alp
  * falloff) so no layer keeps a hard rectangle outline: a soft bloom in the
  * tile's own colour around the unscaled tile, and a semi-transparent art
  * copy that scales up from the centre while its edges fade. */
-static const float ENTER_GLOW_RADIUS = 25.0f;   /* ~20-30 px bleed */
+static const float ENTER_GLOW_RADIUS = 28.75f;  /* 25px * 1.15, slightly farther bleed */
 static const float ENTER_GLOW_PEAK   = 0.75f;
 static const float ENTER_GHOST_FEATHER_IN  = 12.0f;
 static const float ENTER_GHOST_FEATHER_OUT =  8.0f;
-static const float ENTER_GHOST_BAKE        =  1.2f;
+static const float ENTER_GHOST_BAKE        =  1.25f;
 
 static Texture2D enterGlowTex;
 static int enterGlowW, enterGlowH;
@@ -7899,10 +7899,10 @@ static void DrawEnterTransition(void) {
         Rectangle tile = SystemTileRect(currentSystem, &r);
         const PlatformEntry *p = ActiveSystem()->platform;
         float gp = EnterAnim_GhostProgress(enterT);
-        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.2f * gp;
+        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.25f * gp;
         if (ga > 0.0f) {
             Color bg = p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF);
-            /* Soft colour bloom around the still tile, then a fading 1.0-1.2x
+            /* Soft colour bloom around the still tile, then a fading 1.0-1.25x
              * copy of the art; both use a smooth SDF falloff, no hard edges. */
             DrawEnterGlow(tile, r, bg, ga);
             DrawSystemTileBody(p, tile, r);
