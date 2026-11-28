@@ -3367,6 +3367,35 @@ static void Hint_N64Draw(Font font, const char *text, Vector2 pos, float fontSiz
     }
 }
 
+
+/* Soft shadow shared by the selected cover and the bottom button-legend
+ * bars: 15 px gaussian falloff, 16 steps, peak alpha 0.315. `alpha` scales
+ * the peak (cover grow, or the bar's own opacity). */
+static const int SOFT_SHADOW_LAYERS = 16;
+static const float SOFT_SHADOW_RADIUS = 15.0f;
+static const float SOFT_SHADOW_PEAK = 0.315f;
+
+static void DrawSoftShadow(Rectangle rec, float roundness, int segments, float alpha)
+{
+    if (alpha <= 0.0f) return;
+    const float sigma = SOFT_SHADOW_RADIUS / 2.2f;
+    const float step = SOFT_SHADOW_RADIUS / (float)SOFT_SHADOW_LAYERS;
+    float aEdge = expf(-(SOFT_SHADOW_RADIUS / sigma) * (SOFT_SHADOW_RADIUS / sigma));
+    float denom = 1.0f - aEdge;
+    if (denom <= 0.0f) return;
+    for (int k = 1; k <= SOFT_SHADOW_LAYERS; k++) {
+        float r0 = (float)(k - 1) * step;
+        float r1 = (float)k * step;
+        float a0 = expf(-(r0 / sigma) * (r0 / sigma));
+        float a1 = expf(-(r1 / sigma) * (r1 / sigma));
+        float a = SOFT_SHADOW_PEAK * (a0 - a1) / denom;
+        DrawRectangleRounded(
+            (Rectangle){ rec.x - r1, rec.y - r1,
+                         rec.width + 2.0f * r1, rec.height + 2.0f * r1 },
+            roundness, segments, Fade(BLACK, a * alpha));
+    }
+}
+
 static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySlide) {
     /* When the hint labels switch, reuse the stock close/open: multiply the
      * caller's opacity by padWatch.fade and add the stock slide on top.
@@ -3430,6 +3459,7 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
         .height = barH
     };
 
+    DrawSoftShadow(rec, 0.35f, 8, opacity);
     DrawRectangleRounded(
         rec,
         0.35f,
@@ -5605,32 +5635,14 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                                      0.04f, 6, Fade(BLACK, 0.07f * mv));
             }
         } else {
-            /* Selected cover only: soft shadow all around, fading in with
-             * the grow animation. 15 px gaussian falloff (16 × 0.9375),
-             * peak alpha 0.315 (1.5× the previous stacked 0.21). */
+            /* Selected cover: the shared soft shadow, fading in with grow. */
             float grow = (MOSAIC_SELECT_SCALE > 1.0f)
                 ? (scale - 1.0f) / (MOSAIC_SELECT_SCALE - 1.0f) : 1.0f;
             if (grow < 0.0f) grow = 0.0f;
             if (grow > 1.0f) grow = 1.0f;
             if (grow > 0.0f) {
-                const int layers = 16;
-                const float radius = 15.0f;
-                const float step = radius / (float)layers;
-                const float peak = 0.315f;
-                const float sigma = radius / 2.2f;
-                float aEdge = expf(-(radius / sigma) * (radius / sigma));
-                float denom = 1.0f - aEdge;
-                for (int k = 1; k <= layers; k++) {
-                    float r0 = (float)(k - 1) * step;
-                    float r1 = (float)k * step;
-                    float a0 = expf(-(r0 / sigma) * (r0 / sigma));
-                    float a1 = expf(-(r1 / sigma) * (r1 / sigma));
-                    float alpha = peak * (a0 - a1) / denom;
-                    DrawRectangleRounded(
-                        (Rectangle){ draw_x - r1, draw_y_scaled - r1,
-                                     scaled_w + 2.0f * r1, scaled_h + 2.0f * r1 },
-                        0.04f, 8, Fade(BLACK, alpha * grow));
-                }
+                DrawSoftShadow((Rectangle){ draw_x, draw_y_scaled, scaled_w, scaled_h },
+                               0.04f, 8, grow);
             }
         }
 
