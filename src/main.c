@@ -7653,31 +7653,43 @@ static void DrawEnterPortsText(float x, float cy, float size, float t, float alp
     }
 }
 
-/* Enter-a-system glow and ghost. Both are texture-based (signed-distance
- * falloff) so no layer keeps a hard rectangle outline: a soft bloom in the
- * tile's own colour around the unscaled tile, and a semi-transparent art
- * copy that scales up from the centre while its edges fade. */
-static const float ENTER_GLOW_RADIUS = 28.75f;  /* 25px * 1.15, slightly farther bleed */
+/* Enter-a-system glow and ghost. The bloom and the ghost feather are
+ * evaluated per fragment in float (SDF gaussian / smoothstep) with a
+ * 1/255 dither so the 8-bit back buffer does not show banding; nothing
+ * is stacked as discrete rectangles. */
+static const float ENTER_GLOW_RADIUS = 40.0f;   /* visibly farther than the 25px of ec8160c */
 static const float ENTER_GLOW_PEAK   = 0.75f;
 static const float ENTER_GHOST_FEATHER_IN  = 12.0f;
 static const float ENTER_GHOST_FEATHER_OUT =  8.0f;
 static const float ENTER_GHOST_BAKE        =  1.25f;
 
-static Texture2D enterGlowTex;
-static int enterGlowW, enterGlowH;
-static float enterGlowCard, enterGlowRad;
-static Color enterGlowCol;
+static Shader enterFalloffSh;
+static int enterFoModeLoc = -1;
+static int enterFoDestLoc = -1;
+static int enterFoHalfLoc = -1;
+static int enterFoRadLoc  = -1;
+static int enterFoGlowRLoc = -1;
+static int enterFoPeakLoc = -1;
+static int enterFoColLoc  = -1;
+static int enterFoFinLoc  = -1;
+static int enterFoFoutLoc = -1;
+static bool enterFalloffOk = false;
+static bool enterFalloffTried = false;
+static Texture2D enterWhiteTex;
 
 static RenderTexture2D enterGhostRT;
 static float enterGhostCard, enterGhostRad;
 static int enterGhostTexId = -1;
 static Color enterGhostBg;
 
-static void EnterGlow_Unload(void)
+static void EnterFalloff_Unload(void)
 {
-    if (enterGlowTex.id) UnloadTexture(enterGlowTex);
-    enterGlowTex = (Texture2D){ 0 };
-    enterGlowW = enterGlowH = 0;
+    if (enterFalloffSh.id) UnloadShader(enterFalloffSh);
+    enterFalloffSh = (Shader){ 0 };
+    enterFalloffOk = false;
+    enterFalloffTried = false;
+    if (enterWhiteTex.id) UnloadTexture(enterWhiteTex);
+    enterWhiteTex = (Texture2D){ 0 };
 }
 
 static void EnterGhost_Unload(void)
@@ -7685,6 +7697,83 @@ static void EnterGhost_Unload(void)
     if (enterGhostRT.id) UnloadRenderTexture(enterGhostRT);
     enterGhostRT = (RenderTexture2D){ 0 };
     enterGhostTexId = -1;
+}
+
+static bool EnterFalloff_Ensure(void)
+{
+    if (enterFalloffTried) return enterFalloffOk;
+    enterFalloffTried = true;
+    const char *fs =
+        "#version 330\n"
+        "in vec2 fragTexCoord;\n"
+        "in vec4 fragColor;\n"
+        "out vec4 finalColor;\n"
+        "uniform sampler2D texture0;\n"
+        "uniform int mode;\n"
+        "uniform vec2 destSize;\n"
+        "uniform vec2 halfExt;\n"
+        "uniform float cornerRad;\n"
+        "uniform float glowR;\n"
+        "uniform float peak;\n"
+        "uniform vec4 glowCol;\n"
+        "uniform float featherIn;\n"
+        "uniform float featherOut;\n"
+        "float sdRoundBox(vec2 p, vec2 b, float r) {\n"
+        "    vec2 q = abs(p) - (b - vec2(r));\n"
+        "    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
+        "}\n"
+        "float ign(vec2 p) {\n"
+        "    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));\n"
+        "}\n"
+        "void main() {\n"
+        "    vec2 p = (fragTexCoord - 0.5) * destSize;\n"
+        "    float r = cornerRad;\n"
+        "    float hm = min(halfExt.x, halfExt.y);\n"
+        "    if (r > hm) r = hm;\n"
+        "    if (r < 0.5) r = 0.5;\n"
+        "    float d = sdRoundBox(p, halfExt, r);\n"
+        "    if (mode == 0) {\n"
+        "        float sigma = glowR / 2.2;\n"
+        "        float aEdge = exp(-(glowR / sigma) * (glowR / sigma));\n"
+        "        float a = 0.0;\n"
+        "        if (d <= 0.0) a = peak;\n"
+        "        else if (d < glowR) {\n"
+        "            float fall = exp(-(d / sigma) * (d / sigma));\n"
+        "            a = peak * (fall - aEdge) / (1.0 - aEdge);\n"
+        "        }\n"
+        "        a *= fragColor.a;\n"
+        "        a = clamp(a + (ign(gl_FragCoord.xy) - 0.5) / 255.0, 0.0, 1.0);\n"
+        "        finalColor = vec4(glowCol.rgb, a);\n"
+        "    } else {\n"
+        "        vec4 tex = texture(texture0, fragTexCoord) * fragColor;\n"
+        "        float span = featherIn + featherOut;\n"
+        "        if (span < 0.5) span = 0.5;\n"
+        "        float t = (featherOut - d) / span;\n"
+        "        t = clamp(t, 0.0, 1.0);\n"
+        "        t = t * t * (3.0 - 2.0 * t);\n"
+        "        t = clamp(t + (ign(gl_FragCoord.xy) - 0.5) / 255.0, 0.0, 1.0);\n"
+        "        finalColor = tex * t;\n"
+        "    }\n"
+        "}\n";
+    enterFalloffSh = LoadShaderFromMemory(NULL, fs);
+    enterFalloffOk = (enterFalloffSh.id > 0);
+    if (enterFalloffOk) {
+        enterFoModeLoc  = GetShaderLocation(enterFalloffSh, "mode");
+        enterFoDestLoc  = GetShaderLocation(enterFalloffSh, "destSize");
+        enterFoHalfLoc  = GetShaderLocation(enterFalloffSh, "halfExt");
+        enterFoRadLoc   = GetShaderLocation(enterFalloffSh, "cornerRad");
+        enterFoGlowRLoc = GetShaderLocation(enterFalloffSh, "glowR");
+        enterFoPeakLoc  = GetShaderLocation(enterFalloffSh, "peak");
+        enterFoColLoc   = GetShaderLocation(enterFalloffSh, "glowCol");
+        enterFoFinLoc   = GetShaderLocation(enterFalloffSh, "featherIn");
+        enterFoFoutLoc  = GetShaderLocation(enterFalloffSh, "featherOut");
+    }
+    if (!enterWhiteTex.id) {
+        Image img = GenImageColor(1, 1, WHITE);
+        enterWhiteTex = LoadTextureFromImage(img);
+        UnloadImage(img);
+    }
+    return enterFalloffOk && enterWhiteTex.id != 0;
 }
 
 static void DrawSystemTileBody(const PlatformEntry *p, Rectangle dst, float r)
@@ -7707,120 +7796,15 @@ static void DrawSystemTileBody(const PlatformEntry *p, Rectangle dst, float r)
         DrawSystemCardArt(p, dst, r, WHITE);
 }
 
-static bool EnterGlow_Ensure(float card, float rad, Color col)
-{
-    const float sigma = ENTER_GLOW_RADIUS / 2.2f;
-    float reach = ENTER_GLOW_RADIUS + 1.5f;
-    int w = (int)ceilf(card + 2.0f * reach);
-    int h = w;
-    int x, y;
-    float cx, cy, hx, hy, aEdge, denom;
-    Color *pix;
-    Image img;
-
-    if (w < 2) w = 2;
-    if (h < 2) h = 2;
-    if (enterGlowTex.id && enterGlowW == w && enterGlowH == h
-        && fabsf(enterGlowCard - card) < 0.01f && fabsf(enterGlowRad - rad) < 0.01f
-        && enterGlowCol.r == col.r && enterGlowCol.g == col.g && enterGlowCol.b == col.b)
-        return true;
-
-    EnterGlow_Unload();
-    pix = (Color *)RL_CALLOC((size_t)w * (size_t)h, sizeof(Color));
-    if (!pix) return false;
-    cx = (float)w * 0.5f;
-    cy = (float)h * 0.5f;
-    hx = card * 0.5f;
-    hy = card * 0.5f;
-    if (rad > hx) rad = hx;
-    if (rad < 0.5f) rad = 0.5f;
-    aEdge = expf(-(ENTER_GLOW_RADIUS / sigma) * (ENTER_GLOW_RADIUS / sigma));
-    denom = 1.0f - aEdge;
-    if (denom <= 0.0f) { RL_FREE(pix); return false; }
-    for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-            float px = (float)x + 0.5f - cx;
-            float py = (float)y + 0.5f - cy;
-            float d = SdRoundBox(px, py, hx, hy, rad);
-            float a, fall;
-            if (d <= 0.0f) a = ENTER_GLOW_PEAK;
-            else if (d >= ENTER_GLOW_RADIUS) a = 0.0f;
-            else {
-                fall = expf(-(d / sigma) * (d / sigma));
-                a = ENTER_GLOW_PEAK * (fall - aEdge) / denom;
-            }
-            pix[y * w + x] = (Color){
-                col.r, col.g, col.b,
-                (unsigned char)(a * 255.0f + 0.5f)
-            };
-        }
-    }
-    img = (Image){
-        .data = pix, .width = w, .height = h, .mipmaps = 1,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-    };
-    enterGlowTex = LoadTextureFromImage(img);
-    RL_FREE(pix);
-    if (!enterGlowTex.id) return false;
-    SetTextureFilter(enterGlowTex, TEXTURE_FILTER_BILINEAR);
-    SetTextureWrap(enterGlowTex, TEXTURE_WRAP_CLAMP);
-    enterGlowW = w;
-    enterGlowH = h;
-    enterGlowCard = card;
-    enterGlowRad = rad;
-    enterGlowCol = col;
-    return true;
-}
-
-static Texture2D EnterMakeSoftRectMask(int w, int h, float recW, float recH, float rad,
-                                       float featherIn, float featherOut)
-{
-    Color *pix = (Color *)RL_CALLOC((size_t)w * (size_t)h, sizeof(Color));
-    Texture2D tex = { 0 };
-    Image img;
-    float cx = (float)w * 0.5f, cy = (float)h * 0.5f;
-    float hx = recW * 0.5f, hy = recH * 0.5f;
-    float span = featherIn + featherOut;
-    int x, y;
-    if (!pix) return tex;
-    if (rad > hx) rad = hx;
-    if (rad < 0.5f) rad = 0.5f;
-    if (span < 0.5f) span = 0.5f;
-    for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-            float px = (float)x + 0.5f - cx;
-            float py = (float)y + 0.5f - cy;
-            float d = SdRoundBox(px, py, hx, hy, rad);
-            float t = (featherOut - d) / span;
-            if (t < 0.0f) t = 0.0f;
-            if (t > 1.0f) t = 1.0f;
-            t = t * t * (3.0f - 2.0f * t);
-            pix[y * w + x] = (Color){ 255, 255, 255, (unsigned char)(t * 255.0f + 0.5f) };
-        }
-    }
-    img = (Image){
-        .data = pix, .width = w, .height = h, .mipmaps = 1,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-    };
-    tex = LoadTextureFromImage(img);
-    RL_FREE(pix);
-    if (tex.id) {
-        SetTextureFilter(tex, TEXTURE_FILTER_BILINEAR);
-        SetTextureWrap(tex, TEXTURE_WRAP_CLAMP);
-    }
-    return tex;
-}
-
 static bool EnterGhost_Ensure(const PlatformEntry *p, float card, float rad)
 {
     Color bg = (p && p->texture.id != 0) ? p->bg : GetColor(0x3A3A3AFF);
     int texId = (p && p->texture.id) ? p->texture.id : 0;
-    float pad = ENTER_GHOST_FEATHER_OUT + 1.5f;
+    float pad = ENTER_GHOST_FEATHER_OUT + 2.0f;
     float rec = card * ENTER_GHOST_BAKE;
     float recRad = rad * ENTER_GHOST_BAKE;
     int size = (int)ceilf(rec + 2.0f * pad);
     Rectangle dst;
-    Texture2D mask;
     if (size < 2) size = 2;
     if (enterGhostRT.id && fabsf(enterGhostCard - card) < 0.01f
         && fabsf(enterGhostRad - rad) < 0.01f
@@ -7836,18 +7820,6 @@ static bool EnterGhost_Ensure(const PlatformEntry *p, float card, float rad)
     BeginTextureMode(enterGhostRT);
     ClearBackground((Color){ 0, 0, 0, 0 });
     DrawSystemTileBody(p, dst, recRad);
-    mask = EnterMakeSoftRectMask(size, size, rec, rec, recRad,
-                                 ENTER_GHOST_FEATHER_IN, ENTER_GHOST_FEATHER_OUT);
-    if (mask.id) {
-        /* Colour and alpha of the baked tile are multiplied by the soft mask
-         * so the hard rounded-rect / art edge disappears. */
-        rlSetBlendFactorsSeparate(RL_ZERO, RL_SRC_ALPHA, RL_ZERO, RL_SRC_ALPHA,
-                                  RL_FUNC_ADD, RL_FUNC_ADD);
-        BeginBlendMode(BLEND_CUSTOM_SEPARATE);
-        DrawTexture(mask, 0, 0, WHITE);
-        EndBlendMode();
-        UnloadTexture(mask);
-    }
     EndTextureMode();
     enterGhostCard = card;
     enterGhostRad = rad;
@@ -7858,32 +7830,79 @@ static bool EnterGhost_Ensure(const PlatformEntry *p, float card, float rad)
 
 static void DrawEnterGlow(Rectangle tile, float rad, Color col, float alpha)
 {
-    float tw, th;
+    float pad, dw, dh, glowR, peak;
+    int mode = 0;
+    float dest[2], half[2], gcol[4];
     if (alpha <= 0.0f) return;
-    if (!EnterGlow_Ensure(tile.width, rad, col)) return;
-    tw = (float)enterGlowW;
-    th = (float)enterGlowH;
-    DrawTexturePro(enterGlowTex,
-                   (Rectangle){ 0, 0, tw, th },
-                   (Rectangle){ tile.x + (tile.width - tw) * 0.5f,
-                                tile.y + (tile.height - th) * 0.5f, tw, th },
+    if (!EnterFalloff_Ensure()) return;
+    pad = ENTER_GLOW_RADIUS + 2.0f;
+    dw = tile.width + 2.0f * pad;
+    dh = tile.height + 2.0f * pad;
+    dest[0] = dw; dest[1] = dh;
+    half[0] = tile.width * 0.5f; half[1] = tile.height * 0.5f;
+    gcol[0] = (float)col.r / 255.0f;
+    gcol[1] = (float)col.g / 255.0f;
+    gcol[2] = (float)col.b / 255.0f;
+    gcol[3] = 1.0f;
+    BeginShaderMode(enterFalloffSh);
+    SetShaderValue(enterFalloffSh, enterFoModeLoc, &mode, SHADER_UNIFORM_INT);
+    SetShaderValue(enterFalloffSh, enterFoDestLoc, dest, SHADER_UNIFORM_VEC2);
+    SetShaderValue(enterFalloffSh, enterFoHalfLoc, half, SHADER_UNIFORM_VEC2);
+    SetShaderValue(enterFalloffSh, enterFoRadLoc, &rad, SHADER_UNIFORM_FLOAT);
+    glowR = ENTER_GLOW_RADIUS;
+    peak = ENTER_GLOW_PEAK;
+    SetShaderValue(enterFalloffSh, enterFoGlowRLoc, &glowR, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(enterFalloffSh, enterFoPeakLoc, &peak, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(enterFalloffSh, enterFoColLoc, gcol, SHADER_UNIFORM_VEC4);
+    DrawTexturePro(enterWhiteTex,
+                   (Rectangle){ 0, 0, 1, 1 },
+                   (Rectangle){ tile.x - pad, tile.y - pad, dw, dh },
                    (Vector2){ 0, 0 }, 0.0f, Fade(WHITE, alpha));
+    EndShaderMode();
 }
 
 static void DrawEnterGhost(const PlatformEntry *p, Rectangle tile, float rad,
                            float k, float alpha)
 {
-    float s, dw, dh, cx, cy;
+    float s, dw, dh, cx, cy, fin, fout, crad;
+    int mode = 1;
+    float dest[2], half[2];
     if (alpha <= 0.0f) return;
     if (!EnterGhost_Ensure(p, tile.width, rad)) return;
+    if (!EnterFalloff_Ensure()) {
+        /* Shader unavailable: blit the hard-edged bake rather than skip the ghost. */
+        s = k / ENTER_GHOST_BAKE;
+        dw = (float)enterGhostRT.texture.width * s;
+        dh = (float)enterGhostRT.texture.height * s;
+        cx = tile.x + tile.width * 0.5f;
+        cy = tile.y + tile.height * 0.5f;
+        DrawRT(enterGhostRT.texture,
+               (Rectangle){ cx - dw * 0.5f, cy - dh * 0.5f, dw, dh },
+               Fade(WHITE, alpha));
+        return;
+    }
     s = k / ENTER_GHOST_BAKE;
     dw = (float)enterGhostRT.texture.width * s;
     dh = (float)enterGhostRT.texture.height * s;
     cx = tile.x + tile.width * 0.5f;
     cy = tile.y + tile.height * 0.5f;
+    dest[0] = dw; dest[1] = dh;
+    half[0] = tile.width * k * 0.5f;
+    half[1] = tile.height * k * 0.5f;
+    crad = rad * k;
+    fin = ENTER_GHOST_FEATHER_IN * s;
+    fout = ENTER_GHOST_FEATHER_OUT * s;
+    BeginShaderMode(enterFalloffSh);
+    SetShaderValue(enterFalloffSh, enterFoModeLoc, &mode, SHADER_UNIFORM_INT);
+    SetShaderValue(enterFalloffSh, enterFoDestLoc, dest, SHADER_UNIFORM_VEC2);
+    SetShaderValue(enterFalloffSh, enterFoHalfLoc, half, SHADER_UNIFORM_VEC2);
+    SetShaderValue(enterFalloffSh, enterFoRadLoc, &crad, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(enterFalloffSh, enterFoFinLoc, &fin, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(enterFalloffSh, enterFoFoutLoc, &fout, SHADER_UNIFORM_FLOAT);
     DrawRT(enterGhostRT.texture,
            (Rectangle){ cx - dw * 0.5f, cy - dh * 0.5f, dw, dh },
            Fade(WHITE, alpha));
+    EndShaderMode();
 }
 
 /* Pressing A on a system tile (enteranim.h): the tile's art lifts off as a fading ghost while a
@@ -9639,7 +9658,7 @@ int main(int argc, char **argv) {
     }
     MenuBarCursorTex_Unload();
     SysCursorTex_Unload();
-    EnterGlow_Unload();
+    EnterFalloff_Unload();
     EnterGhost_Unload();
     if (statusPadN64Loaded) {
         UnloadTexture(statusPadN64);
