@@ -26,7 +26,8 @@ typedef enum {
     STATUS_TAB_COUNT
 } StatusTab;
 
-enum { STATUS_EMU_ALL = 0, STATUS_EMU_SELECT, STATUS_EMU_N };
+/* One left action ("Download all box arts"), not in the focus cycle. */
+enum { STATUS_EMU_ACTIONS = 1 };
 
 static StatusRow statusRows[STATUS_MAX_ROWS];
 static int statusRowCount = 0, statusTop = 0;
@@ -114,8 +115,7 @@ static void Status_EmuUnloadPrev(void) {
 static void Status_EmuRefreshRoms(void) {
     int last;
     statusEmuRomN = ScrapeMenu_ListRoms(statusEmuRoms, MAX_GAMES);
-    last = STATUS_EMU_N - 1;
-    if (statusEmuRomN > 0) last = STATUS_EMU_N - 1 + statusEmuRomN;
+    last = statusEmuRomN > 0 ? statusEmuRomN - 1 : 0;
     if (statusEmuRow > last) statusEmuRow = last;
     if (statusEmuRow < 0) statusEmuRow = 0;
 }
@@ -123,10 +123,8 @@ static void Status_EmuRefreshRoms(void) {
 static int Status_EmuFocusCatalog(void) {
     if (gsOpen) return GameSel_FocusCatalog();
     if (ScrapeMenu_Choosing()) return ScrapeMenu_ChoiceGame();
-    if (statusEmuRow >= STATUS_EMU_N) {
-        int i = statusEmuRow - STATUS_EMU_N;
-        if (i >= 0 && i < statusEmuRomN) return statusEmuRoms[i];
-    }
+    if (statusEmuRow >= 0 && statusEmuRow < statusEmuRomN)
+        return statusEmuRoms[statusEmuRow];
     return -1;
 }
 
@@ -245,18 +243,13 @@ static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack,
     }
 
     if (statusTab == STATUS_TAB_EMU) {
-        int last = STATUS_EMU_N - 1;
-        if (statusEmuRomN > 0) last = STATUS_EMU_N - 1 + statusEmuRomN;
-        if (up && statusEmuRow > 0) { statusEmuRow--; Sfx_Play(SFX_PLUCK); }
-        if (down && statusEmuRow < last) { statusEmuRow++; Sfx_Play(SFX_PLUCK); }
+        if (statusEmuRomN > 0) {
+            if (up && statusEmuRow > 0) { statusEmuRow--; Sfx_Play(SFX_PLUCK); }
+            if (down && statusEmuRow < statusEmuRomN - 1) { statusEmuRow++; Sfx_Play(SFX_PLUCK); }
+        }
         if (ok) {
-            if (statusEmuRow == STATUS_EMU_ALL) {
-                Sfx_Play(SFX_CLICK);
-                ScrapeMenu_StartFromRoms(0);
-            } else if (statusEmuRow == STATUS_EMU_SELECT) {
-                Sfx_Play(SFX_CLICK);
-                GameSel_OpenRoms();
-            }
+            Sfx_Play(SFX_CLICK);
+            ScrapeMenu_StartFromRoms(0);
         }
         return;
     }
@@ -463,7 +456,6 @@ static void Status_DrawEmu(Font font, Rectangle card, float lw, float a,
     float rw = rr - rx;
     int choosing = ScrapeMenu_Choosing();
     float artTop;
-    static const StrId actions[STATUS_EMU_N] = { S_EMU_DOWNLOAD_ALL, S_GS_SELECT };
     float rowH = sh * 0.070f, bh = sh * 0.056f;
 
     if (scrapeBusy) statusEmuSawBusy = 1;
@@ -474,22 +466,17 @@ static void Status_DrawEmu(Font font, Rectangle card, float lw, float a,
         statusEmuSawBusy = 0;
     }
 
-    Details_Text(font, T(S_MANAGE_COVERS), (Vector2){ lx, top }, sh * 0.030f, lcw, Fade(meta, a));
-    artTop = top + sh * 0.055f;
+    /* Align the remaining left action with the first row of the right-hand
+     * list (same y, row height and box size). Preview starts below it. */
+    artTop = top;
     if (!gsOpen && !choosing) {
-        int k;
         char status[192] = "";
-        for (k = 0; k < STATUS_EMU_N; k++) {
-            float y = top + sh * 0.055f + rowH * (float)k;
-            bool cur = !scrapeBusy && statusEmuRow == k;
-            Rectangle box = { lx, y - bh * 0.5f, lcw, bh };
-            Color tc = Fade(cur ? (Color){ 255, 255, 255, 255 } : ink, a);
-            if (cur) DrawRectangleRounded(box, 0.3f, 6, Fade(ink, a));
-            else DrawRectangleRoundedLinesEx(box, 0.3f, 6, 1.5f, Fade(line, a));
-            Details_Text(font, T(actions[k]), (Vector2){ lx + sh * 0.018f, y - sh * 0.014f },
-                         sh * 0.026f, lcw - sh * 0.03f, tc);
-        }
-        artTop = top + sh * 0.055f + rowH * (float)STATUS_EMU_N + sh * 0.01f;
+        float y = top + sh * 0.036f;
+        Rectangle box = { lx, y - bh * 0.5f, lcw, bh };
+        DrawRectangleRoundedLinesEx(box, 0.3f, 6, 1.5f, Fade(line, a));
+        Details_Text(font, T(S_EMU_DOWNLOAD_ALL), (Vector2){ lx + sh * 0.018f, y - sh * 0.014f },
+                     sh * 0.026f, lcw - sh * 0.03f, Fade(ink, a));
+        artTop = top + sh * 0.036f + rowH * (float)STATUS_EMU_ACTIONS + sh * 0.01f;
         Msg_Format(&scrapeMsg, status, sizeof(status));
         if (status[0]) {
             Details_Text(font, status, (Vector2){ lx, artTop }, sh * 0.024f, lcw, Fade(meta, a));
@@ -542,7 +529,7 @@ static void Status_DrawEmu(Font font, Rectangle card, float lw, float a,
 
         vis = (int)((bot - listY - sh * 0.01f) / rowH);
         if (vis < 1) vis = 1;
-        focus = statusEmuRow - STATUS_EMU_N;
+        focus = statusEmuRow;
         if (focus >= 0) {
             if (focus < statusEmuListTop) statusEmuListTop = focus;
             if (focus >= statusEmuListTop + vis) statusEmuListTop = focus - vis + 1;
@@ -555,7 +542,7 @@ static void Status_DrawEmu(Font font, Rectangle card, float lw, float a,
         for (k = 0; k < vis && statusEmuListTop + k < statusEmuRomN; k++) {
             int idx = statusEmuRoms[statusEmuListTop + k];
             float y = listY + sh * 0.036f + rowH * (float)k;
-            bool cur = !scrapeBusy && statusEmuRow == STATUS_EMU_N + statusEmuListTop + k;
+            bool cur = !scrapeBusy && statusEmuRow == statusEmuListTop + k;
             Rectangle box = { rx, y - bh * 0.5f, rw, bh };
             Color tc = Fade(cur ? (Color){ 255, 255, 255, 255 } : ink, a);
             Texture2D tex;

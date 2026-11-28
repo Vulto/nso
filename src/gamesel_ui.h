@@ -183,44 +183,6 @@ static void GameSel_Open(void) {
     gsCount = n;
 }
 
-/* ROM-folder list only (no wiki titles). Used by the Emulated tab. */
-static void GameSel_OpenRoms(void) {
-    int idx[GS_MAX_ROWS];
-    int n, i, gc = ActiveGameTotal();
-    GameEntry *games = ActiveGames();
-
-    gsOpen = true;
-    gsSys = currentSystem;
-    gsCount = 0;
-    gsCursor = 0;
-    gsTop = 0;
-    gsWikiMode = false;
-    gsCoverOnly = true;
-    gsWikiN = 0;
-    Msg_Clear(&gsMsg);
-    for (i = 0; i < GS_MAX_ROWS; i++) gsFetch[i] = NsoProcNone();
-
-    if (gc > MAX_GAMES) gc = MAX_GAMES;
-    n = ScrapeMenu_ListRoms(idx, GS_MAX_ROWS);
-    n = ScrapeMenu_AddCatalogCovers(idx, n, GS_MAX_ROWS);
-    for (i = 0; i < n; i++) {
-        int cat = idx[i];
-        GsRow *r = &gsRows[i];
-        r->game = cat;
-        r->pipe = (cat >= 0 && cat < gc && games[cat].title)
-            ? Gs_FindPipeline(ActiveSystem()->platform->id, games[cat].title) : -1;
-        r->on = false;
-        r->st = GS_IDLE;
-        if (cat >= 0 && cat < gc && games[cat].rom && games[cat].rom[0])
-            snprintf(gsRomRel[i], sizeof(gsRomRel[i]), "%s", games[cat].rom);
-        else
-            gsRomRel[i][0] = '\0';
-        snprintf(gsLabel[i], sizeof(gsLabel[i]), "%s",
-                 (cat >= 0 && cat < gc && games[cat].title) ? games[cat].title : "");
-    }
-    gsCount = n;
-}
-
 /* Kill a step and everything it started (its own session: setsid). */
 static void GameSel_Kill(NsoProc p) {
 #ifndef _WIN32

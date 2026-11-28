@@ -59,7 +59,9 @@ candidates (closest size if none match exactly; a single image is used as-is),
 looking past dated or hack names so an official 512x731 is not missed.
 The release binary now also embeds the UI sound effects (the same files
 under `assets/sounds/` that the dev build loads from disk), so a tarball
-install plays them without a sounds directory.
+install plays them without a sounds directory. The Emulated tab no longer
+has a "Select games" action or an "Image scraping" heading; Up/Down move
+only the game list on the right, and A starts "Download all box arts".
 
 ## [0.2.0] - 2026-11-27
 
