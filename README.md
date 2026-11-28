@@ -147,9 +147,19 @@ needed.
 | Organization sidebar | O | |
 | Sort panel | T | C-Right on the N64 pad |
 
-On the main menu, Down moves to the dock: **Downloads** (no action yet) and
+On the main menu, Down moves to the dock: **Downloads** (the self-updater) and
 **Power**. Power opens a dialog with **Shut down**, **Close NSO**, and
 **Cancel** (Cancel is the default).
+
+**Updates.** The release build checks the latest Vulto/nso GitHub release in the
+background at startup (silent when offline, never blocks the UI). If its tag is
+newer than the running version, the Downloads icon glows, and while the cursor
+is on it a short note says which version is available. Pressing it downloads the
+release's linux tarball, verifies it (SHA-256 when GitHub publishes one, plus
+structure and ELF checks), swaps `nso`, the bundled `mednafen` and
+`nso-norumble.so` in with atomic renames (rolled back on failure) and restarts
+NSO. With no update the button does nothing. Source/dev builds never self-update.
+`NSO_UPDATE_API` overrides the API URL (a `file://` JSON works) for testing.
 
 In the status menu's **Emulated** tab, **Download all box arts** scrapes a
 cover for every detected ROM, and **Select games** lets you pick a subset

@@ -20,6 +20,12 @@ shows the current system name, Details version chevrons render, and the Mega
 Drive card logo is no longer cropped. README install and key docs are updated
 (S opens the status menu; Power offers Shut down / Close NSO / Cancel).
 
+The Downloads button in the dock is now a self-updater. At startup NSO checks
+the latest Vulto/nso release in the background (silent offline, never blocks).
+When a newer tag exists the icon glows and, while selected, a note names the
+new version. Pressing it downloads the linux asset, verifies it, replaces
+`nso`, `mednafen` and `nso-norumble.so` atomically (with rollback) and restarts.
+
 ## [0.2.0] - 2026-11-27
 
 This release supports **emulated games only**. NSO is a Nintendo Switch

@@ -6,7 +6,7 @@ HDRS := src/nso.h src/launch.h src/scrape.h src/systems/nes.h src/systems/snes.h
 	src/embed.h src/sfx.h src/menu_launcher.h embed/nsomod.h src/sort.h src/sortpanel.h src/gridlayout.h
 HDRS += src/gamesel.h src/gamesel_ui.h src/hide.h src/fav.h src/covers.h src/sneslist.h src/syslist.h
 HDRS += src/status.h src/statuspanel.h src/enteranim.h src/rewindanim.h src/rewind.h src/crtgeom.h src/crtparams.h src/n64pad.h
-HDRS += src/padmap.h src/padui.h src/jspad.h src/version.h src/version_ui.h src/sysstatus.h
+HDRS += src/update.h src/padmap.h src/padui.h src/jspad.h src/version.h src/version_ui.h src/sysstatus.h
 
 ifeq ($(OS),Windows_NT)
 WINCC := $(CC)
@@ -48,7 +48,7 @@ release: dist/$(RELEASE_NAME).tar.gz
 
 dist/nso: $(SRC) $(HDRS) src/assetpack.c src/assetpack.h build-release/assets-pack.o
 	mkdir -p dist
-	$(CC) $(CFLAGS) -DNSO_RELEASE -pthread -o dist/nso $(SRC) src/assetpack.c 		build-release/assets-pack.o $(RELEASE_LIBS)
+	$(CC) $(CFLAGS) -DNSO_RELEASE -DNSO_VERSION=\"$(VERSION)\" -pthread -o dist/nso $(SRC) src/assetpack.c 		build-release/assets-pack.o $(RELEASE_LIBS)
 
 # Layout: nso, the bundled Mednafen, and nso-norumble.so (LD_PRELOAD when
 # Rumble is off). Mednafen is built out-of-tree; copy the binary to
@@ -100,9 +100,12 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 		src/sfx_test.c src/sfx.h src/sort_test.c src/sort.h src/catalog_test.c src/systems/nes.h \
 		src/systems/snes.h src/systems/n64.h src/systems/gamecube.h src/systems/megadrive.h \
 		embed/sm64/reloc_test.c embed/sm64/reloc.h src/padmap_test.c src/padmap.h \
-		src/version_test.c src/version.h src/version_scan_test.c src/sysstatus_test.c src/sysstatus.h
+		src/version_test.c src/version.h src/version_scan_test.c src/sysstatus_test.c src/sysstatus.h \
+		src/update_test.c src/update.h
 	$(CC) $(CFLAGS) -o scrape_test src/scrape_test.c
 	./scrape_test
+	$(CC) $(CFLAGS) -o update_test src/update_test.c
+	./update_test
 	$(CC) $(CFLAGS) -o savestate_test src/savestate_test.c
 	./savestate_test
 	$(CC) $(CFLAGS) -o repos_test src/repos_test.c
@@ -165,7 +168,7 @@ test: check nso nso-norumble.so
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe nso-norumble.so scrape_test savestate_test repos_test lang_test launch_test input_test order_test gridlayout_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test sneslist_test hide_test fav_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test version_test version_scan_test sysstatus_test
+	rm -f nso nso.exe nso-norumble.so scrape_test update_test savestate_test repos_test lang_test launch_test input_test order_test gridlayout_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test sneslist_test hide_test fav_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test version_test version_scan_test sysstatus_test
 	rm -rf build-release dist/nso
 
 .PHONY: embed soh-nso windows test clean release

@@ -15,6 +15,7 @@
 #include "menu_launcher.h"
 
 #include "launch.h"
+#include "update.h"
 #include "raylib.h"
 #include "rlgl.h"   /* blend factors: erase inside the sidebar icon texture */
 #ifdef NSO_RELEASE
@@ -2381,6 +2382,167 @@ static Font statusNerdFont;
 static bool statusNerdLoaded;
 static Font menuBarFont;
 static bool menuBarFontLoaded;
+/* ---- Self-update (Downloads button). On startup a background curl asks the
+ * GitHub API for the latest Vulto/nso release; if its tag is newer than
+ * NSO_VERSION the download icon glows. Pressing it (only then) runs a
+ * background script that downloads the release's linux tarball to a temp dir
+ * inside the install dir, verifies it (sha256 when GitHub reports one, ELF
+ * check, nso + mednafen present), swaps the files in by rename with rollback,
+ * and NSO re-execs itself. Offline or on any error nothing happens. Only the
+ * release build (NSO_RELEASE) does this: a dev tree never overwrites itself.
+ * NSO_UPDATE_API overrides the API URL (file:// mock for tests). ---- */
+#ifndef NSO_VERSION
+#define NSO_VERSION "0.2.1"
+#endif
+static bool nsoQuit = false;
+typedef enum { UPD_IDLE = 0, UPD_CHECKING, UPD_AVAILABLE, UPD_INSTALLING } UpdState;
+static UpdState updState = UPD_IDLE;
+static char updTag[64];
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+static NsoProc updProc;
+static char updUrl[1024], updDigest[80], updJson[2400];
+static bool updAnyUrl;
+#endif
+static double updFailUntil;
+static bool nsoRestart;
+static char nsoSelfPath[2400];
+static char **nsoArgv;
+
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+static const char *Update_Script =
+    "set -e\n"
+    "url=$1; dest=$2; digest=$3\n"
+    "tmp=$(mktemp -d \"$dest/.nso-update.XXXXXX\")\n"
+    "done_list=\"\"\n"
+    "rollback() { for f in $done_list; do mv -f \"$tmp/bak.$f\" \"$dest/$f\" 2>/dev/null || true; done; }\n"
+    "trap 'rm -rf \"$tmp\"' EXIT\n"
+    "curl -fsSL --max-time 900 --retry 2 -A nso-updater -o \"$tmp/pkg.tar.gz\" \"$url\"\n"
+    "if [ -n \"$digest\" ]; then echo \"$digest  $tmp/pkg.tar.gz\" | sha256sum -c - >/dev/null; fi\n"
+    "mkdir \"$tmp/x\"\n"
+    "tar --no-same-owner --no-same-permissions -xzf \"$tmp/pkg.tar.gz\" -C \"$tmp/x\"\n"
+    "d=$(find \"$tmp/x\" -mindepth 1 -maxdepth 1 -type d | head -n 1)\n"
+    "[ -n \"$d\" ]\n"
+    "for f in nso mednafen; do\n"
+    "  [ -f \"$d/$f\" ] && [ -s \"$d/$f\" ]\n"
+    "  [ \"$(head -c 4 \"$d/$f\" | tail -c 3)\" = ELF ]\n"
+    "  chmod 755 \"$d/$f\"\n"
+    "done\n"
+    "for f in mednafen nso-norumble.so nso; do\n"
+    "  [ -f \"$d/$f\" ] || continue\n"
+    "  if [ -e \"$dest/$f\" ]; then ln \"$dest/$f\" \"$tmp/bak.$f\"; fi\n"
+    "  if mv -f \"$d/$f\" \"$dest/$f\"; then done_list=\"$done_list $f\"; else rollback; exit 1; fi\n"
+    "done\n"
+    "exit 0\n";
+#endif
+
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+static const char *NsoSelfPath(void)
+{
+    if (nsoSelfPath[0]) return nsoSelfPath;
+#ifndef _WIN32
+    {
+        ssize_t n = readlink("/proc/self/exe", nsoSelfPath, sizeof(nsoSelfPath) - 1);
+        static const char deleted[] = " (deleted)";
+        if (n > 0) {
+            nsoSelfPath[n] = '\0';
+            if ((size_t)n > sizeof(deleted) - 1
+                && strcmp(nsoSelfPath + (size_t)n - (sizeof(deleted) - 1), deleted) == 0)
+                nsoSelfPath[(size_t)n - (sizeof(deleted) - 1)] = '\0';
+        } else {
+            nsoSelfPath[0] = '\0';
+        }
+    }
+#endif
+    return nsoSelfPath;
+}
+#endif
+
+static void Update_Start(void)
+{
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+    const char *api = getenv("NSO_UPDATE_API");
+    char *argv[13];
+    NsoSelfPath();
+    updAnyUrl = api && api[0];
+    if (!updAnyUrl) api = "https://api.github.com/repos/Vulto/nso/releases/latest";
+    snprintf(updJson, sizeof(updJson), "%s", GetDataPath("assets/cache/update-latest.json"));
+    argv[0] = "curl";
+    argv[1] = "-fsSL";
+    argv[2] = "--max-time";
+    argv[3] = "10";
+    argv[4] = "--create-dirs";
+    argv[5] = "-A";
+    argv[6] = "nso-updater";
+    argv[7] = "-H";
+    argv[8] = "Accept: application/vnd.github+json";
+    argv[9] = "-o";
+    argv[10] = updJson;
+    argv[11] = (char *)api;
+    argv[12] = NULL;
+    updProc = NsoSpawnArgv(NULL, argv);
+    updState = NsoProcOk(updProc) ? UPD_CHECKING : UPD_IDLE;
+#endif
+}
+
+static void Update_Poll(void)
+{
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+    int code = 0;
+    if (updState != UPD_CHECKING && updState != UPD_INSTALLING) return;
+    if (!NsoProcOk(updProc) || !NsoSpawnExited(&updProc, &code)) return;
+    updProc = NsoProcNone();
+    if (updState == UPD_CHECKING) {
+        updState = UPD_IDLE;
+        if (code == 0) {
+            char *text = LoadFileText(updJson);
+            if (text) {
+                if (Update_ParseRelease(text, updTag, sizeof(updTag), updUrl, sizeof(updUrl),
+                                        updDigest, sizeof(updDigest), updAnyUrl)
+                    && Update_VersionNewer(updTag, NSO_VERSION)) {
+                    updState = UPD_AVAILABLE;
+                    fprintf(stderr, "NSO: update %s available (running %s)\n", updTag, NSO_VERSION);
+                }
+                UnloadFileText(text);
+            }
+        }
+        FileRemove(updJson);
+    } else if (code == 0) {
+        updState = UPD_IDLE;
+        nsoRestart = true;
+        nsoQuit = true;
+    } else {
+        updState = UPD_AVAILABLE;
+        updFailUntil = GetTime() + 5.0;
+    }
+#endif
+}
+
+/* Downloads button pressed: only does anything when an update is waiting. */
+static bool Update_Install(void)
+{
+#if defined(NSO_RELEASE) && !defined(_WIN32)
+    char *argv[8];
+    if (updState != UPD_AVAILABLE) return false;
+    argv[0] = "sh";
+    argv[1] = "-c";
+    argv[2] = (char *)Update_Script;
+    argv[3] = "nso-update";
+    argv[4] = updUrl;
+    argv[5] = (char *)NsoExeDir();
+    argv[6] = updDigest;
+    argv[7] = NULL;
+    updProc = NsoSpawnArgv(NULL, argv);
+    if (!NsoProcOk(updProc)) { updFailUntil = GetTime() + 5.0; return false; }
+    updState = UPD_INSTALLING;
+    updFailUntil = 0.0;
+    return true;
+#else
+    return false;
+#endif
+}
+
+static bool Update_Glow(void) { return updState == UPD_AVAILABLE || updState == UPD_INSTALLING; }
+
 static int menuBarFocus = -1;     /* -1 = system cards, 0 = download, 1 = power */
 static bool powerDialogOpen = false;
 static int powerDialogRow = 2;    /* Cancel is the default */
@@ -2657,13 +2819,30 @@ static void DrawSystemMenuBar(float offsetX, float sw, float sh, SystemRowLayout
         for (int i = 0; i < MENU_BAR_ICON_COUNT; i++) {
             float cx = firstCx + (float)i * span;
             bool sel = (menuBarFocus == i);
+            bool glow = (i == 0 && Update_Glow());
             Vector2 m;
+            if (glow) {   /* an update is waiting: soft pulsing halo behind the download icon */
+                float pulse = 0.55f + 0.45f * sinf((float)GetTime() * 3.0f);
+                for (int g = 4; g >= 1; g--)
+                    DrawCircleV((Vector2){ cx, midY }, diam * (0.5f + 0.16f * (float)g),
+                                Fade(MENU_BAR_LABEL_COL, 0.10f * pulse));
+            }
             if (sel) {
                 DrawMenuBarCursor((Vector2){ cx, midY }, diam, ringW);
             }
             m = StatusMeasureCp(menuBarFont, cps[i], icon);
             StatusDrawCp(menuBarFont, cps[i], cx - m.x * 0.5f, midY, icon,
-                         sel ? WHITE : MENU_BAR_ICON_COL);
+                         (sel || glow) ? WHITE : MENU_BAR_ICON_COL);
+            if (sel && i == 0 && (Update_Glow() || GetTime() < updFailUntil)) {
+                char note[96];
+                float nfs = 32.0f * kHud;
+                Vector2 nm;
+                if (GetTime() < updFailUntil) snprintf(note, sizeof(note), "%s", T(S_UPD_FAILED));
+                else snprintf(note, sizeof(note), T(updState == UPD_INSTALLING ? S_UPD_INSTALLING : S_UPD_AVAILABLE), updTag);
+                nm = MeasureTextEx(textFont, note, nfs, 0.0f);
+                DrawTextEx(textFont, note, (Vector2){ bx + (bw - nm.x) * 0.5f, by - nm.y - 14.0f * kHud },
+                           nfs, 0.0f, MENU_BAR_LABEL_COL);
+            }
             if (sel) {
                 const char *lab = T(i == 1 ? S_BAR_SHUTDOWN : S_BAR_DOWNLOADS);
                 float lfs = 36.0f * kHud;
@@ -7644,9 +7823,9 @@ static void Home_Poll(void)
 }
 
 // ====================== MAIN PROGRAM ======================
-static bool nsoQuit = false;
 
 int main(int argc, char **argv) {
+    nsoArgv = argv;
 #ifndef _WIN32
     if (argc >= 3 && strcmp(argv[1], "--menu-launcher") == 0) {
         return NsoMenuLauncherMain(argc - 2, argv + 2);
@@ -7691,6 +7870,7 @@ int main(int argc, char **argv) {
     CoverSize_Start();
     SortPanel_LoadAll();
     Sfx_Init();
+    Update_Start();
 
     PadNotice_Load();
 
@@ -8158,6 +8338,7 @@ int main(int argc, char **argv) {
         }
 
         ScrapeMenu_Poll();
+        Update_Poll();
         GameSel_Poll();
         Repo_Poll();
         Repo_Watch();
@@ -8238,7 +8419,9 @@ int main(int argc, char **argv) {
                     if (canNavigate && !overlayConsumedConfirm) {
                         bool ok = IsKeyPressed(KEY_ENTER) || gpConfirm;
                         bool okBar = ok || IsKeyPressed(KEY_A);
-                        if (menuBarFocus == 1 && okBar) {
+                        if (menuBarFocus == 0 && okBar) {
+                            if (Update_Install()) Sfx_Play(SFX_CLICK);   /* no update: does nothing */
+                        } else if (menuBarFocus == 1 && okBar) {
                             powerDialogOpen = true;
                             powerDialogRow = 2;   /* Cancel */
                             Sfx_Play(SFX_CLICK);
@@ -8629,6 +8812,14 @@ int main(int argc, char **argv) {
     UnloadSystems();
     Sfx_Shutdown();
     CloseWindow();
+
+#ifndef _WIN32
+    if (nsoRestart && nsoSelfPath[0] && nsoArgv) {   /* updated: start the new binary */
+        fflush(NULL);
+        execv(nsoSelfPath, nsoArgv);
+        perror("NSO: restart after update failed");
+    }
+#endif
 
     /* Skip static destructors of a persistent port engine (they wait on its threads). */
     if (Embed_NeedsFastExit()) { fflush(NULL); _exit(EXIT_SUCCESS); }
