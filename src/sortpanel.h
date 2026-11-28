@@ -7,7 +7,7 @@
  * config/favorites-<id>.txt. Per-game hides are config/hidden-<id>.txt
  * and are excluded from every other view; "Show hidden" (<id>.show_hidden)
  * lists only those titles. "Hide unplayable" (<id>.hide_unplayable) is the
- * row below that; the setting and re-list behaviour are unchanged. */
+ * row below that; it defaults to on when the key is absent. */
 #ifndef NSO_SORTPANEL_H
 #define NSO_SORTPANEL_H
 
@@ -370,6 +370,8 @@ static void SortPanel_LoadAll(void) {
     char *text = FileExists(cfg) ? LoadFileText(cfg) : NULL;
     Fav_LoadAll();
     Hidden_LoadAll();
+    /* Fresh configs (or a missing key): Hide unplayable is on. A saved 0 stays off. */
+    for (int s = 0; s < SYSTEM_COUNT; s++) hideOn[s] = true;
     if (!text) {
         for (int s = 0; s < SYSTEM_COUNT; s++)
             if (SortPanel_NeedsFilter(s)) SortPanel_Apply(s, sortMode[s], false);

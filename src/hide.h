@@ -2,7 +2,8 @@
  * Pure C, no raylib: unit-tested in hide_test.c. The games array keeps every
  * title; the playable ones are moved to the front (keeping their order) and
  * only that prefix is shown, so covers past it are never loaded. The switch is
- * saved per system as "<id>.hide_unplayable" (1 / 0) in config/nso.cfg. */
+ * saved per system as "<id>.hide_unplayable" (1 / 0) in config/nso.cfg; when
+ * the key is missing, the filter defaults to on. */
 #ifndef NSO_HIDE_H
 #define NSO_HIDE_H
 
