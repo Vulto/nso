@@ -1,4 +1,4 @@
-/* sortpanel.h - "Change order of titles" panel (hold keyboard or gamepad Y, or right stick right).
+/* sortpanel.h - "Change order of titles" panel (hold keyboard or gamepad Y).
  * Included by main.c after the Y Move code; uses its statics. The chosen mode
  * is "<id>.sort" in config/nso.cfg; "custom" is the Y Move order file. Play
  * stats (last played, total seconds) live in config/played-<id>.txt.

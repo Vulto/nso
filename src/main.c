@@ -1966,7 +1966,7 @@ static InfoBarId infoBarActive = INFO_BAR_NONE;
 static InfoBarId infoBarWanted = INFO_BAR_NONE;
 
 /* C-up / C-down / C-left this frame (right stick edges on any pad), set in the main loop. */
-static bool padCUp, padCDown, padCLeft, padCRight;
+static bool padCUp, padCDown, padCLeft;
 
 static void StepInfoOpacity(float *cur, float target, float dt) {
     if (INFO_BAR_FADE_SEC <= 0.0f) {
@@ -8905,7 +8905,6 @@ int main(int argc, char **argv) {
         padCDown = gpReady && eRY > 0;
         padCDownHeld = gpReady && ry > NSO_PAD_DEADZONE;
         padCLeft = gpReady && eRX < 0;
-        padCRight = gpReady && eRX > 0;
 
         bool overlayConsumedConfirm = false;
         /* Returning to the grid: hold the previous (game / splash) frame until
@@ -9366,12 +9365,8 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    /* Right stick right / C-Right: change order of titles.
-                     * Keyboard Y / gamepad Y / C-Down: hold (SortY_Update). */
-                    if (canNavigate && !gridLifted && padCRight) {
-                        SortPanel_Open();
-                        break;
-                    }
+                    /* Keyboard Y / gamepad Y / C-Down: hold (SortY_Update)
+                     * opens the sort panel; C-Right does not. */
 
                     /* S: port status overlay. */
                     if (canNavigate && !gridLifted && IsKeyPressed(KEY_S)) {
