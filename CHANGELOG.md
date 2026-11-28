@@ -46,6 +46,15 @@ inotify sees a change under /dev/input), instead of every frame.
 Selecting Two Players or Play online in the sidebar shows a short
 "Coming soon" toast (the same style as the missing-Mednafen notice).
 
+### Unreleased (after 0.2.1)
+
+"Download all box arts" now also fetches covers for catalog titles that have
+no file in `roms/` (NES ports and recomps such as Dr. Mario, Faxanadu,
+Fire 'n Ice, Madoola no Tsubasa, Metroid, and The Legend of Zelda). The
+release build does not ship those covers; a dev tree often already had them
+on disk. Name matching prefers a retail dump over a beta, and treats
+combined tags like "(Japan, USA)" as USA.
+
 ## [0.2.0] - 2026-11-27
 
 This release supports **emulated games only**. NSO is a Nintendo Switch

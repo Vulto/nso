@@ -320,6 +320,29 @@ int main(void)
         expect_match("Itchy & Scratchy Game, The", md, 17,
                      "Itchy _ Scratchy Game, The (USA).png");
     }
+    {   /* No plain "(USA)" retail: "(Japan, USA)" must beat "(USA) (Beta)". */
+        const char *drm[] = {
+            "Dr. Mario (USA) (Beta).png",
+            "Dr. Mario (Japan, USA).png",
+            "Dr. Mario (Europe).png",
+            "Fire 'n Ice (USA).png",
+            "Madoola no Tsubasa (Japan) (Sample).png",
+            "Madoola no Tsubasa (Japan).png",
+            "The Wing of Madoola (USA).png",
+            "Metroid (USA) (Virtual Console).png",
+            "Metroid (USA).png",
+            "Legend of Zelda, The (USA) (Beta).png",
+            "Legend of Zelda, The (USA).png",
+            "Faxanadu (USA) (Rev 1).png",
+            "Faxanadu (USA).png",
+        };
+        expect_match("Dr. Mario", drm, 13, "Dr. Mario (Japan, USA).png");
+        expect_match("Faxanadu", drm, 13, "Faxanadu (USA).png");
+        expect_match("Fire 'n Ice", drm, 13, "Fire 'n Ice (USA).png");
+        expect_match("Madoola no Tsubasa (Japan)", drm, 13, "Madoola no Tsubasa (Japan).png");
+        expect_match("Metroid", drm, 13, "Metroid (USA).png");
+        expect_match("The Legend of Zelda", drm, 13, "Legend of Zelda, The (USA).png");
+    }
 
     {   /* GameCube: subtitle, publisher prefix, romanization, acronym, combo disc */
         const char *gc[] = {

@@ -282,10 +282,18 @@ static int EndsWithWord(const char *s, const char *t)
 
 static int RegionRank(const char *filename)
 {
-    if (strstr(filename, "(USA")) return 4;
-    if (strstr(filename, "(World")) return 3;
-    if (strstr(filename, "(Europe")) return 2;
-    if (strstr(filename, "(Japan")) return 1;
+    /* Combined tags ("(Japan, USA)") and TOSEC "(US)" still count as USA. */
+    if (!filename) return 0;
+    if (strstr(filename, "(USA") || strstr(filename, ", USA")
+        || strstr(filename, "(US)") || strstr(filename, ", US)")
+        || strstr(filename, "(US,") || strstr(filename, ", US,")
+        || strstr(filename, "(JP-US") || strstr(filename, "(US-JP"))
+        return 4;
+    if (strstr(filename, "(World") || strstr(filename, ", World")) return 3;
+    if (strstr(filename, "(Europe") || strstr(filename, ", Europe")
+        || strstr(filename, "(EU)")) return 2;
+    if (strstr(filename, "(Japan") || strstr(filename, ", Japan")
+        || strstr(filename, "(JP)") || strstr(filename, ", JP)")) return 1;
     return 0;
 }
 
@@ -495,6 +503,9 @@ static int Scrape_LooksDated(const char *s)
 static int Scrape_NameQuality(const char *filename)
 {
     if (!filename) return 0;
+    if (strstr(filename, "(Beta") || strstr(filename, "(Sample")
+        || strstr(filename, "(Proto") || strstr(filename, "(Hack"))
+        return -3;
     if (Scrape_LooksDated(filename) || strstr(filename, ")(")
         || strstr(filename, "[h") || strstr(filename, "[b")
         || strstr(filename, "[t ") || strstr(filename, "[t+")
@@ -523,8 +534,8 @@ static int Scrape_Better(int fit, int qual, int rank, int rel, size_t dist, size
 {
     if (fit != bestFit) return fit > bestFit;
     if (qual != bestQual) return qual > bestQual;
+    if (rel != bestRel) return rel > bestRel;   /* retail before a USA beta */
     if (rank != bestRank) return rank > bestRank;
-    if (rel != bestRel) return rel > bestRel;
     if (dist != bestDist) return dist < bestDist;
     return fileLen < bestFile;
 }

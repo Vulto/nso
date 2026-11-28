@@ -202,6 +202,7 @@ static void GameSel_OpenRoms(void) {
 
     if (gc > MAX_GAMES) gc = MAX_GAMES;
     n = ScrapeMenu_ListRoms(idx, GS_MAX_ROWS);
+    n = ScrapeMenu_AddCatalogCovers(idx, n, GS_MAX_ROWS);
     for (i = 0; i < n; i++) {
         int cat = idx[i];
         GsRow *r = &gsRows[i];
