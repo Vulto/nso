@@ -201,6 +201,12 @@ static bool Status_XPressed(void) {
         || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, NSO_BTN_X));
 }
 
+/* X Download all is only on the Scraper tab; other tabs keep the base legend. */
+static const char *Status_LegendText(void) {
+    if (statusTab == STATUS_TAB_EMU) return T(S_STATUS_LEGEND_SCRAPER);
+    return T(S_STATUS_LEGEND);
+}
+
 static void Status_CycleTab(void) {
     statusTab = (statusTab + 1) % STATUS_TAB_COUNT;
     if (statusTab == STATUS_TAB_EMU) statusEmuNeedRefresh = 1;

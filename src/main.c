@@ -2015,13 +2015,14 @@ static void InfoBar_Update(float dt) {
 static const char *PadUi_BarText(void);   /* padui.h: the controller screen's own hint bar */
 static float PadUi_RingProgress(int which);
 static bool PadUi_SwallowBack(void);
+static const char *Status_LegendText(void); /* statuspanel.h: X entry only on Scraper tab */
 static const char *InfoBar_Text(InfoBarId id) {
     switch (id) {
         case INFO_BAR_MOSAIC:  return T(gridLifted ? S_MOVE_INFO : S_MOSAIC_INFO);
         case INFO_BAR_SIDEBAR:
             if (PadUi_BarText()) return PadUi_BarText();
             return scrapeBusy ? T(S_INFO_CANCEL) : T(S_SIDEBAR_INFO);
-        case INFO_BAR_STATUS:  return T(S_STATUS_LEGEND);
+        case INFO_BAR_STATUS:  return Status_LegendText();
         default: return NULL;
     }
 }
@@ -2388,8 +2389,9 @@ static Font slotFont;   /* menu font, defined (and set in main) below */
 /* Nerd Font (Symbols Only): N64 C-Up / C-Down, and the status-legend Y. */
 #define HINT_NERD_CUP   0xF0062  /* md-arrow_up_drop_circle */
 #define HINT_NERD_CDOWN 0xF004A  /* md-arrow_down_drop_circle */
-/* nf-md-alpha_y_circle: this font maps it to U+F0C34 (U+F0B8C is md-dns_outline).
- * nf-md-alpha_x_circle is U+F0C31 in the same filled-circle family. */
+/* Official Nerd Fonts 3.5.1 glyphnames.json:
+ * nf-md-alpha_y_circle = U+F0C34, nf-md-alpha_x_circle = U+F0C31
+ * (not outline variants U+F0C35 / U+F0C32). */
 #define HINT_NERD_Y_CIRCLE 0xF0C34
 #define HINT_NERD_X_CIRCLE 0xF0C31
 static Font hintNerdFont;

@@ -61,7 +61,7 @@ The release binary now also embeds the UI sound effects (the same files
 under `assets/sounds/` that the dev build loads from disk), so a tarball
 install plays them without a sounds directory. The Emulated tab no longer
 has a "Select games" action or an "Image scraping" heading; Up/Down move
-only the game list on the right, and A starts "Download all box arts". S only opens the status menu; B closes it. The Emulated tab is labeled Scraper. On the status menu, X (keyboard or gamepad) starts Download all box arts, and the legend includes that action with the Nerd Font X-circle glyph.
+only the game list on the right, and A starts "Download all box arts". S only opens the status menu; B closes it. The Emulated tab is labeled Scraper. On the Scraper tab, X (keyboard or gamepad) starts Download all box arts, and that tab's legend includes the action with the official Nerd Font nf-md-alpha_x_circle glyph (U+F0C31). Other tabs keep the previous legend.
 
 ## [0.2.0] - 2026-11-27
 
