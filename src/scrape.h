@@ -339,34 +339,138 @@ static int StartsWithWord(const char *s, const char *t)
     return memcmp(s, t, nt) == 0 && s[nt] == ' ';
 }
 
-/* Remainder after a prefix is a sequel number ("2", "II" already folded to "2"). */
-static int Scrape_SequelTail(const char *s, const char *prefix)
+/* A token starts at s and ends at a space or the end of the string. */
+static int Scrape_TokEq(const char *s, const char *tok, size_t *used)
 {
-    static const char *const seq[] = {
-        "2", "3", "4", "5", "6", "7", "8", "9", "10", "v"
-    };
-    const char *r;
     size_t n;
-    if (!StartsWithWord(s, prefix) || strcmp(s, prefix) == 0) return 0;
-    n = strlen(prefix);
-    r = s + n;
-    while (*r == ' ') r++;
-    for (size_t i = 0; i < sizeof seq / sizeof seq[0]; i++) {
-        size_t L = strlen(seq[i]);
-        if (strncmp(r, seq[i], L) == 0 && (r[L] == '\0' || r[L] == ' ')) return 1;
+    if (!s || !tok) return 0;
+    n = strlen(tok);
+    if (n == 0 || strncmp(s, tok, n) != 0) return 0;
+    if (s[n] != '\0' && s[n] != ' ') return 0;
+    if (used) *used = n;
+    return 1;
+}
+
+static int Scrape_TokNum(const char *s, size_t *used)
+{
+    size_t n = 0;
+    if (!s || s[0] < '0' || s[0] > '9') return 0;
+    while (s[n] >= '0' && s[n] <= '9') n++;
+    if (used) *used = n;
+    return 1;
+}
+
+/* One region or version tag at the front of a normalized remainder:
+ * (USA)/[!] become words like "usa"; also "rev 1", "v1 1", "disc 2". */
+static int Scrape_ConsumeTag(const char *s, size_t *used)
+{
+    static const char *const tags[] = {
+        "usa", "europe", "japan", "world", "australia", "korea", "china",
+        "brazil", "france", "germany", "italy", "spain", "canada",
+        "us", "eu", "jp", "pal", "ntsc", "unl"
+    };
+    size_t n, n2, n3, i;
+    const char *p;
+    if (!s || !s[0]) return 0;
+    if (Scrape_TokEq(s, "revision", &n) || Scrape_TokEq(s, "rev", &n)) {
+        p = s + n;
+        while (*p == ' ') p++;
+        if (!Scrape_TokNum(p, &n2)) return 0;
+        if (used) *used = (size_t)(p - s) + n2;
+        return 1;
+    }
+    if (s[0] == 'v') {
+        p = s + 1;
+        if (*p == ' ') p++;
+        if (Scrape_TokNum(p, &n2)) {
+            const char *q = p + n2;
+            if (*q == ' ' && Scrape_TokNum(q + 1, &n3))
+                q = q + 1 + n3;
+            if (*q == '\0' || *q == ' ') {
+                if (used) *used = (size_t)(q - s);
+                return 1;
+            }
+        }
+    }
+    if (Scrape_TokEq(s, "disc", &n) || Scrape_TokEq(s, "disk", &n)) {
+        p = s + n;
+        while (*p == ' ') p++;
+        if (Scrape_TokNum(p, &n2)
+            || ((*p >= 'a' && *p <= 'z') && (p[1] == '\0' || p[1] == ' ') && (n2 = 1))) {
+            if (used) *used = (size_t)(p - s) + n2;
+            return 1;
+        }
+        return 0;
+    }
+    for (i = 0; i < sizeof tags / sizeof tags[0]; i++) {
+        if (Scrape_TokEq(s, tags[i], &n)) {
+            if (used) *used = n;
+            return 1;
+        }
     }
     return 0;
 }
 
-/* Higher is a tighter name fit. Prefix (title + subtitle, or a shorter
- * local stem) outranks a suffix ("All-Star Baseball 2003" ending in
- * "Baseball 2003", or a publisher stuck on the front). */
-static int Scrape_FitRank(const char *stem, const char *title)
+/* True when the whole string is region/version tags, never extra title words. */
+static int Scrape_IsTagTail(const char *s)
+{
+    if (!s) return 0;
+    while (*s == ' ') s++;
+    if (!*s) return 0;
+    while (*s) {
+        size_t n = 0;
+        if (!Scrape_ConsumeTag(s, &n) || n == 0) return 0;
+        s += n;
+        if (*s && *s != ' ') return 0;
+        while (*s == ' ') s++;
+    }
+    return 1;
+}
+
+/* The longer raw name continues the shorter normalized name with a
+ * same-game subtitle ("James Pond 3 - Operation Starfish"), not "& …". */
+static int Scrape_RawSubtitleAfter(const char *raw, const char *shortNorm)
+{
+    static const char *const mid[] = { " - ", ": ", " ~ " };
+    size_t i;
+    if (!raw || !shortNorm || !shortNorm[0]) return 0;
+    for (i = 0; i < sizeof mid / sizeof mid[0]; i++) {
+        const char *p = raw;
+        size_t dlen = strlen(mid[i]);
+        while ((p = strstr(p, mid[i])) != NULL) {
+            char left[512], norm[512];
+            size_t n = (size_t)(p - raw);
+            if (n == 0 || n >= sizeof(left)) { p += dlen; continue; }
+            memcpy(left, raw, n);
+            left[n] = '\0';
+            Scrape_Normalize(norm, sizeof(norm), left);
+            if (strcmp(norm, shortNorm) == 0) return 1;
+            p += dlen;
+        }
+    }
+    return 0;
+}
+
+static int Scrape_PrefixOk(const char *longNorm, const char *shortNorm,
+                           const char *longRaw)
+{
+    size_t n;
+    if (!StartsWithWord(longNorm, shortNorm)) return 0;
+    n = strlen(shortNorm);
+    return Scrape_IsTagTail(longNorm + n) || Scrape_RawSubtitleAfter(longRaw, shortNorm);
+}
+
+/* Higher is a tighter name fit. An exact normalized title always wins.
+ * A shorter name may match a longer cover/title only when the extra part
+ * is region/version tags, or a " - " / ": " / " ~ " subtitle — never extra
+ * words like "& Double Dragon". A suffix ("All-Star Baseball 2003" ending
+ * in "Baseball 2003", or a publisher stuck on the front) is weaker still. */
+static int Scrape_FitRank(const char *stem, const char *title,
+                          const char *stemRaw, const char *titleRaw)
 {
     if (!stem || !title || !stem[0] || !title[0]) return -1;
     if (strcmp(stem, title) == 0) return 4;
-    if ((StartsWithWord(stem, title) && !Scrape_SequelTail(stem, title))
-        || (StartsWithWord(title, stem) && !Scrape_SequelTail(title, stem)))
+    if (Scrape_PrefixOk(stem, title, stemRaw) || Scrape_PrefixOk(title, stem, titleRaw))
         return 3;
     if (EndsWithWord(stem, title) || EndsWithWord(title, stem)) return 1;
     return -1;
@@ -582,7 +686,7 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
         Scrape_Stem(stem, sizeof(stem), names[i]);
         Scrape_Normalize(normStem, sizeof(normStem), stem);
         {
-            int fit = Scrape_FitRank(normStem, normTitle);
+            int fit = Scrape_FitRank(normStem, normTitle, stem, title);
             if (fit < 0) continue;
             qual = Scrape_NameQuality(names[i]);
             rank = RegionRank(names[i]);
@@ -619,7 +723,7 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
         {
             int fit;
             if (strcmp(compactStem, compactTitle) == 0) fit = 4;
-            else fit = Scrape_FitRank(compactStem, compactTitle);
+            else fit = Scrape_FitRank(compactStem, compactTitle, NULL, NULL);
             if (fit < 0) continue;
             qual = Scrape_NameQuality(names[i]);
             rank = RegionRank(names[i]);
@@ -684,9 +788,9 @@ const char *Scrape_Match(const char *title, const char **names, int count)
             Scrape_Stem(stem, sizeof(stem), hit);
             Scrape_Normalize(nstem, sizeof(nstem), stem);
             Scrape_Normalize(fullN, sizeof(fullN), title);
-            fit = Scrape_FitRank(nstem, fullN);
+            fit = Scrape_FitRank(nstem, fullN, stem, title);
             if (fit < 0) {
-                fit = Scrape_FitRank(nstem, norm);
+                fit = Scrape_FitRank(nstem, norm, stem, parts[p]);
                 if (fit < 0) fit = 1;
             }
             a = strlen(nstem);

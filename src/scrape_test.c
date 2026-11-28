@@ -488,6 +488,52 @@ int main(void)
         }
     }
 
+    {   /* Short "Battletoads" must not share a cover with
+         * "Battletoads & Double Dragon"; only a tag tail may extend a name. */
+        const char *both[] = {
+            "Battletoads (USA).png",
+            "Battletoads & Double Dragon (USA).png",
+        };
+        const char *libretro[] = {
+            "Battletoads (USA).png",
+            "Battletoads-Double Dragon (USA).png",
+        };
+        expect_match("Battletoads", both, 2, "Battletoads (USA).png");
+        expect_match("Battletoads & Double Dragon", both, 2,
+                     "Battletoads & Double Dragon (USA).png");
+        expect_loose("Battletoads", both, 2, "Battletoads (USA).png");
+        expect_loose("Battletoads & Double Dragon", both, 2,
+                     "Battletoads & Double Dragon (USA).png");
+        expect_match("Battletoads", libretro, 2, "Battletoads (USA).png");
+        expect_match("Battletoads & Double Dragon", libretro, 2,
+                     "Battletoads-Double Dragon (USA).png");
+        {
+            const char *hyphen[] = { "Battletoads-Double Dragon (USA).png" };
+            expect_match("Battletoads", hyphen, 1, NULL);
+            expect_match("Battletoads & Double Dragon", hyphen, 1,
+                         "Battletoads-Double Dragon (USA).png");
+        }
+        {
+            const char *onlyShort[] = { "Battletoads (USA).png", "battletoads.png" };
+            expect_match("Battletoads & Double Dragon", onlyShort, 2, NULL);
+            expect_match("Battletoads", onlyShort, 2, "Battletoads (USA).png");
+        }
+        {
+            const char *onlyLong[] = { "Battletoads & Double Dragon (USA).png" };
+            expect_match("Battletoads", onlyLong, 1, NULL);
+            expect_match("Battletoads & Double Dragon", onlyLong, 1,
+                         "Battletoads & Double Dragon (USA).png");
+        }
+        {
+            const char *rev[] = { "Battletoads [Rev 1].png" };
+            const char *ver[] = { "Battletoads v1.1.png" };
+            const char *disc[] = { "Battletoads Disc 2.png" };
+            expect_match("Battletoads", rev, 1, "Battletoads [Rev 1].png");
+            expect_match("Battletoads", ver, 1, "Battletoads v1.1.png");
+            expect_match("Battletoads", disc, 1, "Battletoads Disc 2.png");
+        }
+    }
+
     {
         int w, h;
         unsigned char png[24] = {
