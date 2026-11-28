@@ -40,6 +40,10 @@ core) and the Recompilation / Native source port statistics; the code stays
 (`-DNSO_SHOW_ALL_SYSTEMS`). README: version, Downloads, Settings and supported
 systems corrected.
 
+The release tarball now includes CHANGELOG.md (the README links to it). Pad
+hot-plug reads /proc/bus/input/devices at most about once a second (sooner if
+inotify sees a change under /dev/input), instead of every frame.
+
 ## [0.2.0] - 2026-11-27
 
 This release supports **emulated games only**. NSO is a Nintendo Switch

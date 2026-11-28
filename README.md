@@ -21,6 +21,7 @@ folder. You should have:
   system-Mednafen fallback)
 - `nso-norumble.so` — used automatically when Rumble is turned off
 - `README.md`
+- `CHANGELOG.md`
 
 Put legally obtained ROMs next to the binary, in a per-system folder:
 

@@ -11,6 +11,10 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/inotify.h>
+#endif
 
 #include "menu_launcher.h"
 
@@ -3127,16 +3131,60 @@ static int Pad_N64Index(void) {
 }
 
 static NsoPadLink Pad_LinkNow(void) {
+    /* Opening /proc/bus/input/devices every frame (~80 times/s) is enough
+     * to show up on a quiet grid. Cache the result for about a second, and
+     * refresh sooner if inotify sees a change under /dev/input (hot-plug). */
+    static NsoPadLink cached = NSO_PAD_LINK_NONE;
+    static double cachedAt = -1.0;
+    static int soon = 0;
+#ifdef __linux__
+    static int inofd = -2;   /* -2 = not tried, -1 = unavailable */
+#endif
     char buf[16384];
     size_t n = 0;
-    FILE *f = fopen("/proc/bus/input/devices", "r");
-    if (!f) return NSO_PAD_LINK_NONE;
+    FILE *f;
+    NsoPadLink link;
+    double now = GetTime();
+    int refresh = 0;
+    double hold = soon ? 0.2 : 1.0;
+#ifdef __linux__
+    if (inofd == -2) {
+        inofd = inotify_init();
+        if (inofd >= 0) {
+            int fl = fcntl(inofd, F_GETFL, 0);
+            if (fl >= 0) fcntl(inofd, F_SETFL, fl | O_NONBLOCK);
+            fcntl(inofd, F_SETFD, FD_CLOEXEC);
+            if (inotify_add_watch(inofd, "/dev/input",
+                    IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB) < 0) {
+                close(inofd);
+                inofd = -1;
+            }
+        }
+    }
+    if (inofd >= 0) {
+        char ev[4096];
+        ssize_t got = read(inofd, ev, sizeof ev);
+        if (got > 0) refresh = 1;
+    }
+#endif
+    if (!refresh && cachedAt >= 0.0 && now >= cachedAt && now - cachedAt < hold)
+        return cached;
+    f = fopen("/proc/bus/input/devices", "r");
+    if (!f) {
+        cached = NSO_PAD_LINK_NONE;
+        cachedAt = now;
+        soon = refresh;
+        return cached;
+    }
     n = fread(buf, 1, sizeof buf - 1, f);
     fclose(f);
     buf[n] = 0;
-    NsoPadLink link = Nso_PadLinkFromProc(buf, PAD_NOTICE_MAC);
+    link = Nso_PadLinkFromProc(buf, PAD_NOTICE_MAC);
     if (link == NSO_PAD_LINK_NONE) link = Nso_PadLinkFromProc(buf, NULL);
-    return link;
+    cached = link;
+    cachedAt = now;
+    soon = refresh;   /* udev may publish /proc a moment after /dev/input */
+    return cached;
 }
 
 static void PadNotice_DrawLeds(Rectangle row, int player) {

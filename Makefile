@@ -53,10 +53,10 @@ dist/nso: $(SRC) $(HDRS) src/assetpack.c src/assetpack.h build-release/assets-pa
 # Layout: nso, the bundled Mednafen, and nso-norumble.so (LD_PRELOAD when
 # Rumble is off). Mednafen is built out-of-tree; copy the binary to
 # build-release/mednafen first (see the release notes).
-dist/$(RELEASE_NAME).tar.gz: dist/nso nso-norumble.so
+dist/$(RELEASE_NAME).tar.gz: dist/nso nso-norumble.so README.md CHANGELOG.md
 	@test -x build-release/mednafen || { echo "make release: missing build-release/mednafen"; exit 1; }
 	mkdir -p dist/$(RELEASE_NAME)
-	cp -f dist/nso nso-norumble.so build-release/mednafen README.md dist/$(RELEASE_NAME)/
+	cp -f dist/nso nso-norumble.so build-release/mednafen README.md CHANGELOG.md dist/$(RELEASE_NAME)/
 	chmod +x dist/$(RELEASE_NAME)/nso dist/$(RELEASE_NAME)/mednafen
 	tar -C dist -czf $@ $(RELEASE_NAME)
 	@echo "Wrote $@"
