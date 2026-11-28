@@ -5626,9 +5626,44 @@ static void ClampTileToContent(float *x, float *y, float w, float h,
 
 static Font slotFont = { 0 };   /* menu font, set in main() */
 
-/* No cover texture: a centred "?" in the slot (same tint as the cover). */
-static void DrawMissingCover(Texture2D tex, Rectangle r, Color tint) {
-    if (tex.id != 0 || slotFont.texture.id == 0) return;
+/* No cover texture: playable games get a red "NEW" tile drawn in code;
+ * anything else keeps a centred "?" (same tint as the cover). */
+static const Color NO_COVER_RED = { 0xF2, 0x17, 0x17, 255 };  /* #F21717 */
+
+static void DrawMissingCover(Texture2D tex, Rectangle r, Color tint, const GameEntry *g) {
+    if (tex.id != 0) return;
+    if (g && GameIsLaunchable(g)) {
+        Color fill = ColorTint(NO_COVER_RED, tint);
+        Color ink = ColorTint(WHITE, tint);
+        int x = (int)(r.x + 0.5f), y = (int)(r.y + 0.5f);
+        int w = (int)(r.width + 0.5f), h = (int)(r.height + 0.5f);
+        int inset = 5, thick = 2, i, fs, tw;
+        int x0, y0, x1, y1;
+        if (w < 1 || h < 1) return;
+        DrawRectangle(x, y, w, h, fill);
+        if (w < 2 * (inset + thick) || h < 2 * (inset + thick)) {
+            inset = 2;
+            if (w < 2 * (inset + thick) || h < 2 * (inset + thick)) inset = 0;
+        }
+        x0 = x + inset;
+        y0 = y + inset;
+        x1 = x + w - 1 - inset;
+        y1 = y + h - 1 - inset;
+        if (x1 > x0 && y1 > y0) {
+            for (i = 0; i < thick; i++) {
+                DrawLine(x0, y0 + i, x1, y0 + i, ink);
+                DrawLine(x0, y1 - i, x1, y1 - i, ink);
+                DrawLine(x0 + i, y0, x0 + i, y1, ink);
+                DrawLine(x1 - i, y0, x1 - i, y1, ink);
+            }
+        }
+        fs = (int)(fminf(r.width, r.height) * 0.12f);
+        if (fs < 8) fs = 8;
+        tw = MeasureText("NEW", fs);
+        DrawText("NEW", x + (w - tw) / 2, y + (h - fs) / 2, fs, ink);
+        return;
+    }
+    if (slotFont.texture.id == 0) return;
     float fs = r.height * 0.4f;
     Vector2 m = MeasureTextEx(slotFont, "?", fs, 0.0f);
     DrawTextEx(slotFont, "?", (Vector2){ r.x + (r.width - m.x) * 0.5f, r.y + (r.height - m.y) * 0.5f },
@@ -5692,7 +5727,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                            (Vector2){0, 0},
                            0.0f,
                            ColorTint(GameTint(i), othersTint));
-            DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, ColorTint(GameTint(i), othersTint));
+            DrawMissingCover(images[i], (Rectangle){ox, oy, draw_w, draw_h}, ColorTint(GameTint(i), othersTint),
+                             (i < ActiveGameCount()) ? &ActiveGames()[i] : NULL);
             if (Repo_Offer(Game_Repo(&ActiveGames()[i])))
                 Repo_BadgeDraw(slotFont, (Rectangle){ox, oy, draw_w, draw_h});
         }
@@ -5769,7 +5805,8 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                        0.0f,
                        GameTint(GameIdx));
         DrawMissingCover(images[GameIdx], (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h},
-                         GameTint(GameIdx));
+                         GameTint(GameIdx),
+                         (GameIdx < ActiveGameCount()) ? &ActiveGames()[GameIdx] : NULL);
         if (Repo_Offer(Game_Repo(&ActiveGames()[GameIdx])))
             Repo_BadgeDraw(slotFont, (Rectangle){draw_x, draw_y_scaled, scaled_w, scaled_h});
 
@@ -6523,7 +6560,7 @@ static void Details_Draw(Font font) {
                        (Vector2){ 0 }, 0.0f, Fade(WHITE, a));
     } else {
         DrawRectangleRec(cr, Fade(DARKGRAY, a));
-        DrawMissingCover(tex, cr, Fade(WHITE, a));
+        DrawMissingCover(tex, cr, Fade(WHITE, a), g);
     }
 
     float tx = sw * 0.334f, tw = card.x + card.width - sw * 0.05f - tx;
