@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack NSO UI assets (fonts, UI art, system cards, data) into one blob.
+"""Pack NSO UI assets (fonts, UI art, system cards, data, UI sounds) into one blob.
 
 Scrapable game box arts/covers are never packed. Only paths listed on the
 command line (or stdin) are included.

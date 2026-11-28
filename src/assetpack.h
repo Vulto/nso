@@ -1,5 +1,5 @@
 /* assetpack.h - embedded UI assets for NSO_RELEASE builds (fonts, system
- * cards, UI art, title lists). Scrapable game covers are never packed. */
+ * cards, UI art, title lists, UI sounds). Scrapable game covers are never packed. */
 #ifndef NSO_ASSETPACK_H
 #define NSO_ASSETPACK_H
 

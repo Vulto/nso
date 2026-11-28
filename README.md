@@ -16,7 +16,7 @@ cover is shown as a "?" placeholder.
 Extract the release tarball (`nso-<version>-linux-x86_64.tar.gz`) into its own
 folder. You should have:
 
-- `nso` — the launcher (self-contained; UI fonts and system cards are embedded)
+- `nso` — the launcher (self-contained; UI fonts, system cards and sounds are embedded)
 - `mednafen` — the bundled emulator (must sit next to `nso`; there is no
   system-Mednafen fallback)
 - `nso-norumble.so` — used automatically when Rumble is turned off
@@ -119,7 +119,7 @@ make test
 
 `make release` produces `dist/nso-<version>-linux-x86_64.tar.gz` with `nso`,
 the bundled `mednafen`, and `nso-norumble.so`. NSO's fonts, main-menu system
-cards, UI art and the CRT Geometry shader are embedded in `nso`, and Raylib is
+cards, UI art, UI sounds and the CRT Geometry shader are embedded in `nso`, and Raylib is
 linked statically. Scrapable game box arts are not embedded; users scrape
 covers themselves. glibc, OpenGL and X11 remain dynamic (Mednafen also keeps
 SDL2, ALSA, libFLAC and zlib dynamic). The ordinary `make` / `./nso` developer

@@ -27,10 +27,10 @@ linux: nso nso-norumble.so
 nso: $(SRC) $(HDRS)
 	$(CC) $(CFLAGS) -pthread -o nso $(SRC) -lraylib -lm -ldl -lX11 -lXtst -lXext
 
-# Self-contained binary: NSO UI assets (fonts, system cards, icons) are
-# embedded; scrapable game box arts/covers are not. raylib is linked
-# statically. glibc, OpenGL and X11 stay dynamic. Dev `nso` is unchanged.
-RELEASE_ASSETS := 	assets/fonts/NotoSansCJKkr-Regular.otf 	assets/fonts/SymbolsNerdFont-Regular.ttf 	assets/fonts/LICENSE-NotoSansCJK.txt 	assets/fonts/LICENSE-NerdFonts.txt 	assets/images/n64_controller.png 	assets/images/ui/download.png 	assets/images/ui/gamecube-lines.png 	assets/images/ui/gear.png 	assets/images/ui/gear1.png 	assets/images/ui/pad-gamecube.png 	assets/images/ui/pad-n64.png 	assets/images/ui/pad-nes.png 	assets/images/ui/pad-snes.png 	assets/images/systems/nes/nes.png 	assets/images/systems/snes/snes.png 	assets/images/systems/n64/n64.png 	assets/images/systems/gamecube/gamecube.png 	assets/images/systems/megadrive/megadrive.png 	assets/data/snes-titles.txt 	assets/data/gamecube-titles.txt 	assets/data/megadrive-titles.txt 	shaders/crtgeom.glsl
+# Self-contained binary: NSO UI assets (fonts, system cards, icons, UI
+# sounds) are embedded; scrapable game box arts/covers are not. raylib is
+# linked statically. glibc, OpenGL and X11 stay dynamic. Dev `nso` is unchanged.
+RELEASE_ASSETS := 	assets/fonts/NotoSansCJKkr-Regular.otf 	assets/fonts/SymbolsNerdFont-Regular.ttf 	assets/fonts/LICENSE-NotoSansCJK.txt 	assets/fonts/LICENSE-NerdFonts.txt 	assets/images/n64_controller.png 	assets/images/ui/download.png 	assets/images/ui/gamecube-lines.png 	assets/images/ui/gear.png 	assets/images/ui/gear1.png 	assets/images/ui/pad-gamecube.png 	assets/images/ui/pad-n64.png 	assets/images/ui/pad-nes.png 	assets/images/ui/pad-snes.png 	assets/images/systems/nes/nes.png 	assets/images/systems/snes/snes.png 	assets/images/systems/n64/n64.png 	assets/images/systems/gamecube/gamecube.png 	assets/images/systems/megadrive/megadrive.png 	assets/data/snes-titles.txt 	assets/data/gamecube-titles.txt 	assets/data/megadrive-titles.txt 	assets/sounds/navigate.ogg 	assets/sounds/click.ogg 	assets/sounds/pluck.ogg 	assets/sounds/coin.ogg 	assets/sounds/audio.ogg 	assets/sounds/snes_open.wav 	assets/sounds/nes_open.wav 	shaders/crtgeom.glsl
 
 RELEASE_LIBS := -L/usr/local/lib -Wl,-Bstatic -lraylib -Wl,-Bdynamic -lGL -lX11 -lXtst -lXext -lm -ldl -lpthread
 

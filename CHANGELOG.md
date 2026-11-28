@@ -57,6 +57,9 @@ combined tags like "(Japan, USA)" as USA. For NES, the auto-pick and the
 Select games picker default prefer a 512x731 portrait among the same-game
 candidates (closest size if none match exactly; a single image is used as-is),
 looking past dated or hack names so an official 512x731 is not missed.
+The release binary now also embeds the UI sound effects (the same files
+under `assets/sounds/` that the dev build loads from disk), so a tarball
+install plays them without a sounds directory.
 
 ## [0.2.0] - 2026-11-27
 
