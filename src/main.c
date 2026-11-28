@@ -2306,6 +2306,146 @@ static void DrawMenuBarCursor(Vector2 c, float diam, float ringW)
                    (Vector2){ 0, 0 }, 0.0f, WHITE);
 }
 
+/* Rounded-rect outline around the selected system tile. Same pastel
+ * gradient (including the shared 1.15x saturation bump), GetTime()*3
+ * spin, and 0.75px analytical AA as the dock cursor. The ring sits
+ * just outside the tile with the same shortened gap as before. */
+static void MenuSelectRingParams(float size, float *gapT, float *ringT)
+{
+    /* Old reach was gap 0.015 + ring 0.02 = 0.035 of the tile (13.51px at 386).
+     * Shorten both by 27.5% so the outline sits closer to the tile. */
+    *gapT = size * 0.015f * 0.725f;
+    *ringT = size * 0.02f * 0.725f;
+}
+
+static float SdRoundBox(float px, float py, float hx, float hy, float rad)
+{
+    float qx = fabsf(px) - (hx - rad);
+    float qy = fabsf(py) - (hy - rad);
+    float mx = (qx > 0.0f) ? qx : 0.0f;
+    float my = (qy > 0.0f) ? qy : 0.0f;
+    float inside = (qx > qy) ? qx : qy;
+    if (inside > 0.0f) inside = 0.0f;
+    return sqrtf(mx * mx + my * my) + inside - rad;
+}
+
+static Texture2D sysCursorTex;
+static Color *sysCursorPix;
+static float *sysCursorAng;
+static float *sysCursorA;
+static int *sysCursorIdx;
+static int sysCursorN, sysCursorSize;
+static float sysCursorCard, sysCursorRad, sysCursorInner, sysCursorOuter;
+
+static void SysCursorTex_Unload(void)
+{
+    if (sysCursorTex.id) UnloadTexture(sysCursorTex);
+    sysCursorTex = (Texture2D){ 0 };
+    if (sysCursorPix) { RL_FREE(sysCursorPix); sysCursorPix = NULL; }
+    if (sysCursorAng) { RL_FREE(sysCursorAng); sysCursorAng = NULL; }
+    if (sysCursorA) { RL_FREE(sysCursorA); sysCursorA = NULL; }
+    if (sysCursorIdx) { RL_FREE(sysCursorIdx); sysCursorIdx = NULL; }
+    sysCursorN = sysCursorSize = 0;
+}
+
+static bool SysCursorTex_Ensure(float card, float radius, float inner, float outer)
+{
+    const float aa = 0.75f;
+    float reach = fmaxf(outer, 0.0f) + aa + 2.0f;
+    int size = (int)ceilf(card + 2.0f * reach);
+    int n, x, y;
+    float cx, cy, hx, hy;
+    Image img;
+
+    if (size < 2) size = 2;
+    if (sysCursorTex.id && sysCursorPix && sysCursorSize == size
+        && fabsf(sysCursorCard - card) < 0.01f && fabsf(sysCursorRad - radius) < 0.01f
+        && fabsf(sysCursorInner - inner) < 0.01f && fabsf(sysCursorOuter - outer) < 0.01f)
+        return true;
+
+    SysCursorTex_Unload();
+    n = size * size;
+    sysCursorPix = (Color *)RL_CALLOC((size_t)n, sizeof(Color));
+    sysCursorAng = (float *)RL_CALLOC((size_t)n, sizeof(float));
+    sysCursorA = (float *)RL_CALLOC((size_t)n, sizeof(float));
+    sysCursorIdx = (int *)RL_CALLOC((size_t)n, sizeof(int));
+    if (!sysCursorPix || !sysCursorAng || !sysCursorA || !sysCursorIdx) {
+        SysCursorTex_Unload();
+        return false;
+    }
+    cx = (float)size * 0.5f;
+    cy = (float)size * 0.5f;
+    hx = card * 0.5f;
+    hy = card * 0.5f;
+    if (radius > hx) radius = hx;
+    if (radius < 0.5f) radius = 0.5f;
+    sysCursorN = 0;
+    for (y = 0; y < size; y++) {
+        for (x = 0; x < size; x++) {
+            int i = y * size + x;
+            float px = (float)x + 0.5f - cx;
+            float py = (float)y + 0.5f - cy;
+            float d = SdRoundBox(px, py, hx, hy, radius);
+            float ringA = MenuBarSmoothstep(inner - aa, inner + aa, d)
+                        * (1.0f - MenuBarSmoothstep(outer - aa, outer + aa, d));
+            if (ringA < 0.001f) continue;
+            sysCursorAng[i] = atan2f(py, px);
+            sysCursorA[i] = ringA;
+            sysCursorIdx[sysCursorN++] = i;
+        }
+    }
+    img = (Image){
+        .data = sysCursorPix,
+        .width = size,
+        .height = size,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    };
+    sysCursorTex = LoadTextureFromImage(img);
+    if (!sysCursorTex.id) {
+        SysCursorTex_Unload();
+        return false;
+    }
+    SetTextureFilter(sysCursorTex, TEXTURE_FILTER_BILINEAR);
+    SetTextureWrap(sysCursorTex, TEXTURE_WRAP_CLAMP);
+    sysCursorSize = size;
+    sysCursorCard = card;
+    sysCursorRad = radius;
+    sysCursorInner = inner;
+    sysCursorOuter = outer;
+    return true;
+}
+
+static void DrawMenuSelectRing(Rectangle tile, float radius, float gapT, float ringT)
+{
+    float inner, outer, ang0, sz;
+    int i;
+
+    if (radius <= 0.0f || gapT <= 0.0f || ringT <= 0.0f) return;
+    inner = gapT;
+    outer = gapT + ringT;
+    if (!SysCursorTex_Ensure(tile.width, radius, inner, outer)) return;
+
+    ang0 = (float)GetTime() * 3.0f;
+    for (i = 0; i < sysCursorN; i++) {
+        int p = sysCursorIdx[i];
+        float a = sysCursorA[p];
+        Color rg = MenuBarRingGrad(sysCursorAng[p] + ang0);
+        if (a > 1.0f) a = 1.0f;
+        sysCursorPix[p] = (Color){
+            rg.r, rg.g, rg.b,
+            (unsigned char)(a * 255.0f + 0.5f)
+        };
+    }
+    UpdateTexture(sysCursorTex, sysCursorPix);
+    sz = (float)sysCursorSize;
+    DrawTexturePro(sysCursorTex,
+                   (Rectangle){ 0, 0, sz, sz },
+                   (Rectangle){ tile.x + (tile.width - sz) * 0.5f,
+                                tile.y + (tile.height - sz) * 0.5f, sz, sz },
+                   (Vector2){ 0, 0 }, 0.0f, WHITE);
+}
+
 /* Draw the systems menu shifted by offsetX (used by the mosaic slide). The cards and the
  * selection ring are laid out by SystemRow below. */
 static Font slotFont;   /* menu font, defined (and set in main) below */
@@ -3002,18 +3142,6 @@ static void DrawSystemMenu(float offsetX) {
         const PlatformEntry *p = systems[i].platform;
         Rectangle dst = { x0 + (float)i * (card + gap), y, card, card };
 
-        /* Same cursor as Downloads/Shutdown, sized to the tile (drawn under
-         * the card like the dock draws the cursor under the icon). Hidden
-         * while the dock bar is focused, so only one indicator is on screen. */
-        if (i == currentSystem && menuBarFocus < 0) {
-            const float kHud = StatusHudK(sw, sh);
-            float diam = (card + 2.0f * MENU_BAR_CURSOR_RING_ADD * kHud)
-                       / (1.0f - 2.0f * MENU_BAR_CURSOR_RING);
-            float ringW = diam * MENU_BAR_CURSOR_RING + MENU_BAR_CURSOR_RING_ADD * kHud;
-            DrawMenuBarCursor((Vector2){ dst.x + card * 0.5f, dst.y + card * 0.5f },
-                              diam, ringW);
-        }
-
         /* No system art (not shipped in the repo): grey card + system name. */
         DrawRectangleRounded(dst, MENU_CARD_ROUNDNESS, 16,
                              p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF));
@@ -3027,6 +3155,14 @@ static void DrawSystemMenu(float offsetX) {
 
         if (p->texture.id != 0)
             DrawSystemCardArt(p, dst, r, WHITE);
+
+        /* Rounded-rect outline around the tile (dock colors/effects).
+         * Hidden while the dock bar is focused, so only one indicator is on screen. */
+        if (i == currentSystem && menuBarFocus < 0) {
+            float gapT, ringT;
+            MenuSelectRingParams(card, &gapT, &ringT);
+            DrawMenuSelectRing(dst, r, gapT, ringT);
+        }
     }
 
     DrawSystemMenuBar(offsetX, sw, sh, L);
@@ -9273,6 +9409,7 @@ int main(int argc, char **argv) {
         menuBarFontLoaded = false;
     }
     MenuBarCursorTex_Unload();
+    SysCursorTex_Unload();
     if (statusPadN64Loaded) {
         UnloadTexture(statusPadN64);
         statusPadN64 = (Texture2D){ 0 };
