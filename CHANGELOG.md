@@ -56,7 +56,7 @@ combined tags like "(Japan, USA)" as USA. The NES catalog includes the
 complete name list from the Nintendo Wiki (merged with the existing
 entries, no duplicates); Statistics lists those titles with no ROM under
 Not available. Hide unplayable is on by default for a fresh config
-(an existing saved off is kept). For NES, the auto-pick and the
+(an existing saved off is kept). Choosing a filter in the hold-Y menu keeps the menu open and updates the list; B still closes it. For NES, the auto-pick and the
 Select games picker default prefer a 512x731 portrait among the same-game
 candidates (closest size if none match exactly; a single image is used as-is),
 looking past dated or hack names so an official 512x731 is not missed.

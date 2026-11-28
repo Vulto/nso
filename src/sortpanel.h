@@ -460,12 +460,15 @@ static void SortPanel_Input(bool gpUp, bool gpDown, bool gpConfirm, bool gpBack)
         if (sortRow == SORT_COUNT) {
             favOn[currentSystem] = !favOn[currentSystem];
             Fav_SaveFilter(currentSystem);
+            SortPanel_RelistReload();
+            return;   /* filters stay open so more than one can be chosen */
         } else if (sortRow == SORT_COUNT + 1) {
             showHidden[currentSystem] = !showHidden[currentSystem];
             Hidden_SaveFilter(currentSystem);
+            SortPanel_RelistReload();
+            return;
         } else if (sortRow == SORT_COUNT + 2) {
             Hide_Toggle();
-            SortPanel_Close();
             return;
         } else {
             sortMode[currentSystem] = (SortMode)sortRow;
