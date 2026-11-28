@@ -6128,6 +6128,7 @@ static void HideFlip_Update(float dt)
         if (detailsT > 0.0f) return;
         hideFlipPhase = HIDEFLIP_FLIP;
         hideFlipT = 0.0f;
+        Sfx_Play(SFX_PLUCK);
         return;
     }
     if (hideFlipPhase == HIDEFLIP_FLIP) {
