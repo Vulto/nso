@@ -142,6 +142,8 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./enteranim_test
 	$(CC) $(CFLAGS) -o rewindanim_test src/rewindanim_test.c -lm
 	./rewindanim_test
+	$(CC) $(CFLAGS) -o hideanim_test src/hideanim_test.c -lm
+	./hideanim_test
 	$(CC) $(CFLAGS) -o embed_test src/embed_test.c -lm
 	./embed_test
 	$(CC) $(CFLAGS) -o sfx_test src/sfx_test.c -lraylib -lm
@@ -158,7 +160,7 @@ check: src/scrape_test.c src/scrape.h src/savestate_test.c src/savestate.h \
 	./version_scan_test
 
 check: src/gamesel_test.c src/gamesel.h tools/game_install.sh src/sneslist_test.c src/sneslist.h src/syslist.h assets/data/snes-titles.txt assets/data/gamecube-titles.txt assets/data/megadrive-titles.txt src/hide_test.c src/hide.h src/fav_test.c src/fav.h src/covers_test.c src/covers.h
-check: src/crtparams_test.c src/crtparams.h src/status_test.c src/status.h src/sysstatus_test.c src/sysstatus.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h
+check: src/crtparams_test.c src/crtparams.h src/status_test.c src/status.h src/sysstatus_test.c src/sysstatus.h src/enteranim_test.c src/enteranim.h src/rewindanim_test.c src/rewindanim.h src/hideanim_test.c src/hideanim.h
 
 # Tests, then build and open NSO on DISPLAY=:1 (a copy already open there is closed first).
 test: check nso nso-norumble.so
@@ -168,7 +170,7 @@ test: check nso nso-norumble.so
 	DISPLAY=:1 setsid nohup ./nso >/dev/null 2>&1 </dev/null &
 
 clean:
-	rm -f nso nso.exe nso-norumble.so scrape_test update_test savestate_test repos_test lang_test launch_test input_test order_test gridlayout_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test sneslist_test hide_test fav_test covers_test status_test enteranim_test rewindanim_test padmap_test crtparams_test version_test version_scan_test sysstatus_test
+	rm -f nso nso.exe nso-norumble.so scrape_test update_test savestate_test repos_test lang_test launch_test input_test order_test gridlayout_test embed_test sfx_test sm64reloc_test sort_test catalog_test gamesel_test sneslist_test hide_test fav_test covers_test status_test enteranim_test rewindanim_test hideanim_test padmap_test crtparams_test version_test version_scan_test sysstatus_test
 	rm -rf build-release dist/nso
 
 .PHONY: embed soh-nso windows test clean release

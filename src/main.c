@@ -58,6 +58,8 @@
 #include "sfx.h"
 #define ENTERANIM_IMPLEMENTATION
 #include "enteranim.h"
+#define HIDEANIM_IMPLEMENTATION
+#include "hideanim.h"
 #define CRTPARAMS_IMPLEMENTATION
 #include "crtparams.h"
 #define CRTGEOM_IMPLEMENTATION
@@ -1435,6 +1437,22 @@ static float SortY_Progress(void) { return SortHold_Progress(sortYHeld, sortYT0)
 /* X Details card: fades in over the frosted grid (detailsT 0..1). */
 static bool detailsOpen = false;
 static float detailsT = 0.0f;
+
+/* Hide from the info menu: flip the cover out, then close the grid gap. */
+typedef enum {
+    HIDEFLIP_NONE = 0,
+    HIDEFLIP_WAIT_DETAILS,   /* Details fading out; cover still in the list */
+    HIDEFLIP_FLIP,           /* horizontal scale 1→0 about the vertical centre */
+    HIDEFLIP_CLOSE           /* remaining tiles slide into the hole */
+} HideFlipPhase;
+static HideFlipPhase hideFlipPhase = HIDEFLIP_NONE;
+static float hideFlipT = 0.0f;
+static int hideFlipIdx = -1;    /* index of the leaving cover while it is still listed */
+static int hideFlipKeep = 0;    /* slot the cursor lands on after the list is rebuilt */
+static bool hideFlipApplied = false;
+static Rectangle hideFrom[MAX_GAMES], hideTo[MAX_GAMES];
+static int hideCloseN = 0;
+static float hideFromViewY = 0.0f, hideToViewY = 0.0f;
 /* S Status card: same fade (statusT 0..1), see statuspanel.h. */
 static bool statusOpen = false;
 static float statusT = 0.0f;
@@ -5568,6 +5586,15 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                         &draw_x, &draw_y_scaled, &scaled_w, &scaled_h);
         ClampTileToContent(&draw_x, &draw_y_scaled, scaled_w, scaled_h,
                            origin_x, content_w, screen_h, MOSAIC_CURSOR_PAD);
+        bool hideFlip = hideFlipPhase == HIDEFLIP_FLIP && GameIdx == hideFlipIdx;
+        bool hideFlipGone = hideFlip && !HideAnim_CoverVisible(hideFlipT);
+        if (hideFlip && !hideFlipGone) {
+            float sx = HideAnim_FlipScale(hideFlipT);
+            float cx = draw_x + scaled_w * 0.5f;
+            scaled_w *= sx;
+            draw_x = cx - scaled_w * 0.5f;
+        }
+        if (!hideFlipGone) {
 
         if (gridLifted || mv > 0.0f) {
             /* Picked up (video): soft shadow all round, fading in with the mode. */
@@ -5598,17 +5625,20 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
         unsigned char a = (unsigned char)(255 * (1.0f - pulse * 0.95f));
         Color line_color = {r, g, b, a};
 
-        if (gridLifted) {
-            /* Video: thin light edge on the lifted cover, no cursor pulse. */
-            DrawRectangleLinesEx(
-                (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
-                2.0f,
-                (Color){ 225, 228, 228, 255 });
-        } else {
-            DrawRectangleLinesEx(
-                (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
-                2.0f,
-                line_color);
+        if (!hideFlip) {
+            if (gridLifted) {
+                /* Video: thin light edge on the lifted cover, no cursor pulse. */
+                DrawRectangleLinesEx(
+                    (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
+                    2.0f,
+                    (Color){ 225, 228, 228, 255 });
+            } else {
+                DrawRectangleLinesEx(
+                    (Rectangle){draw_x - 1.0f, draw_y_scaled - 1.0f, scaled_w + 2.0f, scaled_h + 2.0f},
+                    2.0f,
+                    line_color);
+            }
+        }
         }
     }
 }
@@ -6017,6 +6047,110 @@ static int GridNavPressed(bool gpLeft, bool gpRight, bool gpUp, bool gpDown) {
 
 #include "sortpanel.h"
 
+static bool HideFlip_Active(void)
+{
+    return hideFlipPhase != HIDEFLIP_NONE;
+}
+
+static void HideFlip_Begin(int idx)
+{
+    hideFlipPhase = HIDEFLIP_WAIT_DETAILS;
+    hideFlipT = 0.0f;
+    hideFlipIdx = idx;
+    hideFlipKeep = idx;
+    hideFlipApplied = false;
+    hideCloseN = 0;
+}
+
+static void HideFlip_ApplyClose(void)
+{
+    static char titles[MAX_GAMES][SYSLIST_NAME];
+    static Rectangle oldSlots[MAX_GAMES];
+    int oldN, i, j, keep;
+    float oldView;
+    GridLayout old, neu;
+
+    if (hideFlipApplied) return;
+    keep = hideFlipKeep;
+    old = GetGridLayout();
+    oldView = viewportY;
+    oldN = ActiveGameCount();
+    if (oldN > MAX_GAMES) oldN = MAX_GAMES;
+    for (i = 0; i < oldN; i++) {
+        const char *title = ActiveGames()[i].title;
+        snprintf(titles[i], sizeof titles[i], "%s", title ? title : "");
+        oldSlots[i] = old.items[i];
+    }
+    SortPanel_Apply(currentSystem, sortMode[currentSystem], true);
+    GameIdx = Hide_Clamp(keep, ActiveGameCount());
+    hideFlipApplied = true;
+
+    neu = GetGridLayout();
+    hideCloseN = ActiveGameCount();
+    if (hideCloseN > MAX_GAMES) hideCloseN = MAX_GAMES;
+    for (i = 0; i < hideCloseN; i++) {
+        const char *title = ActiveGames()[i].title;
+        hideTo[i] = neu.items[i];
+        hideFrom[i] = hideTo[i];
+        if (!title) continue;
+        for (j = 0; j < oldN; j++) {
+            if (j == hideFlipIdx) continue;
+            if (titles[j][0] && strcmp(titles[j], title) == 0) {
+                hideFrom[i] = oldSlots[j];
+                break;
+            }
+        }
+    }
+    hideFromViewY = oldView;
+    hideToViewY = GridClampViewportY(&neu,
+        GridTargetViewportY(&neu, GameIdx, hideCloseN, oldView), hideCloseN);
+    targetViewportY = hideToViewY;
+    viewportSlideT = 1.0f;
+    viewportY = hideFromViewY;
+}
+
+static void HideFlip_Finish(void)
+{
+    if (hideFlipPhase == HIDEFLIP_NONE) return;
+    HideFlip_ApplyClose();
+    hideFlipPhase = HIDEFLIP_NONE;
+    hideFlipT = 0.0f;
+    hideFlipIdx = -1;
+    viewportY = hideToViewY;
+    targetViewportY = hideToViewY;
+    viewportSlideT = 1.0f;
+}
+
+static void HideFlip_Update(float dt)
+{
+    if (hideFlipPhase == HIDEFLIP_NONE) return;
+    if (hideFlipPhase == HIDEFLIP_WAIT_DETAILS) {
+        if (detailsT > 0.0f) return;
+        hideFlipPhase = HIDEFLIP_FLIP;
+        hideFlipT = 0.0f;
+        return;
+    }
+    if (hideFlipPhase == HIDEFLIP_FLIP) {
+        hideFlipT += dt;
+        if (!HideAnim_CoverVisible(hideFlipT)) {
+            HideFlip_ApplyClose();
+            if (hideCloseN <= 0) {
+                HideFlip_Finish();
+                return;
+            }
+            hideFlipPhase = HIDEFLIP_CLOSE;
+            hideFlipT = 0.0f;
+        }
+        return;
+    }
+    if (hideFlipPhase == HIDEFLIP_CLOSE) {
+        hideFlipT += dt;
+        viewportY = HideAnim_Lerp(hideFromViewY, hideToViewY,
+                                  HideAnim_CloseEase(hideFlipT));
+        if (hideFlipT >= HIDEANIM_CLOSE_SEC) HideFlip_Finish();
+    }
+}
+
 /* ---- X Details panel ---- */
 static int detailsRow = 0;   /* 0 = version (when shown), 1 = install */
 
@@ -6133,19 +6267,19 @@ static void Details_HandleInput(bool gpConfirm, bool gpBack,
         }
     }
     /* Info menu only: keyboard X and gamepad X hide/unhide. Grid tap/hold X is unchanged.
-     * Rebuild off-screen and present the finished grid in one frame (same
-     * serialize/hold as Hide Unplayable). The current title leaves this view,
-     * so Details closes now; the hide is not deferred to that close. */
+     * The cover flips out on the grid after Details fades, then the remaining
+     * tiles close the gap. No sound. The title is saved now; the list is rebuilt
+     * when the cover vanishes so the flip can still draw it. */
     if (IsKeyPressed(KEY_X) || padCUp || (gp && IsGamepadButtonPressed(0, NSO_BTN_X))) {
         int keep = GameIdx;
-        Sfx_Play(SFX_CLICK);
+        const char *title = g->title;
         Hidden_ToggleCurrent();
-        SortPanel_RelistReload();
-        /* Apply follows the hidden title to the packed tail, then clamps to
-         * the last slot. Keep the old index so the cursor lands on the game
-         * that slid into this slot (or the new last item if this was last). */
-        GameIdx = Hide_Clamp(keep, ActiveGameCount());
-        Details_Close();
+        bool hidden = Hidden_IsTitle(currentSystem, title);
+        bool leaves = showHidden[currentSystem] ? !hidden : hidden;
+        if (leaves) {
+            Details_Close();
+            HideFlip_Begin(keep);
+        }
     }
 }
 
@@ -7463,6 +7597,20 @@ static void DrawMosaicSlots(Color background, Font font) {
         for (int i = 0; i < count; i++) {
             boxarts[i] = gameBoxarts[i];
         }
+        if (hideFlipPhase == HIDEFLIP_CLOSE) {
+            float u = HideAnim_CloseEase(hideFlipT);
+            int n = hideCloseN < count ? hideCloseN : count;
+            for (int i = 0; i < n; i++) {
+                Rectangle r = {
+                    HideAnim_Lerp(hideFrom[i].x, hideTo[i].x, u),
+                    HideAnim_Lerp(hideFrom[i].y, hideTo[i].y, u),
+                    HideAnim_Lerp(hideFrom[i].width, hideTo[i].width, u),
+                    HideAnim_Lerp(hideFrom[i].height, hideTo[i].height, u)
+                };
+                drawGrid.items[i] = r;
+                drawGrid.slots[i] = r;
+            }
+        }
 
         DrawSlotImages(&drawGrid, boxarts, count);
     } else if (ActiveGameTotal() > 0) {   /* a filter is on and nothing is visible */
@@ -7641,6 +7789,7 @@ static void BeginLeaveMosaicSlide(void) {
 
 /* Reverse of enter post-slide: info fade out → shrink → slide (no delay). */
 static void RequestLeaveMosaic(void) {
+    HideFlip_Finish();
     if (screenSliding || mosaicExitPhase != MOSAIC_EXIT_NONE) {
         return;
     }
@@ -7708,6 +7857,7 @@ static void Home_DismissOverlays(void)
     gsOpen = false;
     if (scrapeBusy) ScrapeMenu_Cancel();
     if (detailsOpen) Details_Close();
+    HideFlip_Finish();
     if (statusOpen) Status_Close();
     if (SortPanel_Active()) SortPanel_Close();
     sidebarExpandPending = false;
@@ -8477,6 +8627,9 @@ int main(int argc, char **argv) {
         int gameCount = ActiveGameCount();
         float dt = GetFrameTime();
         if (dt > 0.05f) dt = 0.05f;
+        HideFlip_Update(dt);
+        gameCount = ActiveGameCount();
+        if (HideFlip_Active()) canNavigate = false;
         Pad_Update(dt);
 #ifndef _WIN32
         if (Rewind_Session()) {
@@ -8559,12 +8712,14 @@ int main(int argc, char **argv) {
                 GameIdx = gameCount - 1;
             }
 
-            float nextTarget = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
-            nextTarget = GridClampViewportY(&grid, nextTarget, gameCount);
-            if (nextTarget != targetViewportY) {
-                viewportSlideFromY = viewportY;
-                viewportSlideT = 0.0f;
-                targetViewportY = nextTarget;
+            if (!HideFlip_Active() || hideFlipPhase == HIDEFLIP_WAIT_DETAILS) {
+                float nextTarget = GridTargetViewportY(&grid, GameIdx, gameCount, viewportY);
+                nextTarget = GridClampViewportY(&grid, nextTarget, gameCount);
+                if (nextTarget != targetViewportY) {
+                    viewportSlideFromY = viewportY;
+                    viewportSlideT = 0.0f;
+                    targetViewportY = nextTarget;
+                }
             }
             CoverLoader_Poll();
             ManageVisibleBoxarts(gameCount, viewportY);
@@ -8736,7 +8891,8 @@ int main(int argc, char **argv) {
                         && !sidebarOpen && !sidebarExpandPending && !sidebarClosing
                         && sbWidthPhase == SB_WIDTH_IDLE && !gridLifted
                         && !statusOpen && statusT <= 0.0f
-                        && !detailsOpen && detailsT <= 0.0f;
+                        && !detailsOpen && detailsT <= 0.0f
+                        && !HideFlip_Active();
                     SortY_Update(canNavigate && mosaicIdle,
                                  canNavigate && mosaicIdle && gameCount > 0 && GameIdx < gameCount);
                     if (liveConfirm != 0) {
