@@ -5605,19 +5605,19 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                                      0.04f, 6, Fade(BLACK, 0.07f * mv));
             }
         } else {
-            /* Selected cover only: very subtle soft shadow, a few px all
-             * around, fading in with the grow animation. */
+            /* Selected cover only: soft shadow all around, fading in with
+             * the grow animation. 15 px falloff (6 × 2.5), 0.035 alpha. */
             float grow = (MOSAIC_SELECT_SCALE > 1.0f)
                 ? (scale - 1.0f) / (MOSAIC_SELECT_SCALE - 1.0f) : 1.0f;
             if (grow < 0.0f) grow = 0.0f;
             if (grow > 1.0f) grow = 1.0f;
             if (grow > 0.0f) {
-                for (int k = 1; k <= 4; k++) {
-                    float g = (float)k * 1.25f;
+                for (int k = 1; k <= 6; k++) {
+                    float g = (float)k * 2.5f;
                     DrawRectangleRounded(
                         (Rectangle){ draw_x - g, draw_y_scaled - g,
                                      scaled_w + 2.0f * g, scaled_h + 2.0f * g },
-                        0.04f, 6, Fade(BLACK, 0.014f * grow));
+                        0.04f, 6, Fade(BLACK, 0.035f * grow));
                 }
             }
         }
