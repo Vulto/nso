@@ -2388,11 +2388,14 @@ static Font slotFont;   /* menu font, defined (and set in main) below */
 /* Nerd Font (Symbols Only): N64 C-Up / C-Down, and the status-legend Y. */
 #define HINT_NERD_CUP   0xF0062  /* md-arrow_up_drop_circle */
 #define HINT_NERD_CDOWN 0xF004A  /* md-arrow_down_drop_circle */
-/* nf-md-alpha_y_circle: this font maps it to U+F0C34 (U+F0B8C is md-dns_outline). */
+/* nf-md-alpha_y_circle: this font maps it to U+F0C34 (U+F0B8C is md-dns_outline).
+ * nf-md-alpha_x_circle is U+F0C31 in the same filled-circle family. */
 #define HINT_NERD_Y_CIRCLE 0xF0C34
+#define HINT_NERD_X_CIRCLE 0xF0C31
 static Font hintNerdFont;
 static bool hintNerdLoaded;
 static bool hintYNerdLoaded;
+static bool hintXNerdLoaded;
 #define FAV_HEART   0xF004  /* nf-fa-heart */
 #define FAV_HEART_O 0xF08A  /* nf-fa-heart_o */
 #define HIDE_BLOCK  0xF00AD /* nf-md-block_helper */
@@ -3265,12 +3268,12 @@ static float Hint_GlyphHeight(Font font, int cp, float fontSize) {
     return font.recs[index].height * scale;
 }
 
-/* Scale the status-legend Y so its ink height matches 🅐 (and 🅑). */
-static float Hint_YCircleSize(Font ui, float fontSize) {
+/* Scale a status-legend letter-circle (X/Y) so its ink height matches 🅐 (and 🅑). */
+static float Hint_LetterCircleSize(Font ui, int cp, float fontSize) {
     float aH = Hint_GlyphHeight(ui, 0x1F150, fontSize);
-    float yH = Hint_GlyphHeight(hintNerdFont, HINT_NERD_Y_CIRCLE, fontSize);
-    if (aH <= 0.0f || yH <= 0.0f) return fontSize;
-    return fontSize * (aH / yH);
+    float cH = Hint_GlyphHeight(hintNerdFont, cp, fontSize);
+    if (aH <= 0.0f || cH <= 0.0f) return fontSize;
+    return fontSize * (aH / cH);
 }
 
 static int Hint_TextHasCp(const char *text, int want) {
@@ -3294,9 +3297,10 @@ static float Hint_N64Width(Font font, const char *text, float fontSize, float sp
         int sz = 0;
         int cp = GetCodepointNext(p, &sz);
         p += sz;
-        if (cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded) {
-            float ys = Hint_YCircleSize(font, fontSize);
-            w += Hint_GlyphAdvance(hintNerdFont, HINT_NERD_Y_CIRCLE, ys) + spacing;
+        if ((cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded)
+            || (cp == HINT_NERD_X_CIRCLE && hintXNerdLoaded)) {
+            float ys = Hint_LetterCircleSize(font, cp, fontSize);
+            w += Hint_GlyphAdvance(hintNerdFont, cp, ys) + spacing;
             continue;
         }
         int nerd = Hint_N64NerdCodepoint(cp);
@@ -3315,15 +3319,16 @@ static void Hint_N64Draw(Font font, const char *text, Vector2 pos, float fontSiz
         int sz = 0;
         int cp = GetCodepointNext(p, &sz);
         p += sz;
-        if (cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded) {
-            float ys = Hint_YCircleSize(font, fontSize);
+        if ((cp == HINT_NERD_Y_CIRCLE && hintYNerdLoaded)
+            || (cp == HINT_NERD_X_CIRCLE && hintXNerdLoaded)) {
+            float ys = Hint_LetterCircleSize(font, cp, fontSize);
             float aOff = StatusGlyphOffY(font, 0x1F150, fontSize);
-            float yOff = StatusGlyphOffY(hintNerdFont, HINT_NERD_Y_CIRCLE, ys);
+            float yOff = StatusGlyphOffY(hintNerdFont, cp, ys);
             float aH = Hint_GlyphHeight(font, 0x1F150, fontSize);
-            float yH = Hint_GlyphHeight(hintNerdFont, HINT_NERD_Y_CIRCLE, ys);
+            float yH = Hint_GlyphHeight(hintNerdFont, cp, ys);
             float y = pos.y + aOff - yOff + (aH - yH) * 0.5f;
-            DrawTextCodepoint(hintNerdFont, HINT_NERD_Y_CIRCLE, (Vector2){ x, y }, ys, tint);
-            x += Hint_GlyphAdvance(hintNerdFont, HINT_NERD_Y_CIRCLE, ys) + spacing;
+            DrawTextCodepoint(hintNerdFont, cp, (Vector2){ x, y }, ys, tint);
+            x += Hint_GlyphAdvance(hintNerdFont, cp, ys) + spacing;
             continue;
         }
         int nerd = Hint_N64NerdCodepoint(cp);
@@ -3355,7 +3360,8 @@ static void DrawInfoBarEx(Font font, const char *text, float opacity, float ySli
     bool padBar = (text == PadUi_BarText());   /* the controller screen's bar: rings round its A / B glyphs */
     bool n64Hints = !padBar && (Pad_ActiveProfile() == NSO_PAD_PROFILE_N64) && hintNerdLoaded;
     bool yHint = !padBar && hintYNerdLoaded && Hint_TextHasCp(draw, HINT_NERD_Y_CIRCLE);
-    bool mixedHints = n64Hints || yHint;
+    bool xHint = !padBar && hintXNerdLoaded && Hint_TextHasCp(draw, HINT_NERD_X_CIRCLE);
+    bool mixedHints = n64Hints || yHint || xHint;
     const char *mix = n64Hints ? text : draw;
     float glyphGap = 0.0f, glyphGapZ = 0.0f;
     Vector2 textSize;
@@ -8174,15 +8180,20 @@ int main(int argc, char **argv) {
                  GetDataPath("assets/fonts/SymbolsNerdFont-Regular.ttf"));
         hintNerdLoaded = false;
         hintYNerdLoaded = false;
+        hintXNerdLoaded = false;
         hintNerdFont = (Font){ 0 };
         if (FileExists(nerdPath)) {
-            int nerdCps[3] = { HINT_NERD_CUP, HINT_NERD_CDOWN, HINT_NERD_Y_CIRCLE };
-            hintNerdFont = LoadFontEx(nerdPath, 36, nerdCps, 3);
+            int nerdCps[4] = { HINT_NERD_CUP, HINT_NERD_CDOWN, HINT_NERD_Y_CIRCLE, HINT_NERD_X_CIRCLE };
+            hintNerdFont = LoadFontEx(nerdPath, 36, nerdCps, 4);
             hintNerdLoaded = (hintNerdFont.texture.id != 0 && hintNerdFont.glyphCount >= 2);
             hintYNerdLoaded = false;
+            hintXNerdLoaded = false;
             if (hintNerdLoaded) {
                 int gi = GetGlyphIndex(hintNerdFont, HINT_NERD_Y_CIRCLE);
                 hintYNerdLoaded = (gi >= 0 && hintNerdFont.glyphs[gi].value == HINT_NERD_Y_CIRCLE
+                                   && hintNerdFont.recs[gi].width > 1.0f);
+                gi = GetGlyphIndex(hintNerdFont, HINT_NERD_X_CIRCLE);
+                hintXNerdLoaded = (gi >= 0 && hintNerdFont.glyphs[gi].value == HINT_NERD_X_CIRCLE
                                    && hintNerdFont.recs[gi].width > 1.0f);
                 SetTextureFilter(hintNerdFont.texture, TEXTURE_FILTER_BILINEAR);
             } else if (hintNerdFont.texture.id) {
@@ -9054,6 +9065,7 @@ int main(int argc, char **argv) {
         hintNerdFont = (Font){ 0 };
         hintNerdLoaded = false;
         hintYNerdLoaded = false;
+        hintXNerdLoaded = false;
     }
     if (favNerdLoaded) {
         UnloadFont(favNerdFont);

@@ -196,6 +196,11 @@ static bool Status_YPressed(void) {
         || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, NSO_BTN_Y));
 }
 
+static bool Status_XPressed(void) {
+    return IsKeyPressed(KEY_X) || padCUp
+        || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, NSO_BTN_X));
+}
+
 static void Status_CycleTab(void) {
     statusTab = (statusTab + 1) % STATUS_TAB_COUNT;
     if (statusTab == STATUS_TAB_EMU) statusEmuNeedRefresh = 1;
@@ -244,7 +249,7 @@ static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack,
             if (up && statusEmuRow > 0) { statusEmuRow--; Sfx_Play(SFX_PLUCK); }
             if (down && statusEmuRow < statusEmuRomN - 1) { statusEmuRow++; Sfx_Play(SFX_PLUCK); }
         }
-        if (ok) {
+        if (ok || Status_XPressed()) {
             Sfx_Play(SFX_CLICK);
             ScrapeMenu_StartFromRoms(0);
         }
