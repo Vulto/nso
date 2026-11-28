@@ -2132,16 +2132,6 @@ static float leaveFadeInT = -1.0f;
 static const float LEAVE_FADE_OUT_SEC = 0.12f;
 
 
-/* Shared select-indicator metrics: a black gap, then a pastel gradient ring
- * (same MenuBarRingGrad / GetTime()*3 cycle as the bar cursor). */
-static void MenuSelectRingParams(float size, float *gapT, float *ringT)
-{
-    /* Old reach was gap 0.015 + ring 0.02 = 0.035 of the tile (13.51px at 386).
-     * Shorten both by 27.5% so the outline sits closer to the tile. */
-    *gapT = size * 0.015f * 0.725f;
-    *ringT = size * 0.02f * 0.725f;
-}
-
 /* Bar-icon cursor (Switch home): a filled disc slightly lighter than the
  * pill (#4a4a4a) and a thin ring with a soft pastel gradient around the
  * circumference. The gradient rotates at the same GetTime()*3 rate as
@@ -2215,6 +2205,32 @@ static float MenuBarSmoothstep(float e0, float e1, float x)
     return t * t * (3.0f - 2.0f * t);
 }
 
+/* Slight saturation bump for the shared main-menu cursor (system tiles and dock). */
+static Color MenuBarRingSaturate(Color c, float k)
+{
+    float r = (float)c.r, g = (float)c.g, b = (float)c.b;
+    float mx = fmaxf(r, fmaxf(g, b)), mn = fminf(r, fminf(g, b));
+    float s;
+    if (mx < 1.0f) return c;
+    s = (mx - mn) / mx;
+    if (s * k > 1.0f) k = 1.0f / s;
+    r = mx - (mx - r) * k;
+    g = mx - (mx - g) * k;
+    b = mx - (mx - b) * k;
+    if (r < 0.0f) r = 0.0f;
+    if (r > 255.0f) r = 255.0f;
+    if (g < 0.0f) g = 0.0f;
+    if (g > 255.0f) g = 255.0f;
+    if (b < 0.0f) b = 0.0f;
+    if (b > 255.0f) b = 255.0f;
+    return (Color){
+        (unsigned char)(r + 0.5f),
+        (unsigned char)(g + 0.5f),
+        (unsigned char)(b + 0.5f),
+        c.a
+    };
+}
+
 static Color MenuBarRingGrad(float ang)
 {
     /* Y-down: BR mint 0.125, BL violet 0.375, TL pink 0.625, TR periwinkle 0.875. */
@@ -2231,206 +2247,13 @@ static Color MenuBarRingGrad(float ang)
         u = ((t >= 0.875f) ? (t - 0.875f) : (t + 0.125f)) / 0.25f;
     }
     Color a = c[i0], b = c[(i0 + 1) & 3];
-    return (Color){
+    Color col = {
         (unsigned char)(a.r + (int)((float)(b.r - a.r) * u + 0.5f)),
         (unsigned char)(a.g + (int)((float)(b.g - a.g) * u + 0.5f)),
         (unsigned char)(a.b + (int)((float)(b.b - a.b) * u + 0.5f)),
         255
     };
-}
-
-/* Same hues as MENU_BAR_RING_COL, but near-full saturation and full value
- * (bright, not pastel). Spin and stop angles stay in sync with the bar. */
-static const Color MENU_SELECT_RING_COL[4] = {
-    {  13, 255, 215, 255 },  /* mint/cyan,  H=170 */
-    { 134,  13, 255, 255 },  /* violet,     H=270 */
-    { 255,  13, 164, 255 },  /* pink,       H=322.5 */
-    {  13,  96, 255, 255 },  /* periwinkle, H=219 */
-};
-
-static Color MenuSelectRingGrad(float ang)
-{
-    float t = ang * (0.5f / 3.14159265f);
-    t -= floorf(t);
-    const Color *c = MENU_SELECT_RING_COL;
-    int i0;
-    float u;
-    if (t >= 0.125f && t < 0.375f) { i0 = 0; u = (t - 0.125f) / 0.25f; }
-    else if (t >= 0.375f && t < 0.625f) { i0 = 1; u = (t - 0.375f) / 0.25f; }
-    else if (t >= 0.625f && t < 0.875f) { i0 = 2; u = (t - 0.625f) / 0.25f; }
-    else {
-        i0 = 3;
-        u = ((t >= 0.875f) ? (t - 0.875f) : (t + 0.125f)) / 0.25f;
-    }
-    Color a = c[i0], b = c[(i0 + 1) & 3];
-    return (Color){
-        (unsigned char)(a.r + (int)((float)(b.r - a.r) * u + 0.5f)),
-        (unsigned char)(a.g + (int)((float)(b.g - a.g) * u + 0.5f)),
-        (unsigned char)(a.b + (int)((float)(b.b - a.b) * u + 0.5f)),
-        255
-    };
-}
-
-/* Texture-based rounded-rect ring: analytic SDF + gaussian falloff inside
- * and outside the core, bilinear-filtered. Alpha and angle are baked once;
- * only the rotating gradient is written each frame. */
-static const float SYS_RING_SIGMA = 2.5f;
-static const float SYS_RING_THICK_ADD = 2.0f;   /* extra core thickness, outward */
-
-static Texture2D sysRingTex;
-static Color *sysRingPix;
-static float *sysRingAng;
-static float *sysRingA;
-static float *sysRingGapA;
-static int *sysRingIdx;
-static int sysRingN, sysRingSize;
-static float sysRingCard, sysRingRad, sysRingInner, sysRingOuter, sysRingGapT;
-
-static void SysRingTex_Unload(void)
-{
-    if (sysRingTex.id) UnloadTexture(sysRingTex);
-    sysRingTex = (Texture2D){ 0 };
-    if (sysRingPix) { RL_FREE(sysRingPix); sysRingPix = NULL; }
-    if (sysRingAng) { RL_FREE(sysRingAng); sysRingAng = NULL; }
-    if (sysRingA) { RL_FREE(sysRingA); sysRingA = NULL; }
-    if (sysRingGapA) { RL_FREE(sysRingGapA); sysRingGapA = NULL; }
-    if (sysRingIdx) { RL_FREE(sysRingIdx); sysRingIdx = NULL; }
-    sysRingN = sysRingSize = 0;
-}
-
-static float SdRoundBox(float px, float py, float hx, float hy, float rad)
-{
-    float qx = fabsf(px) - (hx - rad);
-    float qy = fabsf(py) - (hy - rad);
-    float mx = (qx > 0.0f) ? qx : 0.0f;
-    float my = (qy > 0.0f) ? qy : 0.0f;
-    float inside = (qx > qy) ? qx : qy;
-    if (inside > 0.0f) inside = 0.0f;
-    return sqrtf(mx * mx + my * my) + inside - rad;
-}
-
-static float SysRingGauss(float dist, float sigma)
-{
-    float u = dist / sigma;
-    return expf(-0.5f * u * u);
-}
-
-static bool SysRingTex_Ensure(float card, float radius, float inner, float outer, float gapT)
-{
-    float sigma = SYS_RING_SIGMA;
-    float reach = fmaxf(outer, 0.0f) + 3.0f * sigma + 1.5f;
-    int size = (int)ceilf(card + 2.0f * reach);
-    int n, x, y;
-    float cx, cy, hx, hy;
-    Image img;
-
-    if (size < 2) size = 2;
-    if (sysRingTex.id && sysRingPix && sysRingSize == size
-        && fabsf(sysRingCard - card) < 0.01f && fabsf(sysRingRad - radius) < 0.01f
-        && fabsf(sysRingInner - inner) < 0.01f && fabsf(sysRingOuter - outer) < 0.01f
-        && fabsf(sysRingGapT - gapT) < 0.01f)
-        return true;
-
-    SysRingTex_Unload();
-    n = size * size;
-    sysRingPix = (Color *)RL_CALLOC((size_t)n, sizeof(Color));
-    sysRingAng = (float *)RL_CALLOC((size_t)n, sizeof(float));
-    sysRingA = (float *)RL_CALLOC((size_t)n, sizeof(float));
-    sysRingGapA = (float *)RL_CALLOC((size_t)n, sizeof(float));
-    sysRingIdx = (int *)RL_CALLOC((size_t)n, sizeof(int));
-    if (!sysRingPix || !sysRingAng || !sysRingA || !sysRingGapA || !sysRingIdx) {
-        SysRingTex_Unload();
-        return false;
-    }
-    cx = (float)size * 0.5f;
-    cy = (float)size * 0.5f;
-    hx = card * 0.5f;
-    hy = card * 0.5f;
-    if (radius > hx) radius = hx;
-    if (radius < 0.5f) radius = 0.5f;
-    sysRingN = 0;
-    for (y = 0; y < size; y++) {
-        for (x = 0; x < size; x++) {
-            int i = y * size + x;
-            float px = (float)x + 0.5f - cx;
-            float py = (float)y + 0.5f - cy;
-            float d = SdRoundBox(px, py, hx, hy, radius);
-            float distCore, ringA, gapA, dIn, dOut;
-            if (d >= inner && d <= outer) distCore = 0.0f;
-            else distCore = (d < inner) ? (inner - d) : (d - outer);
-            ringA = SysRingGauss(distCore, sigma);
-            if (ringA < 0.01f) ringA = 0.0f;
-            /* Soft dark gap along the tile edge (inside), gaussian at both ends. */
-            dIn = -gapT - d;          /* 0 at the inner gap edge, + toward the centre */
-            dOut = d - 0.0f;          /* 0 at the tile edge, + toward the outside */
-            if (dIn < 0.0f) dIn = 0.0f;
-            if (dOut < 0.0f) dOut = 0.0f;
-            gapA = SysRingGauss(dIn, sigma) * SysRingGauss(dOut, sigma);
-            if (d < -gapT - 3.0f * sigma || d > 3.0f * sigma) gapA = 0.0f;
-            if (gapA < 0.01f) gapA = 0.0f;
-            sysRingAng[i] = atan2f(py, px);
-            sysRingA[i] = ringA;
-            sysRingGapA[i] = gapA;
-            if (ringA > 0.0f || gapA > 0.0f) sysRingIdx[sysRingN++] = i;
-        }
-    }
-    img = (Image){
-        .data = sysRingPix,
-        .width = size,
-        .height = size,
-        .mipmaps = 1,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-    };
-    sysRingTex = LoadTextureFromImage(img);
-    if (!sysRingTex.id) {
-        SysRingTex_Unload();
-        return false;
-    }
-    SetTextureFilter(sysRingTex, TEXTURE_FILTER_BILINEAR);
-    SetTextureWrap(sysRingTex, TEXTURE_WRAP_CLAMP);
-    sysRingSize = size;
-    sysRingCard = card;
-    sysRingRad = radius;
-    sysRingInner = inner;
-    sysRingOuter = outer;
-    sysRingGapT = gapT;
-    return true;
-}
-
-/* Soft cursor around the selected system tile. The +2 px of extra thickness
- * is added on the outside so the inner edge (and the tile) stay put. */
-static void DrawMenuSelectRing(Rectangle tile, float radius, float gapT, float ringT)
-{
-    float inner, outer, ang0, sz;
-    int i;
-
-    if (radius <= 0.0f || gapT <= 0.0f || ringT <= 0.0f) return;
-    inner = gapT - ringT;
-    outer = gapT + SYS_RING_THICK_ADD;
-    if (!SysRingTex_Ensure(tile.width, radius, inner, outer, gapT)) return;
-
-    ang0 = (float)GetTime() * 3.0f;   /* same cycle as the bar cursor */
-    for (i = 0; i < sysRingN; i++) {
-        int p = sysRingIdx[i];
-        float ringA = sysRingA[p], gapA = sysRingGapA[p];
-        float a = ringA + gapA * (1.0f - ringA);
-        Color out = { 0, 0, 0, 0 };
-        if (a > 0.001f) {
-            if (ringA > 0.001f) {
-                out = MenuSelectRingGrad(sysRingAng[p] + ang0);
-            }
-            if (a > 1.0f) a = 1.0f;
-            out.a = (unsigned char)(a * 255.0f + 0.5f);
-        }
-        sysRingPix[p] = out;
-    }
-    UpdateTexture(sysRingTex, sysRingPix);
-    sz = (float)sysRingSize;
-    DrawTexturePro(sysRingTex,
-                   (Rectangle){ 0, 0, sz, sz },
-                   (Rectangle){ tile.x + (tile.width - sz) * 0.5f,
-                                tile.y + (tile.height - sz) * 0.5f, sz, sz },
-                   (Vector2){ 0, 0 }, 0.0f, WHITE);
+    return MenuBarRingSaturate(col, 1.15f);
 }
 
 static void DrawMenuBarCursor(Vector2 c, float diam, float ringW)
@@ -3179,6 +3002,18 @@ static void DrawSystemMenu(float offsetX) {
         const PlatformEntry *p = systems[i].platform;
         Rectangle dst = { x0 + (float)i * (card + gap), y, card, card };
 
+        /* Same cursor as Downloads/Shutdown, sized to the tile (drawn under
+         * the card like the dock draws the cursor under the icon). Hidden
+         * while the dock bar is focused, so only one indicator is on screen. */
+        if (i == currentSystem && menuBarFocus < 0) {
+            const float kHud = StatusHudK(sw, sh);
+            float diam = (card + 2.0f * MENU_BAR_CURSOR_RING_ADD * kHud)
+                       / (1.0f - 2.0f * MENU_BAR_CURSOR_RING);
+            float ringW = diam * MENU_BAR_CURSOR_RING + MENU_BAR_CURSOR_RING_ADD * kHud;
+            DrawMenuBarCursor((Vector2){ dst.x + card * 0.5f, dst.y + card * 0.5f },
+                              diam, ringW);
+        }
+
         /* No system art (not shipped in the repo): grey card + system name. */
         DrawRectangleRounded(dst, MENU_CARD_ROUNDNESS, 16,
                              p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF));
@@ -3192,14 +3027,6 @@ static void DrawSystemMenu(float offsetX) {
 
         if (p->texture.id != 0)
             DrawSystemCardArt(p, dst, r, WHITE);
-
-        if (i == currentSystem && menuBarFocus < 0) {
-            /* Soft dark gap, then a pastel gradient ring in sync with the bar cursor.
-             * Hidden while the dock bar is focused, so only one indicator is on screen. */
-            float gapT, ringT;
-            MenuSelectRingParams(card, &gapT, &ringT);
-            DrawMenuSelectRing(dst, r, gapT, ringT);
-        }
     }
 
     DrawSystemMenuBar(offsetX, sw, sh, L);
@@ -9446,7 +9273,6 @@ int main(int argc, char **argv) {
         menuBarFontLoaded = false;
     }
     MenuBarCursorTex_Unload();
-    SysRingTex_Unload();
     if (statusPadN64Loaded) {
         UnloadTexture(statusPadN64);
         statusPadN64 = (Texture2D){ 0 };
