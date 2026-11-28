@@ -2136,8 +2136,10 @@ static const float LEAVE_FADE_OUT_SEC = 0.12f;
  * (same MenuBarRingGrad / GetTime()*3 cycle as the bar cursor). */
 static void MenuSelectRingParams(float size, float *gapT, float *ringT)
 {
-    *gapT = size * 0.015f;
-    *ringT = size * 0.02f;
+    /* Old reach was gap 0.015 + ring 0.02 = 0.035 of the tile (13.51px at 386).
+     * Shorten both by 27.5% so the outline sits closer to the tile. */
+    *gapT = size * 0.015f * 0.725f;
+    *ringT = size * 0.02f * 0.725f;
 }
 
 /* Bar-icon cursor (Switch home): a filled disc slightly lighter than the
@@ -2237,116 +2239,145 @@ static Color MenuBarRingGrad(float ang)
     };
 }
 
-/* One vertex of the card select ring: same pastel angular gradient, in sync
- * with the bar cursor (GetTime()*3, Y-down atan2). */
-static void MenuSelectRingVert(float x, float y, float cx, float cy, float ang0,
-                               Rectangle src, float texW, float texH, float u, float v)
+/* Offset-rounded-rect outline of the system tile, at signed distance `d`
+ * from the rounded edge (positive is outside). Returns the point count. */
+#define SYS_RING_CSEG 48
+#define SYS_RING_SSEG 32
+#define SYS_RING_MAXPT (4 * (SYS_RING_CSEG + SYS_RING_SSEG))
+#define SYS_RING_RADIAL 10
+
+static int MenuSelectRingPoints(Rectangle rec, float rad, float d, Vector2 *out)
 {
-    Color col = MenuBarRingGrad(atan2f(y - cy, x - cx) + ang0);
-    rlColor4ub(col.r, col.g, col.b, col.a);
-    rlTexCoord2f((src.x + src.width * u) / texW, (src.y + src.height * v) / texH);
+    const float angles[4] = { 180.0f, 270.0f, 0.0f, 90.0f };
+    float x0 = rec.x + rad, x1 = rec.x + rec.width - rad;
+    float y0 = rec.y + rad, y1 = rec.y + rec.height - rad;
+    Vector2 ctr[4] = { { x0, y0 }, { x1, y0 }, { x1, y1 }, { x0, y1 } };
+    /* Straight sides after TL, TR, BR, BL (Y-down). */
+    Vector2 s0[4] = {
+        { x0, rec.y - d }, { rec.x + rec.width + d, y0 },
+        { x1, rec.y + rec.height + d }, { rec.x - d, y1 }
+    };
+    Vector2 s1[4] = {
+        { x1, rec.y - d }, { rec.x + rec.width + d, y1 },
+        { x0, rec.y + rec.height + d }, { rec.x - d, y0 }
+    };
+    float rr = rad + d;
+    int n = 0, k, i;
+    if (rr < 0.5f) rr = 0.5f;
+    for (k = 0; k < 4; k++) {
+        for (i = 0; i < SYS_RING_CSEG; i++) {
+            float a = (angles[k] + 90.0f * (float)i / (float)SYS_RING_CSEG) * DEG2RAD;
+            out[n++] = (Vector2){ ctr[k].x + cosf(a) * rr, ctr[k].y + sinf(a) * rr };
+        }
+        for (i = 0; i < SYS_RING_SSEG; i++) {
+            float t = (float)i / (float)SYS_RING_SSEG;
+            out[n++] = (Vector2){ s0[k].x + (s1[k].x - s0[k].x) * t,
+                                  s0[k].y + (s1[k].y - s0[k].y) * t };
+        }
+    }
+    return n;
+}
+
+static void MenuSelectRingVertA(float x, float y, float cx, float cy, float ang0,
+                                Rectangle src, float texW, float texH,
+                                Color rgb, unsigned char alpha)
+{
+    if (rgb.a != 0) {
+        Color col = MenuBarRingGrad(atan2f(y - cy, x - cx) + ang0);
+        rgb = col;
+    }
+    rlColor4ub(rgb.r, rgb.g, rgb.b, alpha);
+    rlTexCoord2f(src.x / texW, src.y / texH);
     rlVertex2f(x, y);
 }
 
-/* A stroke strip along one edge, subdivided so the gradient stays smooth.
- * (x0,y0)->(x1,y1) is the first side of the quad (raylib's first two verts
- * of DrawRectangleRoundedLinesEx); (x2,y2)->(x3,y3) is the opposite side. */
-static void MenuSelectRingStrip(float x0, float y0, float x1, float y1,
-                                float x2, float y2, float x3, float y3,
-                                float cx, float cy, float ang0,
-                                Rectangle src, float tw, float th, int n)
+/* Annular band around the tile, `profile(d)` is coverage in 0..1. The pastel
+ * pass uses rgb.a != 0 as a flag to sample the rotating angular gradient. */
+static void MenuSelectRingBand(Rectangle tile, float radius, float d0, float d1,
+                               float (*profile)(float, const float *),
+                               const float *profArg, Color rgb, float cx, float cy,
+                               float ang0, Rectangle src, float tw, float th)
 {
-    if (n < 1) n = 1;
-    for (int i = 0; i < n; i++) {
-        float t0 = (float)i / (float)n, t1 = (float)(i + 1) / (float)n;
-        float ax0 = x0 + (x1 - x0) * t0, ay0 = y0 + (y1 - y0) * t0;
-        float ax1 = x0 + (x1 - x0) * t1, ay1 = y0 + (y1 - y0) * t1;
-        float bx0 = x3 + (x2 - x3) * t0, by0 = y3 + (y2 - y3) * t0;
-        float bx1 = x3 + (x2 - x3) * t1, by1 = y3 + (y2 - y3) * t1;
-        MenuSelectRingVert(ax0, ay0, cx, cy, ang0, src, tw, th, 0.0f, 0.0f);
-        MenuSelectRingVert(bx0, by0, cx, cy, ang0, src, tw, th, 0.0f, 1.0f);
-        MenuSelectRingVert(bx1, by1, cx, cy, ang0, src, tw, th, 1.0f, 1.0f);
-        MenuSelectRingVert(ax1, ay1, cx, cy, ang0, src, tw, th, 1.0f, 0.0f);
+    Vector2 pts[SYS_RING_RADIAL + 1][SYS_RING_MAXPT];
+    unsigned char alpha[SYS_RING_RADIAL + 1];
+    int n = 0, j, i;
+
+    if (d1 <= d0) return;
+    for (j = 0; j <= SYS_RING_RADIAL; j++) {
+        float u = (float)j / (float)SYS_RING_RADIAL;
+        float d = d0 + (d1 - d0) * u;
+        float a = profile(d, profArg);
+        if (a < 0.0f) a = 0.0f;
+        if (a > 1.0f) a = 1.0f;
+        alpha[j] = (unsigned char)(a * 255.0f + 0.5f);
+        n = MenuSelectRingPoints(tile, radius, d, pts[j]);
+    }
+    if (n < 2) return;
+    for (j = 0; j < SYS_RING_RADIAL; j++) {
+        if (alpha[j] == 0 && alpha[j + 1] == 0) continue;
+        for (i = 0; i < n; i++) {
+            int i1 = (i + 1 == n) ? 0 : i + 1;
+            MenuSelectRingVertA(pts[j][i].x,  pts[j][i].y,  cx, cy, ang0, src, tw, th, rgb, alpha[j]);
+            MenuSelectRingVertA(pts[j + 1][i].x,  pts[j + 1][i].y,  cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
+            MenuSelectRingVertA(pts[j + 1][i1].x, pts[j + 1][i1].y, cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
+            MenuSelectRingVertA(pts[j][i1].x, pts[j][i1].y, cx, cy, ang0, src, tw, th, rgb, alpha[j]);
+        }
     }
 }
 
-/* Same geometry as DrawRectangleRoundedLinesEx (stroke inward from rec,
- * 16 corner segments); only the color is the rotating pastel gradient. */
-static void DrawMenuSelectRing(Rectangle rec, float roundness, int segments, float thick)
+static float MenuSelectGapProfile(float d, const float *arg)
 {
-    float radius, outerRadius, innerRadius, stepLength, ang0;
-    float x0, x1, x2, x3, x4, x5, y0, y1, y2, y3, y4, y5, cx, cy;
+    float gapT = arg[0], aa = arg[1];
+    return MenuBarSmoothstep(-gapT, -gapT + aa, d)
+         * (1.0f - MenuBarSmoothstep(-aa, 0.0f, d));
+}
+
+static float MenuSelectPastelProfile(float d, const float *arg)
+{
+    float inner = arg[0], outer = arg[1], fade = arg[2];
+    return MenuBarSmoothstep(inner, inner + fade, d)
+         * (1.0f - MenuBarSmoothstep(outer - fade, outer, d));
+}
+
+/* Soft, anti-aliased card select effect: a dark gap, then the rotating pastel
+ * outline with a smooth radial falloff and rounded corners matching the tile. */
+static void DrawMenuSelectRing(Rectangle tile, float radius, float gapT, float ringT)
+{
+    float cx, cy, ang0, tw, th, fade, aa, inner, outer;
+    float gapArg[2], ringArg[3];
     Texture2D tex;
     Rectangle src;
-    float tw, th;
-    const float angles[4] = { 180.0f, 270.0f, 0.0f, 90.0f };
-    Vector2 centers[4];
-    int k, i, sideN;
+    Color black = { 0, 0, 0, 0 };   /* a == 0: solid black, not the gradient */
+    Color pastel = { 255, 255, 255, 255 };
 
-    if (roundness <= 0.0f || thick <= 0.0f) return;
-    if (roundness >= 1.0f) roundness = 1.0f;
-    if (segments < 1) segments = 16;
-    radius = (rec.width > rec.height) ? (rec.height * roundness) / 2.0f
-                                      : (rec.width * roundness) / 2.0f;
-    if (radius <= 0.0f) return;
-    outerRadius = radius;
-    innerRadius = outerRadius - thick;
-    if (innerRadius < 0.0f) innerRadius = 0.0f;
-
-    stepLength = 90.0f / (float)segments;
-    x0 = rec.x + outerRadius;
-    x1 = (rec.x + rec.width) - outerRadius;
-    x2 = rec.x + rec.width;
-    x3 = rec.x;
-    x4 = (rec.x + rec.width) - thick;
-    x5 = rec.x + thick;
-    y0 = rec.y;
-    y1 = rec.y + outerRadius;
-    y2 = (rec.y + rec.height) - outerRadius;
-    y3 = rec.y + rec.height;
-    y4 = rec.y + thick;
-    y5 = (rec.y + rec.height) - thick;
-    centers[0] = (Vector2){ x0, y1 };
-    centers[1] = (Vector2){ x1, y1 };
-    centers[2] = (Vector2){ x1, y2 };
-    centers[3] = (Vector2){ x0, y2 };
-    cx = rec.x + rec.width * 0.5f;
-    cy = rec.y + rec.height * 0.5f;
-    ang0 = (float)GetTime() * 3.0f;
+    if (radius <= 0.0f || gapT <= 0.0f || ringT <= 0.0f) return;
+    cx = tile.x + tile.width * 0.5f;
+    cy = tile.y + tile.height * 0.5f;
+    ang0 = (float)GetTime() * 3.0f;   /* same cycle as the bar cursor */
     tex = GetShapesTexture();
     src = GetShapesTextureRectangle();
     tw = (float)tex.width;
     th = (float)tex.height;
     if (tw < 1.0f) tw = 1.0f;
     if (th < 1.0f) th = 1.0f;
-    sideN = 16;
+    inner = gapT - ringT;
+    outer = gapT;
+    aa = 1.25f;
+    fade = fmaxf(1.5f, ringT * 0.4f);
+    gapArg[0] = gapT;
+    gapArg[1] = aa;
+    ringArg[0] = inner;
+    ringArg[1] = outer;
+    ringArg[2] = fade;
 
     rlSetTexture(tex.id);
     rlBegin(RL_QUADS);
-    for (k = 0; k < 4; k++) {
-        float angle = angles[k];
-        Vector2 center = centers[k];
-        for (i = 0; i < segments; i++) {
-            float a0 = angle, a1 = angle + stepLength;
-            float c0 = cosf(DEG2RAD * a0), s0 = sinf(DEG2RAD * a0);
-            float c1 = cosf(DEG2RAD * a1), s1 = sinf(DEG2RAD * a1);
-            /* Same vertex order as raylib: inner, inner, outer, outer. */
-            MenuSelectRingVert(center.x + c0 * innerRadius, center.y + s0 * innerRadius,
-                               cx, cy, ang0, src, tw, th, 0.0f, 0.0f);
-            MenuSelectRingVert(center.x + c1 * innerRadius, center.y + s1 * innerRadius,
-                               cx, cy, ang0, src, tw, th, 1.0f, 0.0f);
-            MenuSelectRingVert(center.x + c1 * outerRadius, center.y + s1 * outerRadius,
-                               cx, cy, ang0, src, tw, th, 1.0f, 1.0f);
-            MenuSelectRingVert(center.x + c0 * outerRadius, center.y + s0 * outerRadius,
-                               cx, cy, ang0, src, tw, th, 0.0f, 1.0f);
-            angle += stepLength;
-        }
-    }
-    /* Sides: same edges as raylib's four side quads, split for a smooth grad. */
-    MenuSelectRingStrip(x0, y0, x1, y0, x1, y4, x0, y4, cx, cy, ang0, src, tw, th, sideN); /* top: P0-P1, P9-P8 */
-    MenuSelectRingStrip(x2, y1, x2, y2, x4, y2, x4, y1, cx, cy, ang0, src, tw, th, sideN); /* right: P2-P3, P11-P10 */
-    MenuSelectRingStrip(x0, y5, x1, y5, x1, y3, x0, y3, cx, cy, ang0, src, tw, th, sideN); /* lower: P13-P12, P4-P5 */
-    MenuSelectRingStrip(x5, y1, x5, y2, x3, y2, x3, y1, cx, cy, ang0, src, tw, th, sideN); /* left: P15-P14, P6-P7 */
+    MenuSelectRingBand(tile, radius, -gapT, 0.0f,
+                       MenuSelectGapProfile, gapArg, black,
+                       cx, cy, ang0, src, tw, th);
+    MenuSelectRingBand(tile, radius, inner, outer,
+                       MenuSelectPastelProfile, ringArg, pastel,
+                       cx, cy, ang0, src, tw, th);
     rlEnd();
     rlSetTexture(0);
 }
@@ -3112,14 +3143,11 @@ static void DrawSystemMenu(float offsetX) {
             DrawSystemCardArt(p, dst, r, WHITE);
 
         if (i == currentSystem && menuBarFocus < 0) {
-            /* Black gap, then a pastel gradient ring in sync with the bar cursor.
+            /* Soft dark gap, then a pastel gradient ring in sync with the bar cursor.
              * Hidden while the dock bar is focused, so only one indicator is on screen. */
             float gapT, ringT;
-            Rectangle outer;
             MenuSelectRingParams(card, &gapT, &ringT);
-            outer = (Rectangle){ dst.x - gapT, dst.y - gapT, card + 2.0f * gapT, card + 2.0f * gapT };
-            DrawRectangleRoundedLinesEx(dst, MENU_CARD_ROUNDNESS, 16, gapT, BLACK);
-            DrawMenuSelectRing(outer, 2.0f * (r + gapT) / outer.width, 16, ringT);
+            DrawMenuSelectRing(dst, r, gapT, ringT);
         }
     }
 
