@@ -43,6 +43,8 @@ systems corrected.
 The release tarball now includes CHANGELOG.md (the README links to it). Pad
 hot-plug reads /proc/bus/input/devices at most about once a second (sooner if
 inotify sees a change under /dev/input), instead of every frame.
+Selecting Two Players or Play online in the sidebar shows a short
+"Coming soon" toast (the same style as the missing-Mednafen notice).
 
 ## [0.2.0] - 2026-11-27
 

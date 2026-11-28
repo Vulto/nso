@@ -4645,7 +4645,7 @@ static void Lang_ConfigPath(char *dst, size_t n) {
  * four line icons (Single player, Play together, Play online, Settings),
  * icon + label rows when open, and a Settings panel over the blurred grid.
  * Icons are raylib primitives (no art). The first three have no function;
- * the selected one loops a small animation. ---- */
+ * Two Players and Play online show a short Coming soon toast. ---- */
 typedef enum { SB_ITEM_SINGLE = 0, SB_ITEM_TOGETHER, SB_ITEM_ONLINE, SB_ITEM_SETTINGS,
                SB_ITEM_COUNT } SidebarItem;
 enum { SB_SET_VER_NA = 0, SB_SET_VER_NA_EU, SB_SET_RUMBLE, SB_SET_CONTROLS, SB_SET_CRTGEOM,
@@ -5704,6 +5704,8 @@ static void Sidebar_HandleInput(bool gpUp, bool gpDown, bool gpLeft, bool gpRigh
     } else if (ok) {
         SidebarAnim_Play(sidebarItem, +1);   /* no function: replay the one-shot */
         Sfx_Play(SFX_CLICK);
+        if (sidebarItem == SB_ITEM_TOGETHER || sidebarItem == SB_ITEM_ONLINE)
+            LaunchMsg_Show(S_COMING_SOON);
     }
 }
 
@@ -7371,7 +7373,6 @@ static void DrawMosaicSlots(Color background, Font font) {
         float tw = fminf(MeasureTextEx(font, msg, size, 1.0f).x, w * 0.8f);
         DrawFitText(font, msg, (Vector2){ x0 + (w - tw) * 0.5f, (float)GetScreenHeight() * 0.5f }, size, w * 0.8f, WHITE);
     }
-    LaunchMsg_Draw(font);
 }
 
 /* Snapshot the current (still-old) grid and hold a blur of it until the
@@ -7439,6 +7440,7 @@ static void DrawMosaic(Color background, Font font) {
     /* Above blur / panel so accept/back help stays readable.
      * While the status card is up, Status_Draw draws the bars after its dim. */
     if (statusT <= 0.0f) InfoBar_Draw(font);
+    LaunchMsg_Draw(font);
 }
 
 static void SlideEffect(Color mosaicBg, Font font)
