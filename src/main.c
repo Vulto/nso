@@ -5604,6 +5604,22 @@ static void DrawSlotImages(const GridLayout *layout, Texture2D *images, int numI
                                                   scaled_w + 2.0f * g, scaled_h + 2.0f * g },
                                      0.04f, 6, Fade(BLACK, 0.07f * mv));
             }
+        } else {
+            /* Selected cover only: very subtle soft shadow, a few px all
+             * around, fading in with the grow animation. */
+            float grow = (MOSAIC_SELECT_SCALE > 1.0f)
+                ? (scale - 1.0f) / (MOSAIC_SELECT_SCALE - 1.0f) : 1.0f;
+            if (grow < 0.0f) grow = 0.0f;
+            if (grow > 1.0f) grow = 1.0f;
+            if (grow > 0.0f) {
+                for (int k = 1; k <= 4; k++) {
+                    float g = (float)k * 1.25f;
+                    DrawRectangleRounded(
+                        (Rectangle){ draw_x - g, draw_y_scaled - g,
+                                     scaled_w + 2.0f * g, scaled_h + 2.0f * g },
+                        0.04f, 6, Fade(BLACK, 0.014f * grow));
+                }
+            }
         }
 
         DrawTexturePro(images[GameIdx],
