@@ -71,7 +71,7 @@ static void check_sys(const char *name, const GameEntry *g, int n,
 int main(void)
 {
     int counts[ST_COUNT] = { 0 }, total;
-    check_sys("NES", nes_games, nes_game_count, (int[ST_COUNT]){ 5, 3, 50, 0 }, counts);
+    check_sys("NES", nes_games, nes_game_count, (int[ST_COUNT]){ 5, 3, 50, 1728 }, counts);
     check_sys("SNES", snes_games, snes_game_count, (int[ST_COUNT]){ 8, 3, 50, 0 }, counts);
     check_sys("Nintendo 64", n64_games, n64_game_count, (int[ST_COUNT]){ 41, 10, 0, 190 }, counts);
     check_sys("GameCube", gamecube_games, gamecube_game_count, (int[ST_COUNT]){ 0, 4, 0, 0 }, counts);

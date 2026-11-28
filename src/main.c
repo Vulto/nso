@@ -4111,30 +4111,11 @@ static int ScrapeMenu_ListRoms(int *dst, int max)
     return n;
 }
 
-/* Catalog titles with a cover slot (ports and recomps that have no file in
- * roms/<System>/) must still be scraped. The release build does not ship
- * those covers; a dev tree often already has them on disk, which hid this. */
-static int ScrapeMenu_AddCatalogCovers(int *dst, int n, int max)
-{
-    GameEntry *games = ActiveGames();
-    int total = ActiveGameTotal();
-    int i, j;
-    if (total > MAX_GAMES) total = MAX_GAMES;
-    for (i = 0; i < total && n < max; i++) {
-        int have = 0;
-        if (!games[i].boxartPath || !games[i].boxartPath[0]) continue;
-        for (j = 0; j < n; j++) if (dst[j] == i) { have = 1; break; }
-        if (!have) dst[n++] = i;
-    }
-    return n;
-}
-
 static int ScrapeMenu_MarkRoms(void)
 {
     int idx[MAX_GAMES], n, i;
     memset(scrapeOnly, 0, sizeof scrapeOnly);
     n = ScrapeMenu_ListRoms(idx, MAX_GAMES);
-    n = ScrapeMenu_AddCatalogCovers(idx, n, MAX_GAMES);
     for (i = 0; i < n; i++) scrapeOnly[idx[i]] = true;
     return n;
 }

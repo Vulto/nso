@@ -48,12 +48,14 @@ Selecting Two Players or Play online in the sidebar shows a short
 
 ### Unreleased (after 0.2.1)
 
-"Download all box arts" now also fetches covers for catalog titles that have
-no file in `roms/` (NES ports and recomps such as Dr. Mario, Faxanadu,
-Fire 'n Ice, Madoola no Tsubasa, Metroid, and The Legend of Zelda). The
-release build does not ship those covers; a dev tree often already had them
-on disk. Name matching prefers a retail dump over a beta, and treats
-combined tags like "(Japan, USA)" as USA. For NES, the auto-pick and the
+"Download all box arts" scrapes only titles that have a ROM in `roms/`
+(ports and recomps such as Dr. Mario, Faxanadu, Fire 'n Ice, Madoola no
+Tsubasa, Metroid, and The Legend of Zelda are included only when a matching
+ROM is present). Name matching prefers a retail dump over a beta, and treats
+combined tags like "(Japan, USA)" as USA. The NES catalog includes the
+complete name list from the Nintendo Wiki (merged with the existing
+entries, no duplicates); Statistics lists those titles with no ROM under
+Not available. For NES, the auto-pick and the
 Select games picker default prefer a 512x731 portrait among the same-game
 candidates (closest size if none match exactly; a single image is used as-is),
 looking past dated or hack names so an official 512x731 is not missed.

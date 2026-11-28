@@ -10,7 +10,8 @@
 #define STATUS_IMPLEMENTATION
 #include "status.h"
 
-#define STATUS_MAX_ROWS 1024
+/* Must fit a full catalog (the NES wiki list is well over 1024). */
+#define STATUS_MAX_ROWS MAX_GAMES
 
 typedef struct {
     const GameEntry *game;
