@@ -2426,22 +2426,20 @@ static bool hideNerdLoaded;
 
 
 /* Fixed Switch-home carousel (1920x1080), measured from a 4K capture and halved.
- * Tile size, gap, row y and left start do not depend on SYSTEM_COUNT; the row
- * scrolls so the selection sits at FOCUS_X, and never pushes tile 0 right of LEFT. */
+ * Tile size, gap and row y do not depend on SYSTEM_COUNT. The group is centred
+ * horizontally (odd count: middle tile at screen centre; even count: screen
+ * centre in the gap between the two middle tiles). If the row is wider than
+ * the screen, it scrolls just enough to keep the selection fully visible. */
 typedef struct { float x0, y, card, gap; } SystemRowLayout;
 
 static const float SYS_TILE           = 386.0f;
 static const float SYS_TILE_GAP       =  20.0f;
 static const float SYS_TILE_Y         = 300.0f;
-static const float SYS_TILE_LEFT      = 158.0f;
-static const float SYS_TILE_FOCUS_X   = 970.0f;
-static const float SYS_TILE_TITLE_SIZE = 28.0f;
-static const float SYS_TILE_TITLE_GAP  = 21.0f;          /* title bottom to outline top */
 static const float SYS_ROW_SCROLL_SEC  = 15.0f / 60.0f;  /* same settle as the grid page slide */
 
-static float sysScrollX    = 158.0f;   /* 1920-space x of tile 0 */
-static float sysScrollFrom = 158.0f;
-static float sysScrollTo   = 158.0f;
+static float sysScrollX    = 0.0f;   /* 1920-space x of tile 0 */
+static float sysScrollFrom = 0.0f;
+static float sysScrollTo   = 0.0f;
 static float sysScrollT    = 1.0f;
 static bool  sysScrollInited;
 
@@ -2449,8 +2447,16 @@ static float StatusHudK(float sw, float sh);
 
 static float SystemRowScrollTarget(void)
 {
-    float s = SYS_TILE_FOCUS_X - (float)currentSystem * (SYS_TILE + SYS_TILE_GAP);
-    if (s > SYS_TILE_LEFT) s = SYS_TILE_LEFT;
+    int n = SYSTEM_COUNT;
+    float pitch = SYS_TILE + SYS_TILE_GAP;
+    float rowW = (float)n * SYS_TILE + (float)(n > 0 ? n - 1 : 0) * SYS_TILE_GAP;
+    float s = (1920.0f - rowW) * 0.5f;
+    if (rowW > 1920.0f) {
+        float selL = s + (float)currentSystem * pitch;
+        float selR = selL + SYS_TILE;
+        if (selL < 0.0f) s -= selL;
+        else if (selR > 1920.0f) s -= selR - 1920.0f;
+    }
     return s;
 }
 
@@ -2495,6 +2501,11 @@ static SystemRowLayout SystemRow(float sw, float sh) {
     float k = StatusHudK(sw, sh);
     float ox = (sw - 1920.0f * k) * 0.5f;
     float oy = (sh - 1080.0f * k) * 0.5f;
+    if (!sysScrollInited) {
+        sysScrollX = sysScrollFrom = sysScrollTo = SystemRowScrollTarget();
+        sysScrollT = 1.0f;
+        sysScrollInited = true;
+    }
     return (SystemRowLayout){
         ox + sysScrollX * k,
         oy + SYS_TILE_Y * k,
@@ -3099,19 +3110,6 @@ static void DrawSystemMenu(float offsetX) {
 
         if (p->texture.id != 0)
             DrawSystemCardArt(p, dst, r, WHITE);
-
-        if (i == currentSystem && p->name && slotFont.texture.id != 0) {
-            float kHud = StatusHudK(sw, sh);
-            float gapT, ringT, fs, titleBot;
-            Vector2 m;
-            MenuSelectRingParams(card, &gapT, &ringT);
-            fs = SYS_TILE_TITLE_SIZE * kHud;
-            m = MeasureTextEx(slotFont, p->name, fs, 0.0f);
-            titleBot = dst.y - gapT - ringT - SYS_TILE_TITLE_GAP * kHud;
-            DrawTextEx(slotFont, p->name,
-                       (Vector2){ dst.x + (card - m.x) * 0.5f, titleBot - m.y },
-                       fs, 0.0f, MENU_BAR_LABEL_COL);
-        }
 
         if (i == currentSystem && menuBarFocus < 0) {
             /* Black gap, then a pastel gradient ring in sync with the bar cursor.
