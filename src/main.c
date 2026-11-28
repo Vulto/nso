@@ -2278,13 +2278,35 @@ static int MenuSelectRingPoints(Rectangle rec, float rad, float d, Vector2 *out)
     return n;
 }
 
+/* Raise saturation moderately, keeping hue and value (pastel stays pastel). */
+static Color MenuSelectRingVibrant(Color c)
+{
+    float r = (float)c.r, g = (float)c.g, b = (float)c.b;
+    float mx = fmaxf(r, fmaxf(g, b)), mn = fminf(r, fminf(g, b));
+    float s, k = 1.3f;
+    if (mx < 1.0f) return c;
+    s = (mx - mn) / mx;
+    if (s * k > 1.0f) k = 1.0f / s;
+    r = mx - (mx - r) * k;
+    g = mx - (mx - g) * k;
+    b = mx - (mx - b) * k;
+    if (r < 0.0f) r = 0.0f;
+    if (r > 255.0f) r = 255.0f;
+    if (g < 0.0f) g = 0.0f;
+    if (g > 255.0f) g = 255.0f;
+    if (b < 0.0f) b = 0.0f;
+    if (b > 255.0f) b = 255.0f;
+    return (Color){ (unsigned char)(r + 0.5f), (unsigned char)(g + 0.5f),
+                    (unsigned char)(b + 0.5f), c.a };
+}
+
 static void MenuSelectRingVertA(float x, float y, float cx, float cy, float ang0,
                                 Rectangle src, float texW, float texH,
                                 Color rgb, unsigned char alpha)
 {
     if (rgb.a != 0) {
         Color col = MenuBarRingGrad(atan2f(y - cy, x - cx) + ang0);
-        rgb = col;
+        rgb = MenuSelectRingVibrant(col);
     }
     rlColor4ub(rgb.r, rgb.g, rgb.b, alpha);
     rlTexCoord2f(src.x / texW, src.y / texH);
@@ -2317,10 +2339,11 @@ static void MenuSelectRingBand(Rectangle tile, float radius, float d0, float d1,
         if (alpha[j] == 0 && alpha[j + 1] == 0) continue;
         for (i = 0; i < n; i++) {
             int i1 = (i + 1 == n) ? 0 : i + 1;
+            /* Raylib CCW: inner, inner, outer, outer (Y-down ortho + back-face cull). */
             MenuSelectRingVertA(pts[j][i].x,  pts[j][i].y,  cx, cy, ang0, src, tw, th, rgb, alpha[j]);
-            MenuSelectRingVertA(pts[j + 1][i].x,  pts[j + 1][i].y,  cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
-            MenuSelectRingVertA(pts[j + 1][i1].x, pts[j + 1][i1].y, cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
             MenuSelectRingVertA(pts[j][i1].x, pts[j][i1].y, cx, cy, ang0, src, tw, th, rgb, alpha[j]);
+            MenuSelectRingVertA(pts[j + 1][i1].x, pts[j + 1][i1].y, cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
+            MenuSelectRingVertA(pts[j + 1][i].x,  pts[j + 1][i].y,  cx, cy, ang0, src, tw, th, rgb, alpha[j + 1]);
         }
     }
 }
@@ -2362,8 +2385,8 @@ static void DrawMenuSelectRing(Rectangle tile, float radius, float gapT, float r
     if (th < 1.0f) th = 1.0f;
     inner = gapT - ringT;
     outer = gapT;
-    aa = 1.25f;
-    fade = fmaxf(1.5f, ringT * 0.4f);
+    aa = 1.25f;     /* ~1-1.5px AA; the shortened ring keeps a solid pastel core */
+    fade = 1.25f;
     gapArg[0] = gapT;
     gapArg[1] = aa;
     ringArg[0] = inner;
