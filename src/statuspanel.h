@@ -115,6 +115,10 @@ static int Status_EmuFocusCatalog(void) {
 
 static Texture2D Status_EmuArt(int catalog) {
     Texture2D t;
+    if (ScrapeMenu_Choosing()) {
+        t = ScrapeMenu_ChoicePreview();
+        if (t.id != 0) return t;
+    }
     if (catalog < 0) return (Texture2D){ 0 };
     t = GetBoxart(catalog);
     if (t.id != 0) return t;

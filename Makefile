@@ -30,22 +30,36 @@ nso: $(SRC) $(HDRS)
 # Self-contained binary: NSO UI assets (fonts, system cards, icons) are
 # embedded; scrapable game box arts/covers are not. raylib is linked
 # statically. glibc, OpenGL and X11 stay dynamic. Dev `nso` is unchanged.
-RELEASE_ASSETS := 	assets/fonts/NotoSansCJKkr-Regular.otf 	assets/fonts/SymbolsNerdFont-Regular.ttf 	assets/fonts/LICENSE-NotoSansCJK.txt 	assets/fonts/LICENSE-NerdFonts.txt 	assets/images/n64_controller.png 	assets/images/ui/download.png 	assets/images/ui/gamecube-lines.png 	assets/images/ui/gear.png 	assets/images/ui/gear1.png 	assets/images/ui/pad-gamecube.png 	assets/images/ui/pad-n64.png 	assets/images/ui/pad-nes.png 	assets/images/ui/pad-snes.png 	assets/images/systems/nes/nes.png 	assets/images/systems/snes/snes.png 	assets/images/systems/n64/n64.png 	assets/images/systems/gamecube/gamecube.png 	assets/images/systems/megadrive/megadrive.png 	assets/data/snes-titles.txt 	assets/data/gamecube-titles.txt 	assets/data/megadrive-titles.txt
+RELEASE_ASSETS := 	assets/fonts/NotoSansCJKkr-Regular.otf 	assets/fonts/SymbolsNerdFont-Regular.ttf 	assets/fonts/LICENSE-NotoSansCJK.txt 	assets/fonts/LICENSE-NerdFonts.txt 	assets/images/n64_controller.png 	assets/images/ui/download.png 	assets/images/ui/gamecube-lines.png 	assets/images/ui/gear.png 	assets/images/ui/gear1.png 	assets/images/ui/pad-gamecube.png 	assets/images/ui/pad-n64.png 	assets/images/ui/pad-nes.png 	assets/images/ui/pad-snes.png 	assets/images/systems/nes/nes.png 	assets/images/systems/snes/snes.png 	assets/images/systems/n64/n64.png 	assets/images/systems/gamecube/gamecube.png 	assets/images/systems/megadrive/megadrive.png 	assets/data/snes-titles.txt 	assets/data/gamecube-titles.txt 	assets/data/megadrive-titles.txt 	shaders/crtgeom.glsl
 
 RELEASE_LIBS := -L/usr/local/lib -Wl,-Bstatic -lraylib -Wl,-Bdynamic -lGL -lX11 -lXtst -lXext -lm -ldl -lpthread
 
-build-release/assets.pack: tools/pack-assets.py $(RELEASE_ASSETS)
+build-release/assets.pack: Makefile tools/pack-assets.py $(RELEASE_ASSETS)
 	mkdir -p build-release
 	python3 tools/pack-assets.py $@ $(RELEASE_ASSETS)
 
 build-release/assets-pack.o: tools/assets-pack.S build-release/assets.pack
 	$(CC) -c -o $@ tools/assets-pack.S
 
-release: dist/nso
+VERSION ?= 0.2.1
+RELEASE_NAME := nso-$(VERSION)-linux-x86_64
+
+release: dist/$(RELEASE_NAME).tar.gz
 
 dist/nso: $(SRC) $(HDRS) src/assetpack.c src/assetpack.h build-release/assets-pack.o
 	mkdir -p dist
 	$(CC) $(CFLAGS) -DNSO_RELEASE -pthread -o dist/nso $(SRC) src/assetpack.c 		build-release/assets-pack.o $(RELEASE_LIBS)
+
+# Layout: nso, the bundled Mednafen, and nso-norumble.so (LD_PRELOAD when
+# Rumble is off). Mednafen is built out-of-tree; copy the binary to
+# build-release/mednafen first (see the release notes).
+dist/$(RELEASE_NAME).tar.gz: dist/nso nso-norumble.so
+	@test -x build-release/mednafen || { echo "make release: missing build-release/mednafen"; exit 1; }
+	mkdir -p dist/$(RELEASE_NAME)
+	cp -f dist/nso nso-norumble.so build-release/mednafen README.md dist/$(RELEASE_NAME)/
+	chmod +x dist/$(RELEASE_NAME)/nso dist/$(RELEASE_NAME)/mednafen
+	tar -C dist -czf $@ $(RELEASE_NAME)
+	@echo "Wrote $@"
 
 # Preloaded into external games when Rumble is off (src/norumble.c).
 nso-norumble.so: src/norumble.c

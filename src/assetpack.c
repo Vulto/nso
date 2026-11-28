@@ -18,11 +18,24 @@ static unsigned int pack_size(void)
     return (unsigned int)(nso_asset_pack_end - nso_asset_pack);
 }
 
+static int asset_find(const char *rel, const unsigned char **data, unsigned int *size);
+
 static const char *asset_rel(const char *path)
 {
-    const char *p;
+    const char *p, *hit = NULL;
     if (!path || !path[0]) return NULL;
+    /* Packed keys are repo-relative ("assets/...", "shaders/crtgeom.glsl").
+     * Loaders receive a base-dir prefix; keep the rightmost key that exists
+     * in the pack so shaders/ is found as well as assets/. */
+    for (p = path; *p; p++) {
+        if (p == path || p[-1] == '/') {
+            if (asset_find(p, NULL, NULL)) hit = p;
+        }
+    }
+    if (hit) return hit;
     p = strstr(path, "assets/");
+    if (p) return p;
+    p = strstr(path, "shaders/");
     return p;
 }
 

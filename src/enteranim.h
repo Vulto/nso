@@ -4,7 +4,7 @@
  * frames 106..203, A pressed at 106):
  *   106-134  the tile's art lifts off as a fading ghost while a (17,17,17)
  *            layer rises over the menu, slow then fast (reaches 1 at 134)
- *   134-176  full-screen (17,17,17); logos fade in 135-143 ("PC Ports" flips in)
+ *   134-176  full-screen (17,17,17); logos fade in 135-143 (the system name flips in)
  *   176-203  linear crossfade to the system's own screen; logos out 176-184 */
 #ifndef NSO_ENTERANIM_H
 #define NSO_ENTERANIM_H
@@ -21,7 +21,7 @@
 #define ENTER_COVER_R 17
 #define ENTER_COVER_G 17
 #define ENTER_COVER_B 17
-#define ENTER_FLIP_DEG 90.0f   /* "PC Ports" flips about its horizontal axis: edge-on at -90, face-on at 0, edge-on at +90 */
+#define ENTER_FLIP_DEG 90.0f   /* The system name flips about its horizontal axis: edge-on at -90, face-on at 0, edge-on at +90 */
 
 /* Seconds from A to the end of the crossfade (frame 203). */
 float EnterAnim_Total(void);
@@ -32,11 +32,11 @@ float EnterAnim_Cover(float t);
 /* Ghost of the pressed tile: 0..1 progress over frames 106-134 and its opacity. */
 float EnterAnim_GhostProgress(float t);
 float EnterAnim_GhostAlpha(float t);
-/* White logos' opacity (fade in 135-143, out 176-184); the angle (degrees) is only for "PC Ports"
+/* White logos' opacity (fade in 135-143, out 176-184); the angle (degrees) is only for the system name
  * (card flip about the X axis); the Nintendo wordmark never rotates. */
 float EnterAnim_LogoAlpha(float t);
 float EnterAnim_LogoAngle(float t);
-/* Same flip for letter i of n of "PC Ports": each letter is a little out of phase with the
+/* Same flip for letter i of n of the system name: each letter is a little out of phase with the
  * others (flip-in windows start staggered inside 135-143, flip-out inside 176-184), and all are
  * face-on (0 degrees, the word readable) from frame 143 to 176. */
 float EnterAnim_LetterAngle(float t, int i, int n);

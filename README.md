@@ -3,11 +3,44 @@
 NSO is a Nintendo Switch Online-style launcher, written in C with Raylib.
 This release supports playing emulated games (NES, SNES, N64, GameCube, and
 Mega Drive). Put legally obtained ROMs in each system's folder under `roms/`.
-Cover images are not shipped; scrape them from the Emulated tab.
+Cover images are not shipped; scrape them from the Emulated tab of the
+status menu (S).
 
 This repository does not include ROMs or copyrighted art. You must supply your
 own legally obtained ROMs. Cover images are fetched or added locally; a missing
 cover is shown as a "?" placeholder.
+
+## Install (end users)
+
+Extract the release tarball (`nso-<version>-linux-x86_64.tar.gz`) into its own
+folder. You should have:
+
+- `nso` — the launcher (self-contained; UI fonts and system cards are embedded)
+- `mednafen` — the bundled emulator (must sit next to `nso`; there is no
+  system-Mednafen fallback)
+- `nso-norumble.so` — used automatically when Rumble is turned off
+- `README.md`
+
+Put legally obtained ROMs next to the binary, in a per-system folder:
+
+```
+roms/NES/
+roms/SNES/
+roms/N64/
+roms/GameCube/
+roms/MegaDrive/
+```
+
+Loose files and per-game subfolders are both fine. Then run `./nso` from that
+folder (or double-click it). Paths are resolved next to the executable, not
+from the current working directory (`NSO_BASE_DIR` can override that).
+
+On the first run NSO creates `config/` (settings, dates, custom order) next to
+the binary. Covers you scrape are saved under `assets/images/systems/<system>/`.
+You need `curl` only to scrape box art. OpenGL and X11 are required.
+
+If `mednafen` is missing from that folder, starting a game shows
+"Bundled Mednafen is missing" instead of doing nothing.
 
 ## What's new (Novidades)
 
@@ -87,15 +120,18 @@ make test
 ./nso
 ```
 
-`make release` produces a single self-contained `dist/nso` with NSO's fonts,
-main-menu system cards and UI art embedded, and Raylib linked statically.
-Scrapable game box arts are not embedded; users scrape covers themselves.
-glibc, OpenGL and X11 remain dynamic. The ordinary `make` / `./nso` developer
+`make release` produces `dist/nso-<version>-linux-x86_64.tar.gz` with `nso`,
+the bundled `mednafen`, and `nso-norumble.so`. NSO's fonts, main-menu system
+cards, UI art and the CRT Geometry shader are embedded in `nso`, and Raylib is
+linked statically. Scrapable game box arts are not embedded; users scrape
+covers themselves. glibc, OpenGL and X11 remain dynamic (Mednafen also keeps
+SDL2, ALSA, libFLAC and zlib dynamic). The ordinary `make` / `./nso` developer
 build is unchanged and still loads those assets from the tree.
 
 `./nso` works from any directory: data paths are resolved next to the binary
-(override with `NSO_BASE_DIR=/path/to/nso`). NSO creates `assets/cache`,
-`assets/images/...`, `repos/`, `logs/`, `config/` and `saves/` as needed.
+(override with `NSO_BASE_DIR=/path/to/nso`). NSO creates `config/` on the first
+run, and `assets/cache`, `assets/images/...`, `repos/`, `logs/` and `saves/` as
+needed.
 
 ## Usage
 
@@ -103,11 +139,22 @@ build is unchanged and still loads those assets from the tree.
 | --- | --- | --- |
 | Move | Arrow keys | D-pad / stick |
 | Confirm / start game | Enter | A (right face) or Start |
-| Back | B | B (bottom face) |
+| Back | B (or Backspace) | B (bottom face) |
 | Move a game (hold to sort, arrows move it) | Y (hold) | Y |
 | Game details panel | X | X |
-| Save states of the selected game | S | (from the Details panel) |
+| Status menu (tabs, including Emulated scraping) | S | (also from the in-game Home menu) |
+| Cycle status-menu tabs | Y | Y |
 | Organization sidebar | O | |
+| Sort panel | T | C-Right on the N64 pad |
+
+On the main menu, Down moves to the dock: **Downloads** (no action yet) and
+**Power**. Power opens a dialog with **Shut down**, **Close NSO**, and
+**Cancel** (Cancel is the default).
+
+In the status menu's **Emulated** tab, **Download all box arts** scrapes a
+cover for every detected ROM, and **Select games** lets you pick a subset
+(with a preview of the focused candidate). Covers come from the per-system
+[libretro-thumbnails](https://github.com/libretro-thumbnails) repos.
 
 In supported ports (the patched SNES games) F5 saves a state without leaving
 and F12 (or Home) saves and returns to NSO.
@@ -140,11 +187,13 @@ same happens at startup, after the existing enter animation.
 On the main menu press Down to select the gear, then Enter/A. Left/Right
 switches system (NES, SNES, Nintendo 64, GameCube).
 
-- **Image scraping:** "Missing box art" downloads covers that are not on disk;
-  "Replace box art" downloads all of them again. Covers come from
-  [libretro-thumbnails](https://github.com/libretro-thumbnails) (index via the
-  GitHub API, images from `thumbnails.libretro.com`); no account or API key is
-  needed. They are saved to `assets/images/systems/<system>/`.
+- **Image scraping:** in the game grid press S and open the **Emulated** tab.
+  "Download all box arts" fetches missing covers; "Select games" scrapes a
+  chosen subset (with a preview). Covers come from
+  [libretro-thumbnails](https://github.com/libretro-thumbnails) (per-system
+  GitHub raw files, No-Intro names); no account or API key is needed. They are
+  saved to `assets/images/systems/<system>/`. A short message is shown when a
+  title has no matching art.
 - **Repository download:** pick a port (or "Download all") to clone it into
   `repos/<system>/...` and build it with `tools/repo_sync.sh`. The status column
   shows progress; full logs are in `logs/repos/<name>.log`. Missing build tools

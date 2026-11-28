@@ -90,31 +90,18 @@ int Scrape_IndexUrl(char *dst, size_t n, const char *playlist)
 
 int Scrape_ImageUrl(char *dst, size_t n, const char *playlist, const char *file)
 {
-    char encPlay[512];
+    char repo[256];
     char encFile[1024];
     int wrote;
-    if (UrlEncode(encPlay, sizeof(encPlay), playlist) != 0) return -1;
+    if (!playlist || !file) return -1;
     if (UrlEncode(encFile, sizeof(encFile), file) != 0) return -1;
-    /* thumbnails.libretro.com is an empty tree (every cover 404s). Files live in
-     * libretro/libretro-thumbnails on GitHub, same playlist folder + Named_Boxarts.
-     * The monorepo tree only has a partial GameCube Named_Boxarts set; the complete
-     * files are in the per-system repo already used by Scrape_IndexUrl. SNES and
-     * other systems keep the monorepo raw URL. */
-    if (playlist && strcmp(playlist, "Nintendo - GameCube") == 0) {
-        wrote = snprintf(dst, n,
-            "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_GameCube/master/Named_Boxarts/%s",
-            encFile);
-        return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
-    }
-    if (playlist && strcmp(playlist, "Sega - Mega Drive - Genesis") == 0) {
-        wrote = snprintf(dst, n,
-            "https://raw.githubusercontent.com/libretro-thumbnails/Sega_-_Mega_Drive_-_Genesis/master/Named_Boxarts/%s",
-            encFile);
-        return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
-    }
+    /* The GitHub tree index (Scrape_IndexUrl) lists the per-system
+     * libretro-thumbnails repo. The monorepo is a partial/stale subset, so
+     * every system uses that same per-system raw URL. */
+    Scrape_Repo(repo, sizeof(repo), playlist);
     wrote = snprintf(dst, n,
-        "https://raw.githubusercontent.com/libretro/libretro-thumbnails/master/%s/Named_Boxarts/%s",
-        encPlay, encFile);
+        "https://raw.githubusercontent.com/libretro-thumbnails/%s/master/Named_Boxarts/%s",
+        repo, encFile);
     return (wrote > 0 && (size_t)wrote < n) ? 0 : -1;
 }
 
@@ -489,10 +476,53 @@ static int Scrape_AcronymPhrase(const char *norm, char *acr, size_t na, char *ph
     return 1;
 }
 
-static int Scrape_Better(int fit, int rank, int rel, size_t dist, size_t fileLen,
-                         int bestFit, int bestRank, int bestRel, size_t bestDist, size_t bestFile)
+/* Dated TOSEC-style names, GoodTools flags, hacks and translations are not
+ * used by libretro-thumbnails (No-Intro names such as "Excitebike (Japan, USA)"). */
+static int Scrape_LooksDated(const char *s)
+{
+    const char *p;
+    if (!s) return 0;
+    for (p = s; (p = strchr(p, '(')) != NULL; p++) {
+        if (p[1] >= '0' && p[1] <= '9' && p[2] >= '0' && p[2] <= '9'
+            && p[3] >= '0' && p[3] <= '9' && p[4] >= '0' && p[4] <= '9'
+            && p[5] == '-' && p[6] >= '0' && p[6] <= '9' && p[7] >= '0' && p[7] <= '9'
+            && p[8] == '-')
+            return 1;
+    }
+    return 0;
+}
+
+static int Scrape_NameQuality(const char *filename)
+{
+    if (!filename) return 0;
+    if (Scrape_LooksDated(filename) || strstr(filename, ")(")
+        || strstr(filename, "[h") || strstr(filename, "[b")
+        || strstr(filename, "[t ") || strstr(filename, "[t+")
+        || strstr(filename, "(Hack") || strstr(filename, "(Translation")
+        || strstr(filename, "(Pirate") || strstr(filename, "Bad Dump")
+        || strstr(filename, "(PD)"))
+        return -2;
+    if (strstr(filename, "(USA") || strstr(filename, "(World")
+        || strstr(filename, "(Europe") || strstr(filename, "(Japan")
+        || strstr(filename, "(France") || strstr(filename, "(Germany")
+        || strstr(filename, "(Spain") || strstr(filename, "(Australia")
+        || strstr(filename, "(Korea") || strstr(filename, "(China")
+        || strstr(filename, "(Taiwan") || strstr(filename, "(Italy")
+        || strstr(filename, "(Sweden") || strstr(filename, "(Asia")
+        || strstr(filename, "(Brazil") || strstr(filename, "(Netherlands")
+        || strstr(filename, "(Canada") || strstr(filename, "(United Kingdom")
+        || strstr(filename, "(Hong Kong") || strstr(filename, "(Russia")
+        || strstr(filename, "(Mexico") || strstr(filename, "(En"))
+        return 2;
+    return 0;
+}
+
+static int Scrape_Better(int fit, int qual, int rank, int rel, size_t dist, size_t fileLen,
+                         int bestFit, int bestQual, int bestRank, int bestRel,
+                         size_t bestDist, size_t bestFile)
 {
     if (fit != bestFit) return fit > bestFit;
+    if (qual != bestQual) return qual > bestQual;
     if (rank != bestRank) return rank > bestRank;
     if (rel != bestRel) return rel > bestRel;
     if (dist != bestDist) return dist < bestDist;
@@ -521,7 +551,7 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
     char normTitle[512];
     char compactTitle[512];
     const char *best = NULL;
-    int bestFit = -1, bestRank = -1, bestRel = -999;
+    int bestFit = -1, bestQual = -999, bestRank = -1, bestRel = -999;
     size_t bestDist = (size_t)-1, bestFile = 0, titleLen;
     if (!title || !names || count <= 0) return NULL;
     Scrape_Normalize(normTitle, sizeof(normTitle), title);
@@ -530,7 +560,7 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
     for (int i = 0; i < count; i++) {
         char stem[512];
         char normStem[512];
-        int rank, rel;
+        int rank, rel, qual;
         size_t stemLen, fileLen, dist;
         if (!names[i] || (tag && !strstr(names[i], tag))) continue;
         Scrape_Stem(stem, sizeof(stem), names[i]);
@@ -538,16 +568,18 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
         {
             int fit = Scrape_FitRank(normStem, normTitle);
             if (fit < 0) continue;
+            qual = Scrape_NameQuality(names[i]);
             rank = RegionRank(names[i]);
             rel = ReleaseRank(names[i]);
             stemLen = strlen(normStem);
             fileLen = strlen(names[i]);
             dist = stemLen > titleLen ? stemLen - titleLen : titleLen - stemLen;
-            if (best && !Scrape_Better(fit, rank, rel, dist, fileLen,
-                                       bestFit, bestRank, bestRel, bestDist, bestFile))
+            if (best && !Scrape_Better(fit, qual, rank, rel, dist, fileLen,
+                                       bestFit, bestQual, bestRank, bestRel, bestDist, bestFile))
                 continue;
             best = names[i];
             bestFit = fit;
+            bestQual = qual;
             bestRank = rank;
             bestRel = rel;
             bestDist = dist;
@@ -562,7 +594,7 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
         char stem[512];
         char normStem[512];
         char compactStem[512];
-        int rank, rel;
+        int rank, rel, qual;
         size_t stemLen, fileLen, dist;
         if (!names[i] || (tag && !strstr(names[i], tag))) continue;
         Scrape_Stem(stem, sizeof(stem), names[i]);
@@ -573,16 +605,18 @@ static const char *Scrape_MatchOne(const char *title, const char **names, int co
             if (strcmp(compactStem, compactTitle) == 0) fit = 4;
             else fit = Scrape_FitRank(compactStem, compactTitle);
             if (fit < 0) continue;
+            qual = Scrape_NameQuality(names[i]);
             rank = RegionRank(names[i]);
             rel = ReleaseRank(names[i]);
             stemLen = strlen(compactStem);
             fileLen = strlen(names[i]);
             dist = stemLen > titleLen ? stemLen - titleLen : titleLen - stemLen;
-            if (best && !Scrape_Better(fit, rank, rel, dist, fileLen,
-                                       bestFit, bestRank, bestRel, bestDist, bestFile))
+            if (best && !Scrape_Better(fit, qual, rank, rel, dist, fileLen,
+                                       bestFit, bestQual, bestRank, bestRel, bestDist, bestFile))
                 continue;
             best = names[i];
             bestFit = fit;
+            bestQual = qual;
             bestRank = rank;
             bestRel = rel;
             bestDist = dist;
@@ -599,7 +633,7 @@ const char *Scrape_Match(const char *title, const char **names, int count)
     char parts[8][512];
     const char *tag;
     const char *best = NULL;
-    int bestFit = -1, bestRank = -1, bestRel = -999, nParts, p;
+    int bestFit = -1, bestQual = -999, bestRank = -1, bestRel = -999, nParts, p;
     size_t bestDist = (size_t)-1, bestFile = 0;
     if (!title || !names || count <= 0) return NULL;
     /* A title that is a database name (without its ".png" / ".dat") is that entry. */
@@ -643,14 +677,18 @@ const char *Scrape_Match(const char *title, const char **names, int count)
             b = strlen(fullN[0] ? fullN : norm);
             dist = a > b ? a - b : b - a;
         }
-        if (!best || Scrape_Better(fit, rank, rel, dist, fileLen,
-                                   bestFit, bestRank, bestRel, bestDist, bestFile)) {
-            best = hit;
-            bestFit = fit;
-            bestRank = rank;
-            bestRel = rel;
-            bestDist = dist;
-            bestFile = fileLen;
+        {
+            int qual = Scrape_NameQuality(hit);
+            if (!best || Scrape_Better(fit, qual, rank, rel, dist, fileLen,
+                                       bestFit, bestQual, bestRank, bestRel, bestDist, bestFile)) {
+                best = hit;
+                bestFit = fit;
+                bestQual = qual;
+                bestRank = rank;
+                bestRel = rel;
+                bestDist = dist;
+                bestFile = fileLen;
+            }
         }
     }
     return best;
@@ -718,6 +756,17 @@ int Scrape_CollectMatches(const char *title, const char **names, int count,
     if (n == 0) {
         out[0] = best;
         return 1;
+    }
+    {
+        int pref = 0, w = 0;
+        for (i = 0; i < n; i++)
+            if (Scrape_NameQuality(out[i]) > 0) pref++;
+        if (pref > 0 && pref < n) {
+            for (i = 0; i < n; i++)
+                if (Scrape_NameQuality(out[i]) > 0)
+                    out[w++] = out[i];
+            n = w;
+        }
     }
     return n;
 }

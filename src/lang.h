@@ -78,7 +78,7 @@ typedef enum {
     /* status + scraper menu (grid S): tabs, legend, emulated-tab extras */
     S_TAB_PORTS, S_TAB_DECOMPS, S_TAB_EMU, S_TAB_STATS,
     S_TAB_PLACEHOLDER, S_STATUS_LEGEND, S_EMU_NO_ROMS, S_EMU_CHOOSE,
-    S_EMU_DOWNLOAD_ALL, S_EMU_START_COVERS,
+    S_EMU_DOWNLOAD_ALL, S_EMU_START_COVERS, S_NO_MEDNAFEN, S_SCRAPE_NO_ART,
     S_SCRAPE_STEP_DATES, S_SCRAPE_STEP_INDEX,
     S_COUNT
 } StrId;
@@ -336,6 +336,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMU_CHOOSE] = "Choose box art",
         [S_EMU_DOWNLOAD_ALL] = "Download all box arts",
         [S_EMU_START_COVERS] = "Download box art (%d)",
+        [S_NO_MEDNAFEN] = "Bundled Mednafen is missing",
+        [S_SCRAPE_NO_ART] = "No box art found",
         [S_SCRAPE_STEP_DATES] = "Release dates…",
         [S_SCRAPE_STEP_INDEX] = "Image index…",
     },
@@ -545,6 +547,8 @@ const char *const nso_strings[LANG_COUNT][S_COUNT] = {
         [S_EMU_CHOOSE] = "Escolher capa",
         [S_EMU_DOWNLOAD_ALL] = "Baixar todas as capas",
         [S_EMU_START_COVERS] = "Baixar capas (%d)",
+        [S_NO_MEDNAFEN] = "O Mednafen empacotado não foi encontrado",
+        [S_SCRAPE_NO_ART] = "Nenhuma capa encontrada",
         [S_SCRAPE_STEP_DATES] = "Datas de lançamento…",
         [S_SCRAPE_STEP_INDEX] = "Índice de imagens…",
     },

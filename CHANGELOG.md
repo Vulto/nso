@@ -2,6 +2,24 @@
 
 All notable changes to NSO. Newest first. Versions follow the Git tags.
 
+## [Unreleased]
+
+### 0.2.1 (not tagged yet)
+
+Fixes for the first end-user test of 0.2.0. This is still an emulated-games
+release. The package is now a tarball: `nso`, a bundled `mednafen` next to it,
+and `nso-norumble.so`. NSO looks only for that Mednafen, relative to its own
+executable (`/proc/self/exe`), and shows "Bundled Mednafen is missing" if it
+is not there. `config/` is created on the first run. Box-art scraping prefers
+No-Intro names, downloads from the same per-system libretro-thumbnails repo
+as the index, auto-picks a valid name for "Download all", previews the focused
+candidate in the picker, and reports failures. The CRT Geometry shader is
+embedded (and written to disk so Mednafen can load it). The idle `stat()`
+storm on the Mednafen path is cached until a launch. The enter transition
+shows the current system name, Details version chevrons render, and the Mega
+Drive card logo is no longer cropped. README install and key docs are updated
+(S opens the status menu; Power offers Shut down / Close NSO / Cancel).
+
 ## [0.2.0] - 2026-11-27
 
 This release supports **emulated games only**. NSO is a Nintendo Switch

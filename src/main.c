@@ -538,10 +538,135 @@ const char *GetDataPath(const char *relativePath) {
     return fullPath;
 }
 
-/* Installed = the game's binary exists (built / downloaded). */
+static void EnsureDirectoryTree(const char *path);
+
+/* Directory containing this NSO executable (/proc/self/exe), not the CWD. */
+static char nsoExeDirBuf[2048];
+static int nsoExeDirReady;
+static char nsoMednafenPath[2400];
+static int nsoMednafenState;   /* 0 unknown, 1 present, -1 missing */
+
+static const char *NsoExeDir(void)
+{
+    if (nsoExeDirReady) return nsoExeDirBuf;
+    nsoExeDirBuf[0] = '\0';
+#ifndef _WIN32
+    {
+        char link[2048];
+        ssize_t n = readlink("/proc/self/exe", link, sizeof(link) - 1);
+        if (n > 0) {
+            char *slash;
+            static const char deleted[] = " (deleted)";
+            link[n] = '\0';
+            if ((size_t)n > sizeof(deleted) - 1
+                && strcmp(link + (size_t)n - (sizeof(deleted) - 1), deleted) == 0)
+                link[(size_t)n - (sizeof(deleted) - 1)] = '\0';
+            slash = strrchr(link, '/');
+            if (slash) {
+                if (slash == link) slash[1] = '\0';
+                else *slash = '\0';
+                snprintf(nsoExeDirBuf, sizeof(nsoExeDirBuf), "%s", link);
+            }
+        }
+    }
+#endif
+    if (!nsoExeDirBuf[0]) {
+        const char *app = GetApplicationDirectory();
+        if (app && app[0]) {
+            size_t L = strlen(app);
+            snprintf(nsoExeDirBuf, sizeof(nsoExeDirBuf), "%s", app);
+            if (L > 1 && nsoExeDirBuf[L - 1] == '/') nsoExeDirBuf[L - 1] = '\0';
+        } else {
+            snprintf(nsoExeDirBuf, sizeof(nsoExeDirBuf), "%s", ".");
+        }
+    }
+    nsoExeDirReady = 1;
+    return nsoExeDirBuf;
+}
+
+static void NsoMednafenRecheck(void)
+{
+    nsoMednafenState = 0;
+}
+
+static int NsoMednafenIsExe(const char *path)
+{
+    return path && path[0] && FileExists(path) && !DirectoryExists(path);
+}
+
+/* First and only emulator: a `mednafen` file next to this binary, then the
+ * in-tree dev path <exe>/mednafen/src/mednafen. No PATH / system fallback.
+ * The result is cached; call NsoMednafenRecheck() when about to launch. */
+static const char *NsoBundledMednafen(void)
+{
+    const char *dir;
+    char cand[2400];
+    if (nsoMednafenState == 1) return nsoMednafenPath;
+    if (nsoMednafenState == -1) return NULL;
+    nsoMednafenPath[0] = '\0';
+    dir = NsoExeDir();
+    snprintf(cand, sizeof(cand), "%s/mednafen", dir);
+    if (NsoMednafenIsExe(cand)) {
+        snprintf(nsoMednafenPath, sizeof(nsoMednafenPath), "%s", cand);
+        nsoMednafenState = 1;
+        return nsoMednafenPath;
+    }
+    snprintf(cand, sizeof(cand), "%s/mednafen/src/mednafen", dir);
+    if (NsoMednafenIsExe(cand)) {
+        snprintf(nsoMednafenPath, sizeof(nsoMednafenPath), "%s", cand);
+        nsoMednafenState = 1;
+        return nsoMednafenPath;
+    }
+    nsoMednafenState = -1;
+    return NULL;
+}
+
+static void NsoMednafenDir(char *dst, size_t n)
+{
+    const char *bin = NsoBundledMednafen();
+    char *slash;
+    if (!dst || n == 0) return;
+    dst[0] = '\0';
+    if (!bin) return;
+    snprintf(dst, n, "%s", bin);
+    slash = strrchr(dst, '/');
+    if (!slash) return;
+    if (slash == dst) slash[1] = '\0';
+    else *slash = '\0';
+}
+
+static void NsoEnsureConfigDir(void)
+{
+    char dir[2112];
+    snprintf(dir, sizeof(dir), "%s/config", GetBaseDirectory());
+    EnsureDirectoryTree(dir);
+}
+
+/* Materialize shaders/crtgeom.glsl on disk so a child Mednafen can load it
+ * (the pack hook only serves this process). */
+static void NsoEnsureShaderFile(void)
+{
+    char dest[2048], dir[2048];
+    char *text;
+    snprintf(dest, sizeof(dest), "%s", GetDataPath("shaders/crtgeom.glsl"));
+    if (FileExists(dest) && GetFileLength(dest) > 0) return;
+    text = LoadFileText("shaders/crtgeom.glsl");
+    if (!text) text = LoadFileText(dest);
+    if (!text) return;
+    snprintf(dir, sizeof(dir), "%s", GetDataPath("shaders"));
+    EnsureDirectoryTree(dir);
+    SaveFileText(dest, text);
+    UnloadFileText(text);
+}
+
+/* Installed = the game's binary exists (built / downloaded). Mednafen games
+ * use the bundled emulator next to this executable, cached until launch. */
 static bool GameBinaryPresent(const GameEntry *game) {
     char path[2304];
-    if (!game || !game->dir || !game->dir[0] || !game->binary || !game->binary[0]) return false;
+    if (!game) return false;
+    if (game->mednafen && game->mednafen[0])
+        return NsoBundledMednafen() != NULL;
+    if (!game->dir || !game->dir[0] || !game->binary || !game->binary[0]) return false;
     snprintf(path, sizeof(path), "%s/%s/%s", GetBaseDirectory(), game->dir, game->binary);
     return FileExists(path);
 }
@@ -1314,6 +1439,10 @@ static NsoMsg scrapeMsg = { -1, 0, "" };
 static bool scrapeOnly[MAX_GAMES];   /* with scrapeOnlyOn: covers of these games only (Select games) */
 static bool scrapeOnlyOn = false;
 static bool scrapeRomOnly = false;     /* next Start() is scoped to ROMs in roms/<System>/ */
+static bool scrapeAutoPick = false;    /* Download all: pick the best No-Intro name, no picker */
+static void ScrapeMenu_ChoicePrevPoll(void);
+static void ScrapeMenu_ChoicePrevStop(void);
+static Texture2D ScrapeMenu_ChoicePreview(void);
 enum { SCRAPE_CHOICE_MAX = 16 };
 static int scrapeChoiceN = 0;
 static int scrapeChoiceCur = 0;
@@ -1390,6 +1519,38 @@ static bool gameEnterHadFrame = false;
 static bool gameEnterHandoff = false;   /* first game frame presented under full black; fade after the swap */
 static bool gameEnterFailed = false;
 static bool GameEnterActive(void) { return gameEnterPhase != GAME_ENTER_NONE; }
+
+static NsoMsg launchMsg = { -1, 0, "" };
+static double launchMsgUntil;
+
+static void LaunchMsg_Show(int id)
+{
+    Msg_Set(&launchMsg, id, 0, NULL);
+    launchMsgUntil = GetTime() + 4.0;
+}
+
+static void LaunchMsg_Draw(Font font)
+{
+    char text[192];
+    float sw, sh, fs, tw, pad, w, h, x, y;
+    if (launchMsg.id < 0 || GetTime() >= launchMsgUntil) return;
+    Msg_Format(&launchMsg, text, sizeof(text));
+    if (!text[0] || font.texture.id == 0) return;
+    sw = (float)GetScreenWidth();
+    sh = (float)GetScreenHeight();
+    fs = sh * 0.028f;
+    tw = MeasureTextEx(font, text, fs, 1.0f).x;
+    pad = sh * 0.018f;
+    w = tw + pad * 2.0f;
+    if (w > sw * 0.9f) w = sw * 0.9f;
+    h = fs + pad;
+    x = (sw - w) * 0.5f;
+    y = sh * 0.86f;
+    DrawRectangleRounded((Rectangle){ x, y, w, h }, 0.25f, 8,
+                         (Color){ 20, 20, 20, 230 });
+    DrawTextEx(font, text, (Vector2){ x + pad, y + (h - fs) * 0.5f },
+               fs, 1.0f, WHITE);
+}
 static void GameEnter_Reset(void);
 static void GameEnter_Begin(void);
 static void GameEnter_Step(float dt);
@@ -2552,6 +2713,38 @@ static void Power_ShutDown(void)
 #endif
 }
 
+/* System-card art. 16:9 banners keep the existing square centre crop; wider
+ * art (Mega Drive is 2:1) is fitted in full so the logo is not cropped. */
+static void DrawSystemCardArt(const PlatformEntry *p, Rectangle dst, float r, Color tint)
+{
+    float tw, th, side, k;
+    Rectangle src;
+    if (!p || p->texture.id == 0) return;
+    tw = (float)p->texture.width;
+    th = (float)p->texture.height;
+    if (th < 1.0f || tw < 1.0f) return;
+    if (tw * 9.0f > th * 16.0f + 1.0f) {
+        float scale = fminf(dst.width / tw, dst.height / th);
+        float w = tw * scale, h = th * scale;
+        Rectangle d = { dst.x + (dst.width - w) * 0.5f,
+                        dst.y + (dst.height - h) * 0.5f, w, h };
+        DrawTexturePro(p->texture, (Rectangle){ 0, 0, tw, th }, d,
+                       (Vector2){ 0 }, 0.0f, tint);
+        return;
+    }
+    side = th;
+    src = (Rectangle){ (tw - side) * 0.5f, 0.0f, side, side };
+    k = side / dst.width;
+    DrawTexturePro(p->texture,
+                   (Rectangle){ src.x, src.y + r * k, side, side - 2.0f * r * k },
+                   (Rectangle){ dst.x, dst.y + r, dst.width, dst.height - 2.0f * r },
+                   (Vector2){ 0 }, 0.0f, tint);
+    DrawTexturePro(p->texture,
+                   (Rectangle){ src.x + r * k, src.y, side - 2.0f * r * k, side },
+                   (Rectangle){ dst.x + r, dst.y, dst.width - 2.0f * r, dst.height },
+                   (Vector2){ 0 }, 0.0f, tint);
+}
+
 static void DrawSystemMenu(float offsetX) {
     float sw = (float)GetScreenWidth();
     float sh = (float)GetScreenHeight();
@@ -2577,21 +2770,8 @@ static void DrawSystemMenu(float offsetX) {
                        fs, 1.0f, LIGHTGRAY);
         }
 
-        if (p->texture.id != 0) {
-            /* Square centre crop of the 16:9 art. Draw it as a "+" of two
-             * bands so the rounded corners stay the solid card colour. */
-            float side = (float)p->texture.height;
-            Rectangle src = { ((float)p->texture.width - side) * 0.5f, 0.0f, side, side };
-            float k = side / card;
-            DrawTexturePro(p->texture,
-                           (Rectangle){ src.x, src.y + r * k, side, side - 2.0f * r * k },
-                           (Rectangle){ dst.x, dst.y + r, card, card - 2.0f * r },
-                           (Vector2){ 0 }, 0.0f, WHITE);
-            DrawTexturePro(p->texture,
-                           (Rectangle){ src.x + r * k, src.y, side - 2.0f * r * k, side },
-                           (Rectangle){ dst.x + r, dst.y, card - 2.0f * r, card },
-                           (Vector2){ 0 }, 0.0f, WHITE);
-        }
+        if (p->texture.id != 0)
+            DrawSystemCardArt(p, dst, r, WHITE);
 
         if (i == currentSystem && menuBarFocus < 0) {
             /* Black gap, then a pastel gradient ring in sync with the bar cursor.
@@ -3241,6 +3421,7 @@ static void ScrapeMenu_Finish(void)
     scrapeProc = NsoProcNone();
     scrapePhase = SCRAPE_IDLE;
     scrapeBusy = false;
+    scrapeAutoPick = false;
     scrapePart[0] = '\0';
 }
 
@@ -3387,7 +3568,7 @@ static void ScrapeMenu_Advance(void)
                 cn = Scrape_CollectMatches(q, (const char **)scrapeNames,
                                            scrapeNameCount, cands, SCRAPE_CHOICE_MAX);
             }
-            if (cn >= 2) {
+            if (cn >= 2 && !scrapeAutoPick) {
                 int ci;
                 scrapeChoiceN = cn;
                 scrapeChoiceCur = 0;
@@ -3403,10 +3584,17 @@ static void ScrapeMenu_Advance(void)
                 scrapePhase = SCRAPE_CHOOSE;
                 return;
             }
-            if (cn == 1) file = cands[0];
+            if (cn >= 1) {
+                int ci, keep = 0;
+                for (ci = 0; ci < cn; ci++)
+                    if (file && cands[ci] && strcmp(cands[ci], file) == 0)
+                        keep = 1;
+                if (!keep) file = cands[0];
+            }
         }
         if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {
             scrapeMisses++;
+            Msg_Set(&scrapeMsg, S_SCRAPE_NO_ART, 0, title);
             scrapeGame++;
             if (++work >= SCRAPE_SCAN_BURST) return;
             continue;
@@ -3540,6 +3728,7 @@ static void ScrapeMenu_Start(int replace);
 static void ScrapeMenu_StartFromRoms(int replace)
 {
     scrapeRomOnly = true;
+    scrapeAutoPick = true;
     ScrapeMenu_Start(replace);
 }
 
@@ -3579,8 +3768,10 @@ static void ScrapeMenu_StartChosenFile(const char *file)
 {
     const char *playlist = Scrape_Playlist(scrapeId);
     char url[2048], part[2304];
+    ScrapeMenu_ChoicePrevStop();
     if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {
         scrapeMisses++;
+        Msg_Set(&scrapeMsg, S_SCRAPE_NO_ART, 0, scrapeChoiceTitle);
         scrapeGame++;
         scrapeChoiceN = 0;
         scrapePhase = SCRAPE_SCAN;
@@ -3674,6 +3865,7 @@ static void ScrapeMenu_Cancel(void)
     if (!scrapeBusy) return;
     scrapeCancel = true;
     if (NsoProcOk(scrapeProc)) NsoSpawnKill(scrapeProc);
+    ScrapeMenu_ChoicePrevStop();
     Msg_Set(&scrapeMsg, S_SCRAPE_CANCELLED, 0, NULL);
 }
 
@@ -3690,7 +3882,10 @@ static void ScrapeMenu_Poll(void)
         ScrapeMenu_Advance();
         return;
     }
-    if (scrapePhase == SCRAPE_CHOOSE) return;
+    if (scrapePhase == SCRAPE_CHOOSE) {
+        ScrapeMenu_ChoicePrevPoll();
+        return;
+    }
     if (!NsoProcOk(scrapeProc) || !NsoSpawnExited(&scrapeProc, &code)) return;
 
     if (scrapePhase == SCRAPE_INDEX) {
@@ -3768,6 +3963,7 @@ static void ScrapeMenu_Poll(void)
         } else {
             FileRemove(scrapePart);
             scrapeMisses++;
+            Msg_Set(&scrapeMsg, S_SCRAPE_DOWNLOAD_FAILED, 0, NULL);
         }
         scrapePart[0] = '\0';
         scrapeAliasHops = 0;
@@ -5729,6 +5925,111 @@ static void Details_Draw(Font font) {
     DrawInfoBarEx(font, T(S_DET_INFO), a, 0.0f);
 }
 
+
+/* Preview the focused box-art candidate (a short curl into assets/cache). */
+static Texture2D scrapeChoicePrev;
+static int scrapeChoicePrevAt = -1;
+static char scrapeChoicePrevPart[4200];
+static NsoProc scrapeChoicePrevProc;
+static int scrapeChoicePrevBusy;
+
+static void ScrapeMenu_ChoicePrevUnload(void)
+{
+    if (scrapeChoicePrev.id != 0) UnloadTexture(scrapeChoicePrev);
+    scrapeChoicePrev = (Texture2D){ 0 };
+}
+
+static void ScrapeMenu_ChoicePrevStop(void)
+{
+    if (scrapeChoicePrevBusy && NsoProcOk(scrapeChoicePrevProc))
+        NsoSpawnKill(scrapeChoicePrevProc);
+    scrapeChoicePrevProc = NsoProcNone();
+    scrapeChoicePrevBusy = 0;
+    if (scrapeChoicePrevPart[0]) {
+        FileRemove(scrapeChoicePrevPart);
+        scrapeChoicePrevPart[0] = '\0';
+    }
+    ScrapeMenu_ChoicePrevUnload();
+    scrapeChoicePrevAt = -1;
+}
+
+static void ScrapeMenu_ChoicePrevPoll(void)
+{
+    const char *file, *playlist;
+    char url[2048], cache[2400];
+    int code = 0;
+    if (!(scrapeBusy && scrapePhase == SCRAPE_CHOOSE)) {
+        if (scrapeChoicePrevBusy || scrapeChoicePrev.id || scrapeChoicePrevAt >= 0)
+            ScrapeMenu_ChoicePrevStop();
+        return;
+    }
+    if (scrapeChoicePrevBusy && NsoSpawnExited(&scrapeChoicePrevProc, &code)) {
+        scrapeChoicePrevBusy = 0;
+        scrapeChoicePrevProc = NsoProcNone();
+        if (code == 0 && scrapeChoicePrevPart[0] && Scrape_LooksLikeImage(scrapeChoicePrevPart)) {
+            Image img = LoadBoxartImage(scrapeChoicePrevPart);
+            ScrapeMenu_ChoicePrevUnload();
+            if (img.data) {
+                scrapeChoicePrev = LoadTextureFromImage(img);
+                UnloadImage(img);
+            }
+        }
+        if (scrapeChoicePrevPart[0]) FileRemove(scrapeChoicePrevPart);
+        scrapeChoicePrevPart[0] = '\0';
+    }
+    if (scrapeChoicePrevAt == scrapeChoiceCur
+        && (scrapeChoicePrevBusy || scrapeChoicePrev.id != 0))
+        return;
+    if (scrapeChoicePrevBusy) {
+        NsoSpawnKill(scrapeChoicePrevProc);
+        scrapeChoicePrevProc = NsoProcNone();
+        scrapeChoicePrevBusy = 0;
+        if (scrapeChoicePrevPart[0]) FileRemove(scrapeChoicePrevPart);
+        scrapeChoicePrevPart[0] = '\0';
+    }
+    ScrapeMenu_ChoicePrevUnload();
+    scrapeChoicePrevAt = scrapeChoiceCur;
+    file = (scrapeChoiceCur >= 0 && scrapeChoiceCur < scrapeChoiceN)
+        ? scrapeChoices[scrapeChoiceCur] : NULL;
+    playlist = Scrape_Playlist(scrapeId[0] ? scrapeId : ActiveSystem()->platform->id);
+    if (!file || !file[0] || !playlist
+        || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0)
+        return;
+    snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
+    MakeDirectory(GetDataPath("assets"));
+    MakeDirectory(cache);
+    snprintf(scrapeChoicePrevPart, sizeof(scrapeChoicePrevPart),
+             "%s/scrape-choice-preview.part", cache);
+    {
+        char *argv[13];
+        argv[0] = "curl";
+        argv[1] = "-fsSL";
+        argv[2] = "--max-time";
+        argv[3] = "30";
+        argv[4] = "--retry";
+        argv[5] = "1";
+        argv[6] = "--retry-delay";
+        argv[7] = "1";
+        argv[8] = "--create-dirs";
+        argv[9] = "-o";
+        argv[10] = scrapeChoicePrevPart;
+        argv[11] = url;
+        argv[12] = NULL;
+        scrapeChoicePrevProc = NsoSpawnArgv(NULL, argv);
+        if (!NsoProcOk(scrapeChoicePrevProc)) {
+            scrapeChoicePrevPart[0] = '\0';
+            return;
+        }
+        scrapeChoicePrevBusy = 1;
+    }
+}
+
+static Texture2D ScrapeMenu_ChoicePreview(void)
+{
+    ScrapeMenu_ChoicePrevPoll();
+    return scrapeChoicePrev;
+}
+
 #include "statuspanel.h"
 
 static bool GameHasExternalMenu(const GameEntry *game)
@@ -5972,8 +6273,14 @@ static void PadPort_Apply(const GameEntry *game, const char *gameDir) {
 }
 
 NsoProc LaunchGame(const GameEntry *game) {
+    if (game && game->mednafen && game->mednafen[0])
+        NsoMednafenRecheck();
     if (!GameIsLaunchable(game)) {
         fprintf(stderr, "LaunchGame: game is display-only or invalid\n");
+        return NsoProcNone();
+    }
+    if (game->mednafen && game->mednafen[0] && !NsoBundledMednafen()) {
+        fprintf(stderr, "LaunchGame: bundled Mednafen is missing\n");
         return NsoProcNone();
     }
 
@@ -6123,8 +6430,10 @@ NsoProc LaunchGame(const GameEntry *game) {
     /* Rumble off: the game's SDL rumble calls do nothing (src/norumble.c). */
     char *preloadSaved = getenv("LD_PRELOAD") ? strdup(getenv("LD_PRELOAD")) : NULL;
     if (!sysSettings[currentSystem].rumble) {
-        char shim[1200], preload[2600];
+        char shim[2400], preload[3800];
         snprintf(shim, sizeof(shim), "%s", GetDataPath("nso-norumble.so"));
+        if (!FileExists(shim))
+            snprintf(shim, sizeof(shim), "%s/nso-norumble.so", NsoExeDir());
         if (FileExists(shim)) {
             snprintf(preload, sizeof(preload), "%s%s%s", shim, preloadSaved ? ":" : "", preloadSaved ? preloadSaved : "");
             NsoSetEnv("LD_PRELOAD", preload);
@@ -6160,12 +6469,21 @@ NsoProc LaunchGame(const GameEntry *game) {
         }
     }
 #endif
-    argv[argc++] = (char *)game->binary;
+    if (game->mednafen && game->mednafen[0] && NsoBundledMednafen())
+        argv[argc++] = (char *)NsoBundledMednafen();
+    else
+        argv[argc++] = (char *)game->binary;
     argc += NsoSplitWords(argsBuf, argv + argc, (int)(sizeof(argv) / sizeof(argv[0])) - argc - 1);
     for (int i = 0; i < mednafenArgc && argc < (int)(sizeof(argv) / sizeof(argv[0])) - 1; i++)
         argv[argc++] = mednafenArgv[i];
     argv[argc] = NULL;
-    proc = NsoSpawnArgv(gameDir, argv);
+    {
+        char spawnDir[2048];
+        snprintf(spawnDir, sizeof(spawnDir), "%s", gameDir);
+        if (game->mednafen && game->mednafen[0])
+            NsoMednafenDir(spawnDir, sizeof(spawnDir));
+        proc = NsoSpawnArgv(spawnDir, argv);
+    }
 #if !defined(_WIN32)
     if (selfLen > 0) NsoSetEnv("NSO_START_KEYS", NULL);
 #endif
@@ -6456,6 +6774,8 @@ static void GameEnter_StartGame(void)
         gameEnterFailed = true;
         currentState = MOSAIC;
         Embed_ExitOverlayDestroy();
+        if (launched->mednafen && launched->mednafen[0] && !NsoBundledMednafen())
+            LaunchMsg_Show(S_NO_MEDNAFEN);
     }
 }
 
@@ -6604,20 +6924,21 @@ static void DrawEnterLogoGlyph(float cx, float cy, float w, float deg, float alp
                    deg, Fade(WHITE, alpha));
 }
 
-/* "PC Ports", right-aligned (right edge x, vertical centre cy). Every letter flips like a card
+/* System name, right-aligned (right edge x, vertical centre cy). Every letter flips like a card
  * about its own horizontal axis, each a little out of phase (EnterAnim_LetterAngle): height
  * scales by cos(angle), with a little perspective (the half turning towards the viewer grows
  * slightly wider). All letters are face-on while the word holds. */
 static void DrawEnterPortsText(float x, float cy, float size, float t, float alpha) {
     if (!enterTextOk) return;
-    const char *text = "PC Ports";
+    const char *text = ActiveSystem()->platform && ActiveSystem()->platform->name
+        ? ActiveSystem()->platform->name : "NSO";
     const int n = (int)strlen(text);
     const float spacing = size * 0.02f;
     Vector2 whole = MeasureTextEx(enterTextFont, text, size, spacing);
     Color c = Fade(WHITE, alpha);
     for (int i = 0; i < n; i++) {
         if (text[i] == ' ') continue;
-        char prefix[16] = { 0 }, one[2] = { text[i], 0 };
+        char prefix[48] = { 0 }, one[2] = { text[i], 0 };
         memcpy(prefix, text, (size_t)i);
         float ox = i ? MeasureTextEx(enterTextFont, prefix, size, spacing).x : 0.0f;
         float lw = MeasureTextEx(enterTextFont, one, size, 0.0f).x;
@@ -6636,7 +6957,7 @@ static void DrawEnterPortsText(float x, float cy, float size, float t, float alp
 
 /* Pressing A on a system tile (enteranim.h): the tile's art lifts off as a fading ghost while a
  * (17,17,17) layer rises over the menu; the layer holds with the white logos (Nintendo wordmark
- * top-left, "PC Ports" bottom-right, flipping in); then the system's own screen crossfades in. */
+ * top-left, the system name bottom-right, flipping in); then the system's own screen crossfades in. */
 static void DrawEnterTransition(void) {
     float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
     float cover = EnterAnim_Cover(enterT), cross = EnterAnim_Cross(enterT);
@@ -6657,11 +6978,8 @@ static void DrawEnterTransition(void) {
                                      MENU_CARD_ROUNDNESS, 16, Fade(bg, ga * 0.12f));
             }
             DrawRectangleRounded(g, MENU_CARD_ROUNDNESS, 16, Fade(bg, ga));
-            if (p->texture.id != 0) {
-                float side = (float)p->texture.height;
-                DrawTexturePro(p->texture, (Rectangle){ ((float)p->texture.width - side) * 0.5f, 0.0f, side, side }, g,
-                               (Vector2){ 0 }, 0.0f, Fade(WHITE, ga));
-            }
+            if (p->texture.id != 0)
+                DrawSystemCardArt(p, g, MENU_CARD_ROUNDNESS * g.width, Fade(WHITE, ga));
         }
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, cover));
     } else {
@@ -6746,6 +7064,7 @@ static void DrawMosaicSlots(Color background, Font font) {
         float tw = fminf(MeasureTextEx(font, msg, size, 1.0f).x, w * 0.8f);
         DrawFitText(font, msg, (Vector2){ x0 + (w - tw) * 0.5f, (float)GetScreenHeight() * 0.5f }, size, w * 0.8f, WHITE);
     }
+    LaunchMsg_Draw(font);
 }
 
 /* Snapshot the current (still-old) grid and hold a blur of it until the
@@ -7355,6 +7674,8 @@ int main(int argc, char **argv) {
     if (NsoChdir(base) != 0) {
         perror("Failed to chdir to base directory");
     }
+    NsoEnsureConfigDir();
+    NsoEnsureShaderFile();
     /* CRT Geometry for the games NSO draws itself (embedded, rewind): built once here, so no hitch later */
     if (!CrtGeom_Load(GetDataPath("shaders/crtgeom.glsl"))) fprintf(stderr, "NSO: CRT Geometry shader unavailable\n");
 
@@ -7383,7 +7704,7 @@ int main(int argc, char **argv) {
         " .,!?()[]{}@'°-:/_+%&\"~*$"
         "áàâãéêíóôõúçÁÂÃÉÊÍÓÔÕÚÇëË"
         "āēīōūÿäöüĀĒĪŌŪÄÖÜ"
-        "×½²³☆‼—–′"
+        "×½²³☆‼—–′‹›"
         "🅐🅑🅧🅨",
         &Count
     );
@@ -7495,8 +7816,12 @@ int main(int argc, char **argv) {
                           && enterLogoFont.recs[0].width > 1.0f;
             if (enterLogoOk) SetTextureFilter(enterLogoFont.texture, TEXTURE_FILTER_BILINEAR);
         }
-        int tcps[] = { 'P', 'C', ' ', 'o', 'r', 't', 's' };
-        enterTextFont = LoadFontEx(FontPath, 160, tcps, (int)(sizeof(tcps) / sizeof(tcps[0])));
+        int tcps[64], ntc = 0, cp;
+        for (cp = 'A'; cp <= 'Z'; cp++) tcps[ntc++] = cp;
+        for (cp = 'a'; cp <= 'z'; cp++) tcps[ntc++] = cp;
+        for (cp = '0'; cp <= '9'; cp++) tcps[ntc++] = cp;
+        tcps[ntc++] = ' ';
+        enterTextFont = LoadFontEx(FontPath, 160, tcps, ntc);
         enterTextOk = enterTextFont.texture.id != 0;
         if (enterTextOk) SetTextureFilter(enterTextFont.texture, TEXTURE_FILTER_BILINEAR);
     }
@@ -8049,6 +8374,13 @@ int main(int argc, char **argv) {
                                     launchingGameIdx = GameIdx;
                                     currentState = LAUNCHING;
                                     GameEnter_Begin();
+                                }
+                            } else if (ActiveGames()[GameIdx].mednafen
+                                       && ActiveGames()[GameIdx].mednafen[0]) {
+                                NsoMednafenRecheck();
+                                if (!NsoBundledMednafen()) {
+                                    Sfx_Play(SFX_CLICK);
+                                    LaunchMsg_Show(S_NO_MEDNAFEN);
                                 }
                             }
                         }

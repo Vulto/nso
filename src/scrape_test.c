@@ -157,8 +157,8 @@ int main(void)
     {
         char url[1024];
         const char *want =
-            "https://raw.githubusercontent.com/libretro/libretro-thumbnails/master/"
-            "Nintendo%20-%20Nintendo%2064/Named_Boxarts/Super%20Mario%2064%20%28USA%29.png";
+            "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Nintendo_64"
+            "/master/Named_Boxarts/Super%20Mario%2064%20%28USA%29.png";
         if (Scrape_ImageUrl(url, sizeof(url), "Nintendo - Nintendo 64",
                             "Super Mario 64 (USA).png") != 0
             || strcmp(url, want) != 0) {
@@ -429,6 +429,38 @@ int main(void)
         n = Scrape_CollectMatches("No Such Game", names, 5, out, 8);
         if (n != 0) {
             fprintf(stderr, "collect missing title n=%d\n", n);
+            fails++;
+        }
+    }
+
+    {
+        const char *names[] = {
+            "Excitebike (1984-11-30)(Nintendo)(JP-US).png",
+            "Excitebike (Japan, USA).png",
+            "Excitebike (USA) [h1].png",
+            "Excitebike (Japan) (Hack).png",
+            "Balloon Fight (USA).png",
+        };
+        const char *out[8];
+        const char *hit;
+        int n, i, sawJunk = 0;
+        n = Scrape_CollectMatches("Excitebike", names, 5, out, 8);
+        if (n != 1 || !out[0] || strcmp(out[0], "Excitebike (Japan, USA).png") != 0) {
+            fprintf(stderr, "collect Excitebike n=%d -> %s\n", n,
+                    (n > 0 && out[0]) ? out[0] : "(null)");
+            fails++;
+        }
+        for (i = 0; i < n; i++) {
+            if (strstr(out[i], "1984") || strstr(out[i], "[h") || strstr(out[i], "(Hack"))
+                sawJunk = 1;
+        }
+        if (sawJunk) {
+            fprintf(stderr, "collect Excitebike offered a dated/hack name\n");
+            fails++;
+        }
+        hit = Scrape_MatchLoose("Excitebike", names, 5);
+        if (!hit || strcmp(hit, "Excitebike (Japan, USA).png") != 0) {
+            fprintf(stderr, "match Excitebike -> %s\n", hit ? hit : "(null)");
             fails++;
         }
     }
