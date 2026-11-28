@@ -108,12 +108,13 @@ static void Status_Open(void) {
         int nExtra = Version_UnmatchedCatalog(currentSystem, extra, MAX_GAMES);
         for (int i = 0; i < nExtra && statusRowCount < STATUS_MAX_ROWS; i++) {
             const GameEntry *g = extra[i];
-            StatusType gt = Status_Classify(g);
-            if (!STATUS_TYPE_SHOWN(gt)) continue;
+            /* These titles are not on disk; classify as Not available even if
+             * the catalog row carries a Mednafen path from the built-in list. */
+            if (!STATUS_TYPE_SHOWN(ST_NONE)) continue;
             StatusRow *r = &statusRows[statusRowCount++];
             r->game = g;
-            r->type = gt;
-            r->playable = GameIsLaunchable(g);
+            r->type = ST_NONE;
+            r->playable = false;
             statusCounts[r->type]++;
             statusTotal++;
             if (r->playable) statusPlayable++;

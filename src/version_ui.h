@@ -216,15 +216,62 @@ static void Version_ApplyCatalog(int sys)
     }
 }
 
-/* Catalog titles with no matching disk game (for Statistics "Not available"). */
+/* Catalog titles with no matching disk game (for Statistics "Not available").
+ * Precompute per live game so this stays linear in the catalog size; calling
+ * BestCatalog inside the catalog×live loop froze the UI for tens of seconds
+ * when opening the status / scraper menu (NES wiki list × a full ROM set). */
+static void Version_NormAdd(char (*have)[256], int *nHave, int cap, const char *s)
+{
+    char buf[256];
+    if (!s || !s[0] || *nHave >= cap) return;
+    Gs_Norm(s, buf, sizeof(buf));
+    if (!buf[0]) return;
+    for (int i = 0; i < *nHave; i++)
+        if (strcmp(have[i], buf) == 0) return;
+    snprintf(have[*nHave], 256, "%s", buf);
+    (*nHave)++;
+}
+
 static int Version_UnmatchedCatalog(int sys, const GameEntry **dst, int cap)
 {
-    int nOut = 0, nOrig, nLive;
+    int nOut = 0, nOrig, nLive, nHave = 0, haveCap;
+    char (*have)[256] = NULL;
+    const GameEntry **liveBest = NULL;
     if (sys < 0 || sys >= SYSTEM_COUNT || !verOrigin[sys] || !verReady[sys])
         return 0;
     if (!dst || cap <= 0) return 0;
     nOrig = verOriginN[sys] ? *verOriginN[sys] : 0;
     nLive = verCount[sys];
+    if (nLive < 0) nLive = 0;
+    if (nLive > MAX_GAMES) nLive = MAX_GAMES;
+    haveCap = nLive * 3 + 1;
+    if (haveCap < 1) haveCap = 1;
+    have = (char (*)[256])calloc((size_t)haveCap, 256);
+    liveBest = (const GameEntry **)calloc((size_t)(nLive > 0 ? nLive : 1),
+                                          sizeof(*liveBest));
+    if (!have || !liveBest) {
+        free(have);
+        free(liveBest);
+        return 0;
+    }
+    for (int k = 0; k < nLive; k++) {
+        int gi;
+        const char *lt = verLive[sys][k].title;
+        const char *lookup = lt;
+        Version_NormAdd(have, &nHave, haveCap, lt);
+        gi = Version_GroupByTitle(sys, lt ? lt : "");
+        if (gi >= 0) {
+            for (int m = 0; m < verGrp[sys][gi].n; m++) {
+                int r = verGrp[sys][gi].raw[m];
+                if (r < 0 || r >= verRawN[sys]) continue;
+                if (verFolderTitle[sys][r][0]) {
+                    Version_NormAdd(have, &nHave, haveCap, verFolderTitle[sys][r]);
+                    lookup = verFolderTitle[sys][r];
+                }
+            }
+        }
+        liveBest[k] = Version_BestCatalog(sys, lookup && lookup[0] ? lookup : (lt ? lt : ""));
+    }
     for (int i = 0; i < nOrig && nOut < cap; i++) {
         const GameEntry *e = &verOrigin[sys][i];
         char eNorm[256];
@@ -233,34 +280,16 @@ static int Version_UnmatchedCatalog(int sys, const GameEntry **dst, int cap)
         if (Version_EntryIsPort(e)) continue;
         Gs_Norm(e->title, eNorm, sizeof(eNorm));
         if (!eNorm[0]) continue;
-        for (int k = 0; k < nLive && !matched; k++) {
-            char have[256];
-            int gi;
-            const char *lt = verLive[sys][k].title;
-            if (lt && lt[0]) {
-                Gs_Norm(lt, have, sizeof(have));
-                if (have[0] && strcmp(have, eNorm) == 0) { matched = 1; break; }
-            }
-            gi = Version_GroupByTitle(sys, lt ? lt : "");
-            if (gi >= 0) {
-                const GameEntry *best;
-                const char *lookup = lt;
-                for (int m = 0; m < verGrp[sys][gi].n; m++) {
-                    int r = verGrp[sys][gi].raw[m];
-                    if (r < 0 || r >= verRawN[sys]) continue;
-                    if (verFolderTitle[sys][r][0]) {
-                        Gs_Norm(verFolderTitle[sys][r], have, sizeof(have));
-                        if (have[0] && strcmp(have, eNorm) == 0) { matched = 1; break; }
-                        lookup = verFolderTitle[sys][r];
-                    }
-                }
-                if (matched) break;
-                best = Version_BestCatalog(sys, lookup && lookup[0] ? lookup : (lt ? lt : ""));
-                if (best == e) matched = 1;
-            }
+        for (int h = 0; h < nHave; h++)
+            if (strcmp(have[h], eNorm) == 0) { matched = 1; break; }
+        if (!matched) {
+            for (int k = 0; k < nLive; k++)
+                if (liveBest[k] == e) { matched = 1; break; }
         }
         if (!matched) dst[nOut++] = e;
     }
+    free(have);
+    free(liveBest);
     return nOut;
 }
 
