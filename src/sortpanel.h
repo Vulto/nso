@@ -35,6 +35,7 @@ static int SortPanel_DatesLoad(int sys, const char *const *titles, SortKeys *key
     char *text = FileExists(path) ? LoadFileText(path) : NULL;
     if (!text) return 0;
     Sort_DatesParse(text, titles, keys, count);
+    Version_DatesAbsorb(sys, text, titles, keys, count);
     UnloadFileText(text);
     return 1;
 }

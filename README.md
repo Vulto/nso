@@ -31,7 +31,7 @@ roms/SNES/
 roms/MegaDrive/
 ```
 
-Loose files and per-game subfolders are both fine. Then run `./nso` from that
+Loose files and per-game subfolders are both fine (see [ROM folders and versions](#rom-folders-and-versions) for how to name them). Then run `./nso` from that
 folder (or double-click it). Paths are resolved next to the executable, not
 from the current working directory (`NSO_BASE_DIR` can override that).
 
@@ -41,6 +41,27 @@ You need `curl` only to scrape box art. OpenGL and X11 are required.
 
 If `mednafen` is missing from that folder, starting a game shows
 "Bundled Mednafen is missing" instead of doing nothing.
+
+
+## ROM folders and versions
+
+Each game is a folder under `roms/<system>/`. The folder name is the game
+title: NSO matches it to the built-in list for the display name and cover.
+Files inside that folder are the versions of that game. Name each file with
+tags in parentheses or brackets so NSO can label it and pick a default:
+
+```
+roms/NES/Abadox/Abadox (USA).nes
+roms/NES/Abadox/Abadox (Japan) [Hack].nes
+```
+
+Typical tags: region (`USA`, `U`, `World`, `Europe`, `Japan`, …), revision
+(`Rev 1`), and `Hack` or a translation tag. Loose files directly in
+`roms/<system>/` still work, as a single-version game.
+
+The default version is USA, then World, then Europe, then Japan; hacks and
+mods come last. If a saved choice points at a file that is no longer there,
+NSO uses that default at runtime and does not rewrite your config.
 
 ## What's new (Novidades)
 

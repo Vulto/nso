@@ -103,6 +103,22 @@ static void Status_Open(void) {
         statusTotal++;
         if (r->playable) statusPlayable++;
     }
+    if (verReady[currentSystem]) {
+        const GameEntry *extra[MAX_GAMES];
+        int nExtra = Version_UnmatchedCatalog(currentSystem, extra, MAX_GAMES);
+        for (int i = 0; i < nExtra && statusRowCount < STATUS_MAX_ROWS; i++) {
+            const GameEntry *g = extra[i];
+            StatusType gt = Status_Classify(g);
+            if (!STATUS_TYPE_SHOWN(gt)) continue;
+            StatusRow *r = &statusRows[statusRowCount++];
+            r->game = g;
+            r->type = gt;
+            r->playable = GameIsLaunchable(g);
+            statusCounts[r->type]++;
+            statusTotal++;
+            if (r->playable) statusPlayable++;
+        }
+    }
     statusOpen = true;
     InfoBar_Request(INFO_BAR_STATUS);
 }

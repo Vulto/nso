@@ -99,11 +99,13 @@ int main(void)
     expect("md-region", "Sonic the Hedgehog (Japan)", NULL, "megadrive", NULL, NULL,
            "Sonic the Hedgehog", "Japan");
 
-    /* Prefer: playable, then USA, then unpatched; saved label wins. */
+    /* Prefer: playable, then stock before hacks, then USA > World >
+     * Europe > Japan, then unpatched. Saved label wins only if playable. */
     {
         VersionInfo v[4];
         bool play[4] = { false, true, true, true };
         int i;
+        char lab[VERSION_NAME];
         Version_Parse("Game (Japan)", NULL, "snes", NULL, NULL, &v[0]);
         Version_Parse("Game (USA) (FastRom)", NULL, "snes", NULL, NULL, &v[1]);
         Version_Parse("Game (USA)", NULL, "snes", NULL, NULL, &v[2]);
@@ -114,7 +116,21 @@ int main(void)
         i = Version_Prefer(v, play, 4, NULL);
         CHECK(i == 1); /* playable + USA (patched) beats Europe */
         i = Version_Prefer(v, play, 4, "Europe");
-        CHECK(i == 3);
+        CHECK(i == 3); /* saved Europe is playable */
+        play[3] = false;
+        i = Version_Prefer(v, play, 4, "Europe");
+        CHECK(i == 1); /* saved unplayable is ignored */
+        play[0] = play[1] = play[2] = play[3] = true;
+        Version_Parse("Game (World)", NULL, "snes", NULL, NULL, &v[1]);
+        Version_Parse("Game (USA) [Hack]", NULL, "snes", NULL, NULL, &v[2]);
+        i = Version_Prefer(v, play, 4, NULL);
+        CHECK(i == 1); /* World stock beats USA hack and Europe */
+        Version_FormatDisplay("Abadox", &v[3], lab, sizeof(lab));
+        CHECK(strcmp(lab, "Abadox (Europe)") == 0);
+        Version_FormatDisplay("Abadox", &v[2], lab, sizeof(lab));
+        CHECK(strcmp(lab, "Abadox (USA) [Hack]") == 0
+           || strcmp(lab, "Abadox [Hack]") == 0
+           || strstr(lab, "Hack") != NULL);
     }
 
     /* Sel file */

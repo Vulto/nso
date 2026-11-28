@@ -142,16 +142,126 @@ static int Version_RomFileMissing(int sys, int i)
     return !FileExists(full);
 }
 
+static int Version_GroupByTitle(int sys, const char *title);
+
 /* Native / embed port: keep its launcher; a folder ROM becomes another version. */
-static int Version_IsPort(int sys, int i)
+static int Version_EntryIsPort(const GameEntry *g)
 {
-    const GameEntry *g;
-    if (i < 0 || i >= verRawN[sys]) return 0;
-    g = &verRaw[sys][i];
+    if (!g) return 0;
     if (g->mednafen && g->mednafen[0]) return 0;
     if (g->embedRomKey && g->embedRomKey[0]) return 1;
     if (g->dir && g->dir[0] && g->binary && g->binary[0]) return 1;
     return 0;
+}
+
+static int Version_IsPort(int sys, int i)
+{
+    if (i < 0 || i >= verRawN[sys]) return 0;
+    return Version_EntryIsPort(&verRaw[sys][i]);
+}
+
+static int Version_GroupHasPort(int sys, const VerGroup *g)
+{
+    if (!g) return 0;
+    for (int m = 0; m < g->n; m++)
+        if (Version_IsPort(sys, g->raw[m])) return 1;
+    return 0;
+}
+
+/* Best catalog row for a folder or file title. Prefers curated entries
+ * (ROM / port / box art) over name-only wiki rows; Gs_Norm is the matcher. */
+static const GameEntry *Version_BestCatalog(int sys, const char *name)
+{
+    const GameEntry *best = NULL;
+    int bestScore = 0, bestPri = -1, n;
+    if (sys < 0 || sys >= SYSTEM_COUNT || !verOrigin[sys] || !name || !name[0])
+        return NULL;
+    n = verOriginN[sys] ? *verOriginN[sys] : 0;
+    for (int i = 0; i < n; i++) {
+        const GameEntry *e = &verOrigin[sys][i];
+        int score, pri = 0;
+        if (!e->title || !e->title[0]) continue;
+        score = Gs_MatchScore(name, e->title);
+        if (score < 500) continue;
+        if (e->rom && e->rom[0]) pri += 2;
+        if (Version_EntryIsPort(e)) pri += 2;
+        if (e->boxartPath && e->boxartPath[0]) pri += 1;
+        if (!best || pri > bestPri || (pri == bestPri && score > bestScore)) {
+            best = e;
+            bestPri = pri;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+static void Version_ApplyCatalog(int sys)
+{
+    for (int i = 0; i < verRawN[sys]; i++) {
+        const char *name = verFolderTitle[sys][i][0] ? verFolderTitle[sys][i]
+            : (verRaw[sys][i].title ? verRaw[sys][i].title : "");
+        const GameEntry *cat;
+        if (Version_IsPort(sys, i)) continue;
+        cat = Version_BestCatalog(sys, name);
+        if (!cat) continue;
+        if (cat->title && cat->title[0]) {
+            snprintf(verTitle[sys][i], sizeof(verTitle[sys][i]), "%s", cat->title);
+            verRaw[sys][i].title = verTitle[sys][i];
+        }
+        if (cat->boxartPath && cat->boxartPath[0]
+            && (!verRaw[sys][i].boxartPath || !verRaw[sys][i].boxartPath[0])) {
+            snprintf(verBox[sys][i], sizeof(verBox[sys][i]), "%s", cat->boxartPath);
+            verRaw[sys][i].boxartPath = verBox[sys][i];
+        }
+    }
+}
+
+/* Catalog titles with no matching disk game (for Statistics "Not available"). */
+static int Version_UnmatchedCatalog(int sys, const GameEntry **dst, int cap)
+{
+    int nOut = 0, nOrig, nLive;
+    if (sys < 0 || sys >= SYSTEM_COUNT || !verOrigin[sys] || !verReady[sys])
+        return 0;
+    if (!dst || cap <= 0) return 0;
+    nOrig = verOriginN[sys] ? *verOriginN[sys] : 0;
+    nLive = verCount[sys];
+    for (int i = 0; i < nOrig && nOut < cap; i++) {
+        const GameEntry *e = &verOrigin[sys][i];
+        char eNorm[256];
+        int matched = 0;
+        if (!e->title || !e->title[0]) continue;
+        if (Version_EntryIsPort(e)) continue;
+        Gs_Norm(e->title, eNorm, sizeof(eNorm));
+        if (!eNorm[0]) continue;
+        for (int k = 0; k < nLive && !matched; k++) {
+            char have[256];
+            int gi;
+            const char *lt = verLive[sys][k].title;
+            if (lt && lt[0]) {
+                Gs_Norm(lt, have, sizeof(have));
+                if (have[0] && strcmp(have, eNorm) == 0) { matched = 1; break; }
+            }
+            gi = Version_GroupByTitle(sys, lt ? lt : "");
+            if (gi >= 0) {
+                const GameEntry *best;
+                const char *lookup = lt;
+                for (int m = 0; m < verGrp[sys][gi].n; m++) {
+                    int r = verGrp[sys][gi].raw[m];
+                    if (r < 0 || r >= verRawN[sys]) continue;
+                    if (verFolderTitle[sys][r][0]) {
+                        Gs_Norm(verFolderTitle[sys][r], have, sizeof(have));
+                        if (have[0] && strcmp(have, eNorm) == 0) { matched = 1; break; }
+                        lookup = verFolderTitle[sys][r];
+                    }
+                }
+                if (matched) break;
+                best = Version_BestCatalog(sys, lookup && lookup[0] ? lookup : (lt ? lt : ""));
+                if (best == e) matched = 1;
+            }
+        }
+        if (!matched) dst[nOut++] = e;
+    }
+    return nOut;
 }
 
 static int Version_CanAttachRom(int sys, int i)
@@ -386,30 +496,22 @@ static void Version_ScanSystemRoms(int sys)
         }
     }
 
-    /* Loose ROMs: update a catalog path, or add a Mednafen tile unless a
-     * same-title port/catalog game already represents that title. */
+    /* Loose ROMs are single-version games. A same-title port keeps its
+     * launcher; the loose file becomes another version of that port. */
     for (int i = 0; i < n; i++) {
         VersionInfo v;
         int r, exist;
         if (used[i] || items[i].folder[0] || items[i].isPatch) continue;
         r = Version_RawByBasename(sys, items[i].name);
         if (r >= 0) {
-            Version_SetRom(sys, r, items[i].rel);
+            if (Version_CanAttachRom(sys, r))
+                Version_SetRom(sys, r, items[i].rel);
             continue;
         }
         Version_Parse(NULL, items[i].rel, Version_SysId(sys), NULL, NULL, &v);
         exist = Version_RawByBaseTitle(sys, v.base[0] ? v.base : NULL);
-        if (exist >= 0) {
-            if (verRaw[sys][exist].rom && verRaw[sys][exist].rom[0]) {
-                /* Port or catalog already owns this title; do not add a duplicate. */
-                char full[2304];
-                snprintf(full, sizeof(full), "%s/%s", GetBaseDirectory(), verRaw[sys][exist].rom);
-                if (!FileExists(full)) Version_SetRom(sys, exist, items[i].rel);
-            } else {
-                Version_SetRom(sys, exist, items[i].rel);
-            }
+        if (exist >= 0 && Version_IsPort(sys, exist) && !Version_MednafenMod(sys))
             continue;
-        }
         if (Version_MednafenMod(sys)) {
             const char *tn = v.base[0] ? v.base : items[i].name;
             char pretty[VERSION_NAME];
@@ -426,10 +528,14 @@ static void Version_ImportOrigin(int sys)
     if (!verOrigin[sys] || !verOriginN[sys]) return;
     int n = *verOriginN[sys];
     if (n > MAX_GAMES) n = MAX_GAMES;
+    /* Disk is the source of truth: only native / embed ports are imported
+     * as games. Catalog names are matched later for title, art, and Statistics. */
     while (verImported[sys] < n && verRawN[sys] < MAX_GAMES) {
-        int i = verRawN[sys];
         int src = verImported[sys]++;
+        int i;
         char fixed[256];
+        if (!Version_EntryIsPort(&verOrigin[sys][src])) continue;
+        i = verRawN[sys];
         verRaw[sys][i] = verOrigin[sys][src];
         verFolderKey[sys][i][0] = '\0';
         verFolderTitle[sys][i][0] = '\0';
@@ -466,6 +572,8 @@ static bool Version_TextHas(int sys, const char *text, const char *groupTitle)
         if (r < 0 || r >= srcN) continue;
         t = verSrc[sys][r].title;
         if (t && Fav_Has(text, t)) return true;
+        if (r >= 0 && r < MAX_GAMES && verFolderTitle[sys][r][0]
+            && Fav_Has(text, verFolderTitle[sys][r])) return true;
     }
     return false;
 }
@@ -557,12 +665,55 @@ static void Version_StatsAbsorb(int sys, const char *text, const char *const *ti
             SortKeys tmp[1] = { 0 };
             if (r < 0 || r >= srcN) continue;
             t = verSrc[sys][r].title;
-            if (!t) continue;
-            one[0] = t;
-            Sort_StatsParse(text, one, tmp, 1);
-            if (tmp[0].lastPlayed || tmp[0].playSecs) {
-                keys[i] = tmp[0];
-                break;
+            if (t) {
+                one[0] = t;
+                Sort_StatsParse(text, one, tmp, 1);
+                if (tmp[0].lastPlayed || tmp[0].playSecs) {
+                    keys[i] = tmp[0];
+                    break;
+                }
+            }
+            if (r >= 0 && r < MAX_GAMES && verFolderTitle[sys][r][0]) {
+                one[0] = verFolderTitle[sys][r];
+                memset(tmp, 0, sizeof(tmp));
+                Sort_StatsParse(text, one, tmp, 1);
+                if (tmp[0].lastPlayed || tmp[0].playSecs) {
+                    keys[i] = tmp[0];
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
+static void Version_DatesAbsorb(int sys, const char *text, const char *const *titles,
+                                SortKeys *keys, int count)
+{
+    if (!text || !keys || !titles) return;
+    for (int i = 0; i < count; i++) {
+        int gi, srcN;
+        if (keys[i].release) continue;
+        gi = Version_GroupByTitle(sys, titles[i]);
+        if (gi < 0 || !verSrc[sys]) continue;
+        srcN = verSrcN[sys] ? *verSrcN[sys] : 0;
+        for (int m = 0; m < verGrp[sys][gi].n; m++) {
+            int r = verGrp[sys][gi].raw[m];
+            const char *one[1];
+            SortKeys tmp[1] = { 0 };
+            const char *t;
+            if (r < 0 || r >= srcN) continue;
+            t = verSrc[sys][r].title;
+            if (t) {
+                one[0] = t;
+                Sort_DatesParse(text, one, tmp, 1);
+                if (tmp[0].release) { keys[i].release = tmp[0].release; break; }
+            }
+            if (r >= 0 && r < MAX_GAMES && verFolderTitle[sys][r][0]) {
+                memset(tmp, 0, sizeof(tmp));
+                one[0] = verFolderTitle[sys][r];
+                Sort_DatesParse(text, one, tmp, 1);
+                if (tmp[0].release) { keys[i].release = tmp[0].release; break; }
             }
         }
     }
@@ -596,13 +747,14 @@ static void Version_SetSelText(int sys, const char *text)
 
 static void Version_SaveGroup(int sys, const VerGroup *g)
 {
-    char path[2112], dir[2048];
+    char path[2112], dir[2048], leaf[256];
     static char buf[MAX_GAMES * 200];
     VersionInfo v;
     const char *label;
     if (!g || g->sel < 0 || g->sel >= g->n || !verSrc[sys]) return;
     Version_ParseGame(sys, &verSrc[sys][g->raw[g->sel]], &v);
-    label = v.label[0] ? v.label : "Original";
+    Version_FileName(verSrc[sys][g->raw[g->sel]].rom, leaf, sizeof(leaf));
+    label = leaf[0] ? leaf : (v.label[0] ? v.label : "Original");
     if (Version_SelSet(verSelText[sys], g->title, label, buf, sizeof(buf)) != 0) {
         fprintf(stderr, "NSO: versions list too long, not saved\n");
         return;
@@ -643,6 +795,8 @@ static void Version_FillLive(int sys, int liveIdx, int gi)
 static void Version_PickTitle(int sys, VerGroup *g)
 {
     VersionInfo v;
+    const GameEntry *cat;
+    const char *lookup = NULL;
     int srcN = verSrcN[sys] ? *verSrcN[sys] : 0;
     if (!g || !verSrc[sys]) return;
     for (int m = 0; m < g->n; m++) {
@@ -650,22 +804,72 @@ static void Version_PickTitle(int sys, VerGroup *g)
         if (r < 0 || r >= srcN) continue;
         if (r >= 0 && r < MAX_GAMES && verFolderTitle[sys][r][0]) {
             snprintf(g->title, sizeof(g->title), "%s", verFolderTitle[sys][r]);
-            return;
+            lookup = verFolderTitle[sys][r];
+            break;
         }
     }
+    if (!lookup) {
+        for (int m = 0; m < g->n; m++) {
+            int r = g->raw[m];
+            const char *t;
+            if (r < 0 || r >= srcN) continue;
+            t = verSrc[sys][r].title;
+            Version_ParseGame(sys, &verSrc[sys][r], &v);
+            if (t && v.base[0] && strcmp(t, v.base) == 0) {
+                snprintf(g->title, sizeof(g->title), "%s", t);
+                lookup = t;
+                break;
+            }
+        }
+    }
+    if (!lookup) {
+        Version_ParseGame(sys, &verSrc[sys][g->raw[g->sel < g->n ? g->sel : 0]], &v);
+        snprintf(g->title, sizeof(g->title), "%s", v.base[0] ? v.base : (verSrc[sys][g->raw[0]].title ? verSrc[sys][g->raw[0]].title : ""));
+        lookup = g->title;
+    }
+    cat = Version_BestCatalog(sys, lookup && lookup[0] ? lookup : g->title);
+    if (cat && cat->title && cat->title[0])
+        snprintf(g->title, sizeof(g->title), "%s", cat->title);
+}
+
+static const char *Version_SelLookup(int sys, const VerGroup *g)
+{
+    const char *p;
+    if (!g) return NULL;
+    p = Version_SelGet(verSelText[sys], g->title, g->key);
+    if (p) return p;
+    if (g->key[0] && strncmp(g->key, "folder:", 7) == 0)
+        p = Version_SelGet(verSelText[sys], g->key + 7, NULL);
+    if (p) return p;
     for (int m = 0; m < g->n; m++) {
         int r = g->raw[m];
-        const char *t;
-        if (r < 0 || r >= srcN) continue;
-        t = verSrc[sys][r].title;
-        Version_ParseGame(sys, &verSrc[sys][r], &v);
-        if (t && v.base[0] && strcmp(t, v.base) == 0) {
-            snprintf(g->title, sizeof(g->title), "%s", t);
-            return;
+        if (r < 0 || r >= MAX_GAMES) continue;
+        if (verFolderTitle[sys][r][0]) {
+            p = Version_SelGet(verSelText[sys], verFolderTitle[sys][r], NULL);
+            if (p) return p;
         }
     }
-    Version_ParseGame(sys, &verSrc[sys][g->raw[g->sel < g->n ? g->sel : 0]], &v);
-    snprintf(g->title, sizeof(g->title), "%s", v.base[0] ? v.base : (verSrc[sys][g->raw[0]].title ? verSrc[sys][g->raw[0]].title : ""));
+    return NULL;
+}
+
+static int Version_SavedMember(int sys, const VerGroup *g, const char *saved,
+                               const VersionInfo *info, const bool *play)
+{
+    int srcN = verSrcN[sys] ? *verSrcN[sys] : 0;
+    if (!g || !saved || !saved[0] || !verSrc[sys]) return -1;
+    for (int m = 0; m < g->n; m++) {
+        char leaf[256];
+        int r = g->raw[m];
+        if (play && !play[m]) continue;
+        if (r < 0 || r >= srcN) continue;
+        Version_FileName(verSrc[sys][r].rom, leaf, sizeof(leaf));
+        if (leaf[0] && strcmp(leaf, saved) == 0) return m;
+    }
+    for (int m = 0; m < g->n; m++) {
+        if (play && !play[m]) continue;
+        if (info && strcmp(info[m].label, saved) == 0) return m;
+    }
+    return -1;
 }
 
 static void Version_SelectDefault(int sys, VerGroup *g)
@@ -674,7 +878,7 @@ static void Version_SelectDefault(int sys, VerGroup *g)
     bool play[VERSION_MAX_MEMBERS];
     char saved[VERSION_NAME] = "";
     const char *p;
-    int srcN = verSrcN[sys] ? *verSrcN[sys] : 0;
+    int hit, srcN = verSrcN[sys] ? *verSrcN[sys] : 0;
     if (!g || g->n <= 0) return;
     for (int m = 0; m < g->n; m++) {
         int r = g->raw[m];
@@ -684,9 +888,11 @@ static void Version_SelectDefault(int sys, VerGroup *g)
         Version_ParseGame(sys, &verSrc[sys][r], &info[m]);
         play[m] = GameIsLaunchable(&verSrc[sys][r]);
     }
-    p = Version_SelGet(verSelText[sys], g->title, g->key);
+    p = Version_SelLookup(sys, g);
     Version_SelLabelCopy(p, saved, sizeof(saved));
-    g->sel = Version_Prefer(info, play, g->n, saved[0] ? saved : NULL);
+    hit = Version_SavedMember(sys, g, saved[0] ? saved : NULL, info, play);
+    if (hit >= 0) g->sel = hit;
+    else g->sel = Version_Prefer(info, play, g->n, NULL);
     if (g->sel < 0 || g->sel >= g->n) g->sel = 0;
 }
 
@@ -722,10 +928,9 @@ static void Version_Rebuild(int sys)
     }
 
     memset(built, 0, sizeof(built));
-    /* Folder groups share a key. Catalog / wiki cover rows (and a loose ROM
-     * of the same game) join that group, or each other, by normalized title
-     * so "RockMan & Forte" and "Rockman & Forte" are one tile. Unmatched
-     * loose ROMs stay individual tiles. */
+    /* Folder groups share a key (versions = files in that folder). Ports may
+     * join a folder or another port by normalized title. Loose files stay
+     * single-version games unless they share a title with a port. */
     for (int pass = 0; pass < 2; pass++) {
         for (int i = 0; i < srcN; i++) {
             char key[VERSION_NAME], nk[VERSION_NAME];
@@ -756,11 +961,19 @@ static void Version_Rebuild(int sys)
                     }
                 }
                 if (gi >= 0) {
-                    if (built[gi].n < VERSION_MAX_MEMBERS)
-                        built[gi].raw[built[gi].n++] = i;
-                    continue;
+                    int selfPort = Version_IsPort(sys, i);
+                    int grpPort = Version_GroupHasPort(sys, &built[gi]);
+                    int grpFolder = strncmp(built[gi].key, "folder:", 7) == 0;
+                    /* Ports join folder / port groups; loose ROMs join a port
+                     * only, never another loose file or a folder. */
+                    if (selfPort || (!grpFolder && grpPort)) {
+                        if (built[gi].n < VERSION_MAX_MEMBERS)
+                            built[gi].raw[built[gi].n++] = i;
+                        continue;
+                    }
+                    gi = -1;
                 }
-                if (i < verImported[sys] && nk[0])
+                if (Version_IsPort(sys, i) && nk[0])
                     snprintf(key, sizeof(key), "name:%s", nk);
                 else
                     snprintf(key, sizeof(key), "loose:%d", i);
@@ -835,6 +1048,7 @@ static void Version_Install(int sys)
         verRawN[sys] = 0;
         Version_ImportOrigin(sys);
         Version_ScanSystemRoms(sys);
+        Version_ApplyCatalog(sys);
         verSrc[sys] = verRaw[sys];
         verSrcN[sys] = &verRawN[sys];
         Version_LoadSel(sys);
@@ -876,7 +1090,7 @@ static void Version_LabelAt(int sys, const char *title, char *dst, size_t n, int
     if (total) *total = verGrp[sys][gi].n;
     if (verGrp[sys][gi].sel < 0 || verGrp[sys][gi].sel >= verGrp[sys][gi].n) return;
     Version_ParseGame(sys, &verSrc[sys][verGrp[sys][gi].raw[verGrp[sys][gi].sel]], &v);
-    snprintf(dst, n, "%s", v.label[0] ? v.label : "Original");
+    Version_FormatDisplay(verGrp[sys][gi].title, &v, dst, n);
 }
 
 static void Cover_Replace(int gameIdx);

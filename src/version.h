@@ -46,12 +46,18 @@ bool Version_IsUsa(const VersionInfo *v);
 /* True when there is no patch, hack, or generic "patched" tag. */
 bool Version_IsUnpatched(const VersionInfo *v);
 
-/* Index of the preferred version: last selected label (if it matches), else
- * playable, then USA, then unpatched, then stable original order. */
+/* Index of the preferred version: a saved label only if that member is
+ * playable, else playable, then stock dumps before hacks/mods, then
+ * USA > World > Europe > Japan, then unpatched, then stable order. */
 int Version_Prefer(const VersionInfo *v, const bool *playable, int n,
                    const char *savedLabel);
 
-/* config/versions-<id>.txt helpers: each line is "groupTitle<TAB>label". */
+/* "Title (USA)", "Title (Japan) [Hack]" — title plus tags from the file. */
+void Version_FormatDisplay(const char *title, const VersionInfo *v,
+                           char *dst, size_t n);
+
+/* config/versions-<id>.txt helpers: each line is "groupTitle<TAB>file"
+ * (the exact ROM file name). Older files stored a version label instead. */
 const char *Version_SelGet(const char *text, const char *groupTitle, const char *groupKey);
 int Version_SelSet(const char *text, const char *groupTitle, const char *label,
                    char *out, size_t n);
@@ -926,23 +932,89 @@ bool Version_IsUnpatched(const VersionInfo *v)
     return v && !v->patched && !v->hack && !v->patch[0];
 }
 
+static bool Version_IsHackOrMod(const VersionInfo *v)
+{
+    return v && v->hack;
+}
+
+/* USA > World > Europe > Japan > other. "USA, Europe" counts as USA. */
+static int Version_RegionRank(const VersionInfo *v)
+{
+    if (!v || !v->region[0]) return 0;
+    if (strstr(v->region, "USA")) return 4;
+    if (strstr(v->region, "World")) return 3;
+    if (strstr(v->region, "Europe")) return 2;
+    if (strstr(v->region, "Japan")) return 1;
+    return 0;
+}
+
+static void Version_AppendTag(char *dst, size_t n, char open, const char *s)
+{
+    size_t used, cap, i;
+    if (!dst || n == 0 || !s || !s[0]) return;
+    used = strlen(dst);
+    if (used + 4 >= n) return;
+    dst[used++] = ' ';
+    dst[used++] = open;
+    cap = n - 2; /* room for closer and NUL */
+    for (i = 0; s[i] && used < cap; i++) dst[used++] = s[i];
+    if (used < n - 1) dst[used++] = (open == '[' ? ']' : ')');
+    dst[used] = '\0';
+}
+
+void Version_FormatDisplay(const char *title, const VersionInfo *v,
+                           char *dst, size_t n)
+{
+    const char *t = (title && title[0]) ? title : (v && v->base[0] ? v->base : "");
+    const char *p;
+    Version_Copy(dst, n, t);
+    if (!v || !v->label[0] || strcmp(v->label, "Original") == 0) return;
+    /* Named hacks use the hack name as the whole label. */
+    if (v->hack && strcmp(v->label, "Hack") != 0 && strstr(v->label, " · ") == NULL) {
+        if (v->region[0]) Version_AppendTag(dst, n, '(', v->region);
+        Version_AppendTag(dst, n, '[', v->label);
+        return;
+    }
+    p = v->label;
+    while (*p) {
+        const char *sep = strstr(p, " · ");
+        size_t len = sep ? (size_t)(sep - p) : strlen(p);
+        char part[VERSION_NAME];
+        int bracket;
+        if (len >= sizeof(part)) len = sizeof(part) - 1;
+        memcpy(part, p, len);
+        part[len] = '\0';
+        bracket = (strcmp(part, "Hack") == 0)
+            || (part[0] == 'T' && (part[1] == '+' || part[1] == '-'));
+        Version_AppendTag(dst, n, bracket ? '[' : '(', part);
+        p = sep ? sep + 3 : p + len;
+    }
+}
+
 int Version_Prefer(const VersionInfo *v, const bool *playable, int n,
                    const char *savedLabel)
 {
     int best = 0;
     if (!v || n <= 0) return 0;
     if (savedLabel && savedLabel[0]) {
-        for (int i = 0; i < n; i++)
-            if (strcmp(v[i].label, savedLabel) == 0) return i;
+        for (int i = 0; i < n; i++) {
+            if (strcmp(v[i].label, savedLabel) != 0) continue;
+            if (playable && !playable[i]) break;
+            return i;
+        }
     }
     for (int i = 1; i < n; i++) {
         bool pI = playable ? playable[i] : false;
         bool pB = playable ? playable[best] : false;
+        int rI, rB;
         if (pI != pB) { if (pI) best = i; continue; }
-        if (Version_IsUsa(&v[i]) != Version_IsUsa(&v[best])) {
-            if (Version_IsUsa(&v[i])) best = i;
+        if (Version_IsHackOrMod(&v[i]) != Version_IsHackOrMod(&v[best])) {
+            if (!Version_IsHackOrMod(&v[i])) best = i;
             continue;
         }
+        rI = Version_RegionRank(&v[i]);
+        rB = Version_RegionRank(&v[best]);
+        if (rI != rB) { if (rI > rB) best = i; continue; }
         if (Version_IsUnpatched(&v[i]) != Version_IsUnpatched(&v[best])) {
             if (Version_IsUnpatched(&v[i])) best = i;
             continue;
