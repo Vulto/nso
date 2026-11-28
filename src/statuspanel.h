@@ -216,24 +216,21 @@ static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack,
     /* The box-art picker comes first: Select games stays open (gsOpen) while
      * its download pauses for a choice, and the picker must get the keys. */
     if (ScrapeMenu_Choosing()) {
-        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
         if (ScrapeMenu_HandleChoice(ok, back, up || left, down || right)
             && (ok || back || up || down || left || right))
             Sfx_Play((ok || back) ? SFX_CLICK : SFX_PLUCK);
         return;
     }
     if (gsOpen) {
-        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
         GameSel_Input(up, down, ok, back, left);
         return;
     }
     if (scrapeBusy) {
-        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
         if (back) { ScrapeMenu_Cancel(); Sfx_Play(SFX_CLICK); return; }
         if (y) Status_CycleTab();
         return;
     }
-    if (back || IsKeyPressed(KEY_S)) {
+    if (back) {
         Status_Close();
         return;
     }
