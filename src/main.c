@@ -7653,6 +7653,239 @@ static void DrawEnterPortsText(float x, float cy, float size, float t, float alp
     }
 }
 
+/* Enter-a-system glow and ghost. Both are texture-based (signed-distance
+ * falloff) so no layer keeps a hard rectangle outline: a soft bloom in the
+ * tile's own colour around the unscaled tile, and a semi-transparent art
+ * copy that scales up from the centre while its edges fade. */
+static const float ENTER_GLOW_RADIUS = 25.0f;   /* ~20-30 px bleed */
+static const float ENTER_GLOW_PEAK   = 0.75f;
+static const float ENTER_GHOST_FEATHER_IN  = 12.0f;
+static const float ENTER_GHOST_FEATHER_OUT =  8.0f;
+static const float ENTER_GHOST_BAKE        =  1.2f;
+
+static Texture2D enterGlowTex;
+static int enterGlowW, enterGlowH;
+static float enterGlowCard, enterGlowRad;
+static Color enterGlowCol;
+
+static RenderTexture2D enterGhostRT;
+static float enterGhostCard, enterGhostRad;
+static int enterGhostTexId = -1;
+static Color enterGhostBg;
+
+static void EnterGlow_Unload(void)
+{
+    if (enterGlowTex.id) UnloadTexture(enterGlowTex);
+    enterGlowTex = (Texture2D){ 0 };
+    enterGlowW = enterGlowH = 0;
+}
+
+static void EnterGhost_Unload(void)
+{
+    if (enterGhostRT.id) UnloadRenderTexture(enterGhostRT);
+    enterGhostRT = (RenderTexture2D){ 0 };
+    enterGhostTexId = -1;
+}
+
+static void DrawSystemTileBody(const PlatformEntry *p, Rectangle dst, float r)
+{
+    Color bg = (p && p->texture.id != 0) ? p->bg : GetColor(0x3A3A3AFF);
+    DrawRectangleRounded(dst, MENU_CARD_ROUNDNESS, 16, bg);
+    if (p && p->texture.id == 0 && slotFont.texture.id != 0 && p->name) {
+        float fs = dst.width * 0.16f;
+        Vector2 m = MeasureTextEx(slotFont, p->name, fs, 1.0f);
+        if (m.x > dst.width * 0.9f) {
+            fs *= dst.width * 0.9f / m.x;
+            m = MeasureTextEx(slotFont, p->name, fs, 1.0f);
+        }
+        DrawTextEx(slotFont, p->name,
+                   (Vector2){ dst.x + (dst.width - m.x) * 0.5f,
+                              dst.y + (dst.height - m.y) * 0.5f },
+                   fs, 1.0f, LIGHTGRAY);
+    }
+    if (p && p->texture.id != 0)
+        DrawSystemCardArt(p, dst, r, WHITE);
+}
+
+static bool EnterGlow_Ensure(float card, float rad, Color col)
+{
+    const float sigma = ENTER_GLOW_RADIUS / 2.2f;
+    float reach = ENTER_GLOW_RADIUS + 1.5f;
+    int w = (int)ceilf(card + 2.0f * reach);
+    int h = w;
+    int x, y;
+    float cx, cy, hx, hy, aEdge, denom;
+    Color *pix;
+    Image img;
+
+    if (w < 2) w = 2;
+    if (h < 2) h = 2;
+    if (enterGlowTex.id && enterGlowW == w && enterGlowH == h
+        && fabsf(enterGlowCard - card) < 0.01f && fabsf(enterGlowRad - rad) < 0.01f
+        && enterGlowCol.r == col.r && enterGlowCol.g == col.g && enterGlowCol.b == col.b)
+        return true;
+
+    EnterGlow_Unload();
+    pix = (Color *)RL_CALLOC((size_t)w * (size_t)h, sizeof(Color));
+    if (!pix) return false;
+    cx = (float)w * 0.5f;
+    cy = (float)h * 0.5f;
+    hx = card * 0.5f;
+    hy = card * 0.5f;
+    if (rad > hx) rad = hx;
+    if (rad < 0.5f) rad = 0.5f;
+    aEdge = expf(-(ENTER_GLOW_RADIUS / sigma) * (ENTER_GLOW_RADIUS / sigma));
+    denom = 1.0f - aEdge;
+    if (denom <= 0.0f) { RL_FREE(pix); return false; }
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            float px = (float)x + 0.5f - cx;
+            float py = (float)y + 0.5f - cy;
+            float d = SdRoundBox(px, py, hx, hy, rad);
+            float a, fall;
+            if (d <= 0.0f) a = ENTER_GLOW_PEAK;
+            else if (d >= ENTER_GLOW_RADIUS) a = 0.0f;
+            else {
+                fall = expf(-(d / sigma) * (d / sigma));
+                a = ENTER_GLOW_PEAK * (fall - aEdge) / denom;
+            }
+            pix[y * w + x] = (Color){
+                col.r, col.g, col.b,
+                (unsigned char)(a * 255.0f + 0.5f)
+            };
+        }
+    }
+    img = (Image){
+        .data = pix, .width = w, .height = h, .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    };
+    enterGlowTex = LoadTextureFromImage(img);
+    RL_FREE(pix);
+    if (!enterGlowTex.id) return false;
+    SetTextureFilter(enterGlowTex, TEXTURE_FILTER_BILINEAR);
+    SetTextureWrap(enterGlowTex, TEXTURE_WRAP_CLAMP);
+    enterGlowW = w;
+    enterGlowH = h;
+    enterGlowCard = card;
+    enterGlowRad = rad;
+    enterGlowCol = col;
+    return true;
+}
+
+static Texture2D EnterMakeSoftRectMask(int w, int h, float recW, float recH, float rad,
+                                       float featherIn, float featherOut)
+{
+    Color *pix = (Color *)RL_CALLOC((size_t)w * (size_t)h, sizeof(Color));
+    Texture2D tex = { 0 };
+    Image img;
+    float cx = (float)w * 0.5f, cy = (float)h * 0.5f;
+    float hx = recW * 0.5f, hy = recH * 0.5f;
+    float span = featherIn + featherOut;
+    int x, y;
+    if (!pix) return tex;
+    if (rad > hx) rad = hx;
+    if (rad < 0.5f) rad = 0.5f;
+    if (span < 0.5f) span = 0.5f;
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            float px = (float)x + 0.5f - cx;
+            float py = (float)y + 0.5f - cy;
+            float d = SdRoundBox(px, py, hx, hy, rad);
+            float t = (featherOut - d) / span;
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            t = t * t * (3.0f - 2.0f * t);
+            pix[y * w + x] = (Color){ 255, 255, 255, (unsigned char)(t * 255.0f + 0.5f) };
+        }
+    }
+    img = (Image){
+        .data = pix, .width = w, .height = h, .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    };
+    tex = LoadTextureFromImage(img);
+    RL_FREE(pix);
+    if (tex.id) {
+        SetTextureFilter(tex, TEXTURE_FILTER_BILINEAR);
+        SetTextureWrap(tex, TEXTURE_WRAP_CLAMP);
+    }
+    return tex;
+}
+
+static bool EnterGhost_Ensure(const PlatformEntry *p, float card, float rad)
+{
+    Color bg = (p && p->texture.id != 0) ? p->bg : GetColor(0x3A3A3AFF);
+    int texId = (p && p->texture.id) ? p->texture.id : 0;
+    float pad = ENTER_GHOST_FEATHER_OUT + 1.5f;
+    float rec = card * ENTER_GHOST_BAKE;
+    float recRad = rad * ENTER_GHOST_BAKE;
+    int size = (int)ceilf(rec + 2.0f * pad);
+    Rectangle dst;
+    Texture2D mask;
+    if (size < 2) size = 2;
+    if (enterGhostRT.id && fabsf(enterGhostCard - card) < 0.01f
+        && fabsf(enterGhostRad - rad) < 0.01f
+        && enterGhostTexId == texId
+        && enterGhostBg.r == bg.r && enterGhostBg.g == bg.g && enterGhostBg.b == bg.b)
+        return true;
+
+    EnterGhost_Unload();
+    enterGhostRT = LoadRenderTexture(size, size);
+    if (!enterGhostRT.id) return false;
+    SetTextureFilter(enterGhostRT.texture, TEXTURE_FILTER_BILINEAR);
+    dst = (Rectangle){ ((float)size - rec) * 0.5f, ((float)size - rec) * 0.5f, rec, rec };
+    BeginTextureMode(enterGhostRT);
+    ClearBackground((Color){ 0, 0, 0, 0 });
+    DrawSystemTileBody(p, dst, recRad);
+    mask = EnterMakeSoftRectMask(size, size, rec, rec, recRad,
+                                 ENTER_GHOST_FEATHER_IN, ENTER_GHOST_FEATHER_OUT);
+    if (mask.id) {
+        /* Colour and alpha of the baked tile are multiplied by the soft mask
+         * so the hard rounded-rect / art edge disappears. */
+        rlSetBlendFactorsSeparate(RL_ZERO, RL_SRC_ALPHA, RL_ZERO, RL_SRC_ALPHA,
+                                  RL_FUNC_ADD, RL_FUNC_ADD);
+        BeginBlendMode(BLEND_CUSTOM_SEPARATE);
+        DrawTexture(mask, 0, 0, WHITE);
+        EndBlendMode();
+        UnloadTexture(mask);
+    }
+    EndTextureMode();
+    enterGhostCard = card;
+    enterGhostRad = rad;
+    enterGhostTexId = texId;
+    enterGhostBg = bg;
+    return true;
+}
+
+static void DrawEnterGlow(Rectangle tile, float rad, Color col, float alpha)
+{
+    float tw, th;
+    if (alpha <= 0.0f) return;
+    if (!EnterGlow_Ensure(tile.width, rad, col)) return;
+    tw = (float)enterGlowW;
+    th = (float)enterGlowH;
+    DrawTexturePro(enterGlowTex,
+                   (Rectangle){ 0, 0, tw, th },
+                   (Rectangle){ tile.x + (tile.width - tw) * 0.5f,
+                                tile.y + (tile.height - th) * 0.5f, tw, th },
+                   (Vector2){ 0, 0 }, 0.0f, Fade(WHITE, alpha));
+}
+
+static void DrawEnterGhost(const PlatformEntry *p, Rectangle tile, float rad,
+                           float k, float alpha)
+{
+    float s, dw, dh, cx, cy;
+    if (alpha <= 0.0f) return;
+    if (!EnterGhost_Ensure(p, tile.width, rad)) return;
+    s = k / ENTER_GHOST_BAKE;
+    dw = (float)enterGhostRT.texture.width * s;
+    dh = (float)enterGhostRT.texture.height * s;
+    cx = tile.x + tile.width * 0.5f;
+    cy = tile.y + tile.height * 0.5f;
+    DrawRT(enterGhostRT.texture,
+           (Rectangle){ cx - dw * 0.5f, cy - dh * 0.5f, dw, dh },
+           Fade(WHITE, alpha));
+}
+
 /* Pressing A on a system tile (enteranim.h): the tile's art lifts off as a fading ghost while a
  * (17,17,17) layer rises over the menu; the layer holds with the white logos (Nintendo wordmark
  * top-left, the system name bottom-right, flipping in); then the system's own screen crossfades in. */
@@ -7668,30 +7901,12 @@ static void DrawEnterTransition(void) {
         float gp = EnterAnim_GhostProgress(enterT);
         float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.2f * gp;
         if (ga > 0.0f) {
-            float cx = tile.x + tile.width * 0.5f, cy = tile.y + tile.height * 0.5f;
-            Rectangle g = { cx - tile.width * k * 0.5f, cy - tile.height * k * 0.5f,
-                            tile.width * k, tile.height * k };
             Color bg = p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF);
-            /* Concentric ripples: each ring shares the tile's centre, starts
-             * later than the one before, and fades as it grows to 1.2x so
-             * no hard edge is left sitting at full size. */
-            const int ripples = 8;
-            for (int i = 0; i < ripples; i++) {
-                float start = (float)i / (float)ripples * 0.55f;
-                float u = (gp - start) / 0.55f;
-                if (u <= 0.0f) continue;
-                if (u > 1.0f) u = 1.0f;
-                float e = 1.0f - (1.0f - u) * (1.0f - u);
-                float rk = 1.0f + 0.2f * e;
-                float rw = tile.width * rk, rh = tile.height * rk;
-                DrawRectangleRounded(
-                    (Rectangle){ cx - rw * 0.5f, cy - rh * 0.5f, rw, rh },
-                    MENU_CARD_ROUNDNESS, 32,
-                    Fade(BLACK, ga * (1.0f - e) * SOFT_SHADOW_PEAK));
-            }
-            DrawRectangleRounded(g, MENU_CARD_ROUNDNESS, 16, Fade(bg, ga));
-            if (p->texture.id != 0)
-                DrawSystemCardArt(p, g, MENU_CARD_ROUNDNESS * g.width, Fade(WHITE, ga));
+            /* Soft colour bloom around the still tile, then a fading 1.0-1.2x
+             * copy of the art; both use a smooth SDF falloff, no hard edges. */
+            DrawEnterGlow(tile, r, bg, ga);
+            DrawSystemTileBody(p, tile, r);
+            DrawEnterGhost(p, tile, r, k, ga);
         }
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(layer, cover));
     } else {
@@ -9424,6 +9639,8 @@ int main(int argc, char **argv) {
     }
     MenuBarCursorTex_Unload();
     SysCursorTex_Unload();
+    EnterGlow_Unload();
+    EnterGhost_Unload();
     if (statusPadN64Loaded) {
         UnloadTexture(statusPadN64);
         statusPadN64 = (Texture2D){ 0 };
