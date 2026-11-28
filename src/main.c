@@ -98,8 +98,13 @@ typedef struct {
 static System systems[] = {
     { &nes_platform,      nes_games,      &nes_game_count },
     { &snes_platform,     snes_games,     &snes_game_count },
+#if !defined(NSO_RELEASE) || defined(NSO_SHOW_ALL_SYSTEMS)
+    /* The bundled Mednafen has no N64 or GameCube core, so the release build
+     * hides these two systems (all their code stays; build with
+     * -DNSO_SHOW_ALL_SYSTEMS to show them). */
     { &n64_platform,      n64_games,      &n64_game_count },
     { &gamecube_platform, gamecube_games, &gamecube_game_count },
+#endif
     { &megadrive_platform, megadrive_games, &megadrive_game_count },
 };
 
@@ -676,7 +681,27 @@ static bool GameIsLaunchable(const GameEntry *game);
 
 /* Grid tint: games that cannot launch yet are dimmed. */
 static Color GameTint(int gameIdx) {
-    return GameIsLaunchable(&ActiveGames()[gameIdx]) ? WHITE : (Color){ 110, 110, 110, 255 };
+    /* Launchability costs several stat() calls; the grid asks for every
+     * visible game each frame, so keep the answer for a second. */
+    static const char *tTitle[MAX_GAMES], *tRom[MAX_GAMES];
+    static double tAt[MAX_GAMES];
+    static bool tVal[MAX_GAMES];
+    const GameEntry *g = &ActiveGames()[gameIdx];
+    bool launchable;
+    if (gameIdx >= 0 && gameIdx < MAX_GAMES) {
+        double now = GetTime();
+        if (tAt[gameIdx] <= 0.0 || tTitle[gameIdx] != g->title || tRom[gameIdx] != g->rom
+            || now - tAt[gameIdx] >= 1.0 || now < tAt[gameIdx]) {
+            tVal[gameIdx] = GameIsLaunchable(g);
+            tTitle[gameIdx] = g->title;
+            tRom[gameIdx] = g->rom;
+            tAt[gameIdx] = now > 0.0 ? now : 0.001;
+        }
+        launchable = tVal[gameIdx];
+    } else {
+        launchable = GameIsLaunchable(g);
+    }
+    return launchable ? WHITE : (Color){ 110, 110, 110, 255 };
 }
 
 /* gameIdx is local to the active system */
@@ -685,6 +710,17 @@ static bool CoverLoader_Owns(int gameIdx);
 static bool coverLoaderHasWork(void);
 static void CoverReload_Stamp(const char *ev);
 void UnloadBoxart(int gameIdx);
+
+/* Negative cover cache: a game with no cover file used to cost a few stat()
+ * calls per frame. The miss is remembered per slot (keyed like the loaded
+ * slots, so a re-sort invalidates it) and only re-checked after a scrape or
+ * when the covers are unloaded (system change). */
+static char boxartMissKey[MAX_GAMES][COVER_KEY_MAX];
+
+static void Boxart_MissReset(void)
+{
+    memset(boxartMissKey, 0, sizeof boxartMissKey);
+}
 
 Texture2D GetBoxart(int gameIdx) {
     int count = ActiveGameCount();
@@ -714,9 +750,17 @@ Texture2D GetBoxart(int gameIdx) {
     if (!rel || !rel[0]) {
         return (Texture2D){0};
     }
-    img = LoadBoxartImage(GetDataPath(rel));
-    if (!img.data) {
-        return (Texture2D){0};
+    {
+        char mk[COVER_KEY_MAX];
+        const GameEntry *mg = &ActiveGames()[gameIdx];
+        Covers_Key(mg->title, mg->boxartPath, mg->rom, mk, sizeof(mk));
+        if (boxartMissKey[gameIdx][0] && strcmp(boxartMissKey[gameIdx], mk) == 0)
+            return (Texture2D){0};
+        img = LoadBoxartImage(GetDataPath(rel));
+        if (!img.data) {
+            snprintf(boxartMissKey[gameIdx], sizeof(boxartMissKey[gameIdx]), "%s", mk);
+            return (Texture2D){0};
+        }
     }
 
     gameBoxarts[gameIdx] = LoadTextureFromImage(img);
@@ -736,7 +780,22 @@ static Image LoadBoxartImage(const char *path) {
     if (!FileExists(path) || DirectoryExists(path)) {   /* quiet: missing covers are retried every frame */
         return (Image){0};
     }
-    Image img = LoadImage(path);
+    /* Decode by content: raylib's LoadImage picks the codec from the file
+     * extension, so a download still named *.part failed with "Data format
+     * not supported" even for a valid PNG. */
+    Image img = (Image){0};
+    {
+        int fsz = 0;
+        unsigned char *fdata = LoadFileData(path, &fsz);
+        if (fdata) {
+            const char *ext = NULL;
+            if (fsz >= 8 && fdata[0] == 0x89 && fdata[1] == 'P' && fdata[2] == 'N' && fdata[3] == 'G') ext = ".png";
+            else if (fsz >= 3 && fdata[0] == 0xFF && fdata[1] == 0xD8 && fdata[2] == 0xFF) ext = ".jpg";
+            if (ext) img = LoadImageFromMemory(ext, fdata, fsz);
+            else img = LoadImage(path);
+            UnloadFileData(fdata);
+        }
+    }
     if (!img.data) {
         return img;
     }
@@ -759,6 +818,7 @@ void UnloadBoxart(int gameIdx) {
 }
 
 void UnloadAllBoxarts(void) {
+    Boxart_MissReset();
     for (int i = 0; i < MAX_GAMES; i++) {
         UnloadBoxart(i);
         coverSlotKey[i][0] = '\0';
@@ -3555,6 +3615,7 @@ static void ScrapeMenu_ClearNames(void)
 
 static void ScrapeMenu_Idle(int status)
 {
+    Boxart_MissReset();
     if (scrapePart[0] != '\0') FileRemove(scrapePart);
     if (scrapePart2[0] != '\0') FileRemove(scrapePart2);
     scrapePart2[0] = '\0';
@@ -3589,8 +3650,18 @@ static int ScrapeMenu_SpawnCurl(const char *url, const char *outPath)
     return NsoProcOk(scrapeProc);
 }
 
+/* A download only replaces a cover once it fully decodes. */
+static int ScrapeMenu_Decodes(const char *path)
+{
+    Image img = LoadBoxartImage(path);
+    if (!img.data) return 0;
+    UnloadImage(img);
+    return 1;
+}
+
 static void ScrapeMenu_Finish(void)
 {
+    Boxart_MissReset();
     if (scrapeMisses > 0) {
         Msg_Set(&scrapeMsg, S_SCRAPE_DONE_MISSED, scrapeMisses, NULL);
     } else {
@@ -4130,14 +4201,17 @@ static void ScrapeMenu_Poll(void)
                 return;
             }
         }
-        if (ok && Scrape_LooksLikeImage(scrapePart)) {
+        if (ok && Scrape_LooksLikeImage(scrapePart) && ScrapeMenu_Decodes(scrapePart)) {
             FileRemove(scrapeDest);
             if (FileMove(scrapePart, scrapeDest) != 0) {
                 FileRemove(scrapePart);
                 scrapeMisses++;
-            } else if (scrapeActive >= 0) {
-                UnloadBoxart(scrapeActive);
-                GetBoxart(scrapeActive);
+            } else {
+                Boxart_MissReset();
+                if (scrapeActive >= 0) {
+                    UnloadBoxart(scrapeActive);
+                    GetBoxart(scrapeActive);
+                }
             }
         } else {
             FileRemove(scrapePart);
@@ -6156,8 +6230,9 @@ static void ScrapeMenu_ChoicePrevPoll(void)
         if (scrapeChoicePrevPart[0]) FileRemove(scrapeChoicePrevPart);
         scrapeChoicePrevPart[0] = '\0';
     }
-    if (scrapeChoicePrevAt == scrapeChoiceCur
-        && (scrapeChoicePrevBusy || scrapeChoicePrev.id != 0))
+    /* One attempt per focused candidate: a failed download or decode leaves
+     * the pane empty instead of respawning curl every frame. */
+    if (scrapeChoicePrevAt == scrapeChoiceCur)
         return;
     if (scrapeChoicePrevBusy) {
         NsoSpawnKill(scrapeChoicePrevProc);
@@ -6177,8 +6252,13 @@ static void ScrapeMenu_ChoicePrevPoll(void)
     snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
     MakeDirectory(GetDataPath("assets"));
     MakeDirectory(cache);
-    snprintf(scrapeChoicePrevPart, sizeof(scrapeChoicePrevPart),
-             "%s/scrape-choice-preview.part", cache);
+    {
+        /* Unique per download, so a killed or slow curl can never write into
+         * the file the next one (or the decoder) is using. */
+        static unsigned prevSeq = 0;
+        snprintf(scrapeChoicePrevPart, sizeof(scrapeChoicePrevPart),
+                 "%s/scrape-choice-preview-%ld-%u.part", cache, (long)getpid(), ++prevSeq);
+    }
     {
         char *argv[13];
         argv[0] = "curl";
@@ -7824,6 +7904,41 @@ static void Home_Poll(void)
 
 // ====================== MAIN PROGRAM ======================
 
+/* The window must land on a real monitor. On some X11 setups raylib/GLFW
+ * centres it on a monitor rectangle that is not on the visible display (seen at
+ * -3840+0 on a single 1920x1080 screen). If the window is not on a monitor,
+ * centre it on the primary (or first usable) one. Returns 1 if it moved it. */
+static int Window_EnsureOnScreen(void)
+{
+    int n = GetMonitorCount();
+    Vector2 wp = GetWindowPosition();
+    int ww = GetScreenWidth(), wh = GetScreenHeight();
+    int cx = (int)wp.x + ww / 2, cy = (int)wp.y + wh / 2;
+    int best = -1;
+    if (n <= 0) {
+        if (wp.x < -ww / 2 || wp.y < -wh / 2) { SetWindowPosition(0, 0); return 1; }
+        return 0;
+    }
+    for (int m = 0; m < n; m++) {
+        Vector2 mp = GetMonitorPosition(m);
+        int mw = GetMonitorWidth(m), mh = GetMonitorHeight(m);
+        if (mw <= 0 || mh <= 0) continue;
+        if (cx >= (int)mp.x && cx < (int)mp.x + mw && cy >= (int)mp.y && cy < (int)mp.y + mh)
+            return 0;   /* already on a monitor */
+        if (best < 0) best = m;   /* monitor 0 is GLFW's primary */
+    }
+    if (best < 0) { SetWindowPosition(0, 0); return 1; }
+    {
+        Vector2 mp = GetMonitorPosition(best);
+        int mw = GetMonitorWidth(best), mh = GetMonitorHeight(best);
+        int x = (int)mp.x + (mw - ww) / 2, y = (int)mp.y + (mh - wh) / 2;
+        if (x < (int)mp.x) x = (int)mp.x;
+        if (y < (int)mp.y) y = (int)mp.y;
+        SetWindowPosition(x, y);
+    }
+    return 1;
+}
+
 int main(int argc, char **argv) {
     nsoArgv = argv;
 #ifndef _WIN32
@@ -7844,6 +7959,7 @@ int main(int argc, char **argv) {
 #endif
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NSO");
+    Window_EnsureOnScreen();
     SetGamepadMappings(NSO_PAD_MAPPINGS);
     Nso_PadIsN64Hook = N64Pad_IsSwitchName;
     SetWindowTitle("NSO");
@@ -8014,7 +8130,9 @@ int main(int argc, char **argv) {
     Color Mosaicbg = GetColor(0x303030FF);
 
     bool externalResumeAfterFrame = false;
+    int winFixFrames = 120;   /* a window manager may move the window right after it maps */
     while (!WindowShouldClose() && !nsoQuit) {
+        if (winFixFrames > 0 && (--winFixFrames % 10) == 0) Window_EnsureOnScreen();
 
         N64Pad_Poll();   /* Switch-mode N64 pad mapping, rumble device */
         bool gp = IsGamepadAvailable(0);
@@ -8511,9 +8629,9 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    /* Right stick right: change order of titles.
+                    /* T / right stick right / C-Right: change order of titles.
                      * Keyboard Y / gamepad Y / C-Down: hold (SortY_Update). */
-                    if (canNavigate && padCRight) {
+                    if (canNavigate && !gridLifted && (IsKeyPressed(KEY_T) || padCRight)) {
                         SortPanel_Open();
                         break;
                     }

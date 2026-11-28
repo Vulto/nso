@@ -26,6 +26,20 @@ When a newer tag exists the icon glows and, while selected, a note names the
 new version. Pressing it downloads the linux asset, verifies it, replaces
 `nso`, `mednafen` and `nso-norumble.so` atomically (with rollback) and restarts.
 
+Retest fixes. Box-art scraping now decodes downloads by content (raylib chose
+the codec from the `.part` extension, so valid PNGs failed with "Data format
+not supported"), uses a unique temp file per preview download instead of one
+shared `scrape-choice-preview.part`, validates a cover before replacing it, and
+no longer respawns a failed preview every frame. The box-art picker now gets
+the keys while Select games is open. Missing covers are cached instead of
+stat()ed every frame, and the grid caches launchability for a second, which
+cuts the idle stat() rate by about 15x. The window is moved onto a real monitor
+if the toolkit places it off-screen. T opens the sort panel again (hold Y still
+works). The release build hides the N64 and GameCube systems (no Mednafen
+core) and the Recompilation / Native source port statistics; the code stays
+(`-DNSO_SHOW_ALL_SYSTEMS`). README: version, Downloads, Settings and supported
+systems corrected.
+
 ## [0.2.0] - 2026-11-27
 
 This release supports **emulated games only**. NSO is a Nintendo Switch

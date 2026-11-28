@@ -1,8 +1,9 @@
 # NSO
 
 NSO is a Nintendo Switch Online-style launcher, written in C with Raylib.
-This release supports playing emulated games (NES, SNES, N64, GameCube, and
-Mega Drive). Put legally obtained ROMs in each system's folder under `roms/`.
+This release plays emulated games with the bundled Mednafen: NES, SNES, and
+Mega Drive. (N64 and GameCube have no Mednafen core and are hidden in the
+release build.) Put legally obtained ROMs in each system's folder under `roms/`.
 Cover images are not shipped; scrape them from the Emulated tab of the
 status menu (S).
 
@@ -26,8 +27,6 @@ Put legally obtained ROMs next to the binary, in a per-system folder:
 ```
 roms/NES/
 roms/SNES/
-roms/N64/
-roms/GameCube/
 roms/MegaDrive/
 ```
 
@@ -44,7 +43,7 @@ If `mednafen` is missing from that folder, starting a game shows
 
 ## What's new (Novidades)
 
-Version 0.2.0 supports emulated games only. The full feature list is in
+Version 0.2.1 supports emulated games only (NES, SNES, Mega Drive). The full feature list is in
 [CHANGELOG.md](CHANGELOG.md). The screenshots below are NSO's own interface
 on a clean install, without ROMs or covers (missing covers show a "?").
 
@@ -57,19 +56,16 @@ controller (N64 labels on the 8BitDo N64 pad).
 
 ![Game grid with the sidebar rail](docs/screenshots/system-grid.png)
 
-**Sort panel (T, or C-Right on the N64 pad):** custom order, title, release date,
-last played, play time.
+**Sort panel (T, hold Y, or C-Right on the N64 pad):** custom order, title,
+release date, last played, play time, plus the Favorites and Hide unplayable
+filters.
 
 ![Sort panel](docs/screenshots/sort-panel.png)
 
-**Port status (S):** counts per port type and a per-game list for the current system.
+**Statistics (S):** playable share and a per-game list for the current system.
+The Emulated tab scrapes box art.
 
 ![Port status overlay](docs/screenshots/port-status.png)
-
-**Nintendo 64 settings:** the Rumble setting now works on the 8BitDo N64 pad
-(S mode, USB). "Show controls in game" turns the caption bar on.
-
-![Nintendo 64 settings with the Rumble option](docs/screenshots/settings-rumble.png)
 
 **Image scraping and Hide unplayable:** per-system settings.
 
@@ -145,7 +141,7 @@ needed.
 | Status menu (tabs, including Emulated scraping) | S | (also from the in-game Home menu) |
 | Cycle status-menu tabs | Y | Y |
 | Organization sidebar | O | |
-| Sort panel | T | C-Right on the N64 pad |
+| Sort panel | T (or hold Y) | C-Right on the N64 pad |
 
 On the main menu, Down moves to the dock: **Downloads** (the self-updater) and
 **Power**. Power opens a dialog with **Shut down**, **Close NSO**, and
@@ -192,10 +188,15 @@ blocking the menu. The grid is shown only once that visible screen is
 complete (the previous frame is held; there is no loading screen). The
 same happens at startup, after the existing enter animation.
 
-### Settings screen (gear icon)
+### Settings
 
-On the main menu press Down to select the gear, then Enter/A. Left/Right
-switches system (NES, SNES, Nintendo 64, GameCube).
+Open a system, press O for the sidebar and pick **Settings** (per-system
+options such as Pixel Perfect, Scanlines, CRT Geometry, Show controls and the
+controller map). The language is set with `language=pt-BR` (or `en`) in
+`config/nso.cfg`. The N64 / GameCube / source-port / recompilation sections
+below describe the source tree; the release build hides N64 and GameCube and
+the Recompilation / Native source port statistics (build with
+`-DNSO_SHOW_ALL_SYSTEMS` to show them).
 
 - **Image scraping:** in the game grid press S and open the **Emulated** tab.
   "Download all box arts" fetches missing covers; "Select games" scrapes a

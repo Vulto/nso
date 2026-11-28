@@ -42,6 +42,21 @@ static int statusEmuSawBusy = 0;
 static Texture2D statusEmuPrevTex;
 static int statusEmuPrevIdx = -1;
 
+/* Release builds only run emulated games, so the Statistics tab hides the
+ * Recompilation and Native source port counts (and those games' rows). The
+ * code stays; build without NSO_RELEASE, or with -DNSO_SHOW_ALL_SYSTEMS, to
+ * see everything. */
+#if defined(NSO_RELEASE) && !defined(NSO_SHOW_ALL_SYSTEMS)
+#define STATUS_TYPE_SHOWN(t) ((t) != ST_RECOMP && (t) != ST_NATIVE)
+#else
+#define STATUS_TYPE_SHOWN(t) 1
+#endif
+static int Status_ShownTypes(void) {
+    int n = 0;
+    for (int t = 0; t < ST_COUNT; t++) if (STATUS_TYPE_SHOWN(t)) n++;
+    return n;
+}
+
 static const Color statusColors[ST_COUNT] = {
     { 66, 133, 244, 255 },    /* recompilation: blue */
     { 52, 168, 83, 255 },     /* native source port: green */
@@ -76,9 +91,11 @@ static void Status_Open(void) {
     statusSystemName = sys->platform->name ? sys->platform->name : "";
     for (int i = 0; i < *sys->gameCount && statusRowCount < STATUS_MAX_ROWS; i++) {
         const GameEntry *g = &sys->games[i];
+        StatusType gt = Status_Classify(g);
+        if (!STATUS_TYPE_SHOWN(gt)) continue;
         StatusRow *r = &statusRows[statusRowCount++];
         r->game = g;
-        r->type = Status_Classify(g);
+        r->type = gt;
         r->playable = GameIsLaunchable(g);
         statusCounts[r->type]++;
         statusTotal++;
@@ -198,16 +215,18 @@ static void Status_HandleInput(bool gpUp, bool gpDown, bool gpBack,
     bool y = Status_YPressed();
     if (!statusOpen) return;   /* sliding out */
 
-    if (gsOpen) {
-        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
-        GameSel_Input(up, down, ok, back, left);
-        return;
-    }
+    /* The box-art picker comes first: Select games stays open (gsOpen) while
+     * its download pauses for a choice, and the picker must get the keys. */
     if (ScrapeMenu_Choosing()) {
         if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
         if (ScrapeMenu_HandleChoice(ok, back, up || left, down || right)
             && (ok || back || up || down || left || right))
             Sfx_Play((ok || back) ? SFX_CLICK : SFX_PLUCK);
+        return;
+    }
+    if (gsOpen) {
+        if (IsKeyPressed(KEY_S)) { Status_Close(); return; }
+        GameSel_Input(up, down, ok, back, left);
         return;
     }
     if (scrapeBusy) {
@@ -317,13 +336,17 @@ static void Status_DrawStats(Font font, Rectangle card, float lw, float rad, flo
     float lx = card.x + lw * 0.07f, lcw = lw * 0.86f;
     char heading[96];
     if (statusSystemName[0])
+#if defined(NSO_RELEASE) && !defined(NSO_SHOW_ALL_SYSTEMS)
+        snprintf(heading, sizeof(heading), "%s %s", statusSystemName, T(S_TAB_STATS));   /* "NES Port status" is about source ports */
+#else
         snprintf(heading, sizeof(heading), "%s %s", statusSystemName, Status_Word(0));
+#endif
     else
         snprintf(heading, sizeof(heading), "%s", Status_Word(0));
     Details_Text(font, heading, (Vector2){ lx, card.y + content }, sh * 0.030f, lcw, Fade(meta, a));
     float py = card.y + content + sh * 0.055f, pad = lcw * 0.055f;
     float legendRow = sh * 0.062f;
-    Rectangle pc = { lx, py, lcw, sh * 0.19f + legendRow * ST_COUNT };
+    Rectangle pc = { lx, py, lcw, sh * 0.19f + legendRow * Status_ShownTypes() };
     DrawRectangleRounded(pc, 2.0f * rad / pc.height * 2.0f, 12, Fade(inner, a));
 
     float ix = pc.x + pad, iw = pc.width - 2.0f * pad, y = pc.y + sh * 0.025f;
@@ -350,8 +373,10 @@ static void Status_DrawStats(Font font, Rectangle card, float lw, float rad, flo
     }
 
     float ly = by + bh + sh * 0.025f, ds = sh * 0.011f, ts = sh * 0.023f;
+    int shownN = Status_ShownTypes(), shownI = 0;
     for (int t = 0; t < ST_COUNT; t++) {
-        float ry = ly + legendRow * (float)t, cy = ry + legendRow * 0.5f;
+        if (!STATUS_TYPE_SHOWN(t)) continue;
+        float ry = ly + legendRow * (float)shownI, cy = ry + legendRow * 0.5f;
         DrawCircleV((Vector2){ ix + ds, cy }, ds, Fade(statusColors[t], a));
         float nx = ix + ds * 3.0f;
         char cnt[48];
@@ -360,7 +385,8 @@ static void Status_DrawStats(Font font, Rectangle card, float lw, float rad, flo
         float cw = MeasureTextEx(font, cnt, ts, 2.0f).x;
         Details_Text(font, Status_TypeName((StatusType)t), (Vector2){ nx, cy - ts * 0.5f }, ts,
                      iw - ds * 3.0f - cw - 12.0f, Fade(ink, a));
-        if (t < ST_COUNT - 1)
+        shownI++;
+        if (shownI < shownN)
             DrawLineEx((Vector2){ nx, ry + legendRow }, (Vector2){ ix + iw, ry + legendRow }, 1.0f, Fade(line, a));
     }
 
