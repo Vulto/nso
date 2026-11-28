@@ -3786,6 +3786,71 @@ static void ScrapeMenu_StartIndex(void)
     }
 }
 
+static int ScrapeMenu_IsNes(void)
+{
+    const char *id = scrapeId[0] ? scrapeId : ActiveSystem()->platform->id;
+    return id && strcmp(id, "nes") == 0;
+}
+
+static int ScrapeMenu_NesProbeSize(const char *url, int *w, int *h)
+{
+    char path[2400], cache[2048];
+    char *argv[12];
+    unsigned char buf[24];
+    FILE *f;
+    size_t n;
+    int st;
+    if (w) *w = 0;
+    if (h) *h = 0;
+    snprintf(cache, sizeof(cache), "%s", GetDataPath("assets/cache"));
+    MakeDirectory(GetDataPath("assets"));
+    MakeDirectory(cache);
+    snprintf(path, sizeof(path), "%s/nes-art-probe.part", cache);
+    argv[0] = "curl";
+    argv[1] = "-fsSL";
+    argv[2] = "--max-time";
+    argv[3] = "8";
+    argv[4] = "-r";
+    argv[5] = "0-32";
+    argv[6] = "-o";
+    argv[7] = path;
+    argv[8] = (char *)url;
+    argv[9] = NULL;
+    st = NsoRunArgv(NULL, argv);
+    f = fopen(path, "rb");
+    n = f ? fread(buf, 1, sizeof(buf), f) : 0;
+    if (f) fclose(f);
+    FileRemove(path);
+    if (st != 0) return 0;
+    return Scrape_PngSize(buf, n, w, h);
+}
+
+/* Rank NES candidates by closeness to 512x731 portrait. One candidate
+ * is used as-is. Probe failures stay last among the list. */
+static int ScrapeMenu_NesBestIndex(const char **cands, int cn)
+{
+    const char *playlist;
+    char url[2048];
+    int i, best = 0, bestS = 0x7fffffff;
+    if (cn <= 1) return 0;
+    playlist = Scrape_Playlist(scrapeId[0] ? scrapeId : ActiveSystem()->platform->id);
+    if (!playlist) return 0;
+    for (i = 0; i < cn; i++) {
+        int w = 0, h = 0, s;
+        if (!cands[i] || Scrape_ImageUrl(url, sizeof(url), playlist, cands[i]) != 0)
+            s = 0x7fffffff;
+        else if (!ScrapeMenu_NesProbeSize(url, &w, &h))
+            s = 0x7ffffffe;
+        else
+            s = Scrape_NesArtScore(w, h);
+        if (s < bestS) {
+            bestS = s;
+            best = i;
+        }
+    }
+    return best;
+}
+
 static void ScrapeMenu_Advance(void)
 {
     int count = scrapeListCount > 0 ? scrapeListCount : ActiveGameTotal();   /* hidden titles get their covers too */
@@ -3857,37 +3922,60 @@ static void ScrapeMenu_Advance(void)
          * are two or more. An exact filename from Select games is already a
          * pick, so it skips the picker. */
         if (file && !(scrapeListCount > 0 && scrapeListFile[scrapeGame][0])) {
-            const char *cands[SCRAPE_CHOICE_MAX];
+            /* NES collects more than the picker cap so dated/hack names
+             * earlier in the index cannot hide a 512x731 official art. */
+            enum { NES_ART_CAND_MAX = 256 };
+            const char *cands[NES_ART_CAND_MAX];
             const char *q = title;
+            int nes = ScrapeMenu_IsNes();
+            int cap = nes ? NES_ART_CAND_MAX : SCRAPE_CHOICE_MAX;
             int cn = Scrape_CollectMatches(q, (const char **)scrapeNames,
-                                           scrapeNameCount, cands, SCRAPE_CHOICE_MAX);
+                                           scrapeNameCount, cands, cap);
             if (cn <= 0 && alias) {
                 q = alias;
                 cn = Scrape_CollectMatches(q, (const char **)scrapeNames,
-                                           scrapeNameCount, cands, SCRAPE_CHOICE_MAX);
+                                           scrapeNameCount, cands, cap);
             }
-            if (cn >= 2 && !scrapeAutoPick) {
-                int ci;
-                scrapeChoiceN = cn;
-                scrapeChoiceCur = 0;
-                for (ci = 0; ci < cn; ci++) {
-                    scrapeChoices[ci] = cands[ci];
-                    if (file && cands[ci] && strcmp(cands[ci], file) == 0)
-                        scrapeChoiceCur = ci;
+            {
+                int best = 0;
+                if (nes && cn >= 1)
+                    best = ScrapeMenu_NesBestIndex(cands, cn);
+                if (cn >= 2 && !scrapeAutoPick) {
+                    int ci, shown = 0;
+                    const char *win = cands[best];
+                    scrapeChoiceCur = 0;
+                    if (nes && win) {
+                        scrapeChoices[shown++] = win;
+                        for (ci = 0; ci < cn && shown < SCRAPE_CHOICE_MAX; ci++)
+                            if (cands[ci] && strcmp(cands[ci], win) != 0)
+                                scrapeChoices[shown++] = cands[ci];
+                    } else {
+                        for (ci = 0; ci < cn && shown < SCRAPE_CHOICE_MAX; ci++) {
+                            scrapeChoices[shown] = cands[ci];
+                            if (file && cands[ci] && strcmp(cands[ci], file) == 0)
+                                scrapeChoiceCur = shown;
+                            shown++;
+                        }
+                    }
+                    scrapeChoiceN = shown;
+                    snprintf(scrapeChoiceTitle, sizeof(scrapeChoiceTitle), "%s", title);
+                    snprintf(scrapeDest, sizeof(scrapeDest), "%s", dest);
+                    scrapeActive = scrapeGame;
+                    scrapeAliasHops = 0;
+                    scrapePhase = SCRAPE_CHOOSE;
+                    return;
                 }
-                snprintf(scrapeChoiceTitle, sizeof(scrapeChoiceTitle), "%s", title);
-                snprintf(scrapeDest, sizeof(scrapeDest), "%s", dest);
-                scrapeActive = scrapeGame;
-                scrapeAliasHops = 0;
-                scrapePhase = SCRAPE_CHOOSE;
-                return;
-            }
-            if (cn >= 1) {
-                int ci, keep = 0;
-                for (ci = 0; ci < cn; ci++)
-                    if (file && cands[ci] && strcmp(cands[ci], file) == 0)
-                        keep = 1;
-                if (!keep) file = cands[0];
+                if (cn >= 1) {
+                    if (nes) {
+                        file = cands[best];
+                    } else {
+                        int ci, keep = 0;
+                        for (ci = 0; ci < cn; ci++)
+                            if (file && cands[ci] && strcmp(cands[ci], file) == 0)
+                                keep = 1;
+                        if (!keep) file = cands[0];
+                    }
+                }
             }
         }
         if (!file || !playlist || Scrape_ImageUrl(url, sizeof(url), playlist, file) != 0) {

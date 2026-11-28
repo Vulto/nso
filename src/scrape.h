@@ -20,6 +20,11 @@ int Scrape_ParseDat(const char *text, const char *field, char ***outNames, int *
 void Scrape_FreeNames(char **names, int count);
 /* True when path starts with a PNG or JPEG magic number. */
 int Scrape_LooksLikeImage(const char *path);
+/* NES box-art target is 512x731 portrait. Lower is closer; 0 is exact.
+ * Landscape is penalized. Invalid sizes return a large score. */
+int Scrape_NesArtScore(int w, int h);
+/* Read PNG width/height from the first 24 bytes (IHDR). 1 on success. */
+int Scrape_PngSize(const unsigned char *data, size_t n, int *w, int *h);
 /* If path is a short text alias whose body is a Named_Boxarts basename
  * (no slashes), copy that name into dst and return 1. Else 0. */
 int Scrape_AliasTarget(const char *path, char *dst, size_t n);
@@ -970,6 +975,34 @@ void Scrape_FreeNames(char **names, int count)
     if (!names) return;
     for (int i = 0; i < count; i++) free(names[i]);
     free(names);
+}
+
+int Scrape_NesArtScore(int w, int h)
+{
+    long dw, dh, s;
+    if (w <= 0 || h <= 0) return 0x7fffffff;
+    dw = (long)w - 512;
+    dh = (long)h - 731;
+    s = dw * dw + dh * dh;
+    if (h < w) s += 2000000L;
+    if (s > 0x7fffffffL) return 0x7fffffff;
+    return (int)s;
+}
+
+int Scrape_PngSize(const unsigned char *data, size_t n, int *w, int *h)
+{
+    int iw, ih;
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (!data || n < 24) return 0;
+    if (data[0] != 0x89 || data[1] != 'P' || data[2] != 'N' || data[3] != 'G')
+        return 0;
+    iw = ((int)data[16] << 24) | ((int)data[17] << 16) | ((int)data[18] << 8) | (int)data[19];
+    ih = ((int)data[20] << 24) | ((int)data[21] << 16) | ((int)data[22] << 8) | (int)data[23];
+    if (iw <= 0 || ih <= 0) return 0;
+    if (w) *w = iw;
+    if (h) *h = ih;
+    return 1;
 }
 
 int Scrape_LooksLikeImage(const char *path)

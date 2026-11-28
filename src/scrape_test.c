@@ -488,5 +488,24 @@ int main(void)
         }
     }
 
+    {
+        int w, h;
+        unsigned char png[24] = {
+            0x89,'P','N','G',0x0D,0x0A,0x1A,0x0A,
+            0,0,0,13,'I','H','D','R',
+            0,0,2,0, 0,0,2,219
+        }; /* 512x731 */
+        if (Scrape_NesArtScore(512, 731) != 0) { fprintf(stderr, "exact nes art score\n"); fails++; }
+        if (Scrape_NesArtScore(512, 730) <= Scrape_NesArtScore(512, 731)
+            || Scrape_NesArtScore(731, 512) <= Scrape_NesArtScore(359, 512)
+            || Scrape_NesArtScore(0, 0) <= Scrape_NesArtScore(512, 731)) {
+            fprintf(stderr, "nes art score order\n"); fails++;
+        }
+        if (!Scrape_PngSize(png, sizeof png, &w, &h) || w != 512 || h != 731) {
+            fprintf(stderr, "png size %dx%d\n", w, h); fails++;
+        }
+    }
+
     return fails ? 1 : 0;
 }
+
