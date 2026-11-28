@@ -7665,13 +7665,30 @@ static void DrawEnterTransition(void) {
         float r = 0.0f;
         Rectangle tile = SystemTileRect(currentSystem, &r);
         const PlatformEntry *p = ActiveSystem()->platform;
-        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.2f * EnterAnim_GhostProgress(enterT);
+        float gp = EnterAnim_GhostProgress(enterT);
+        float ga = EnterAnim_GhostAlpha(enterT), k = 1.0f + 0.2f * gp;
         if (ga > 0.0f) {
-            Rectangle g = { tile.x - tile.width * (k - 1.0f) * 0.5f, tile.y - tile.height * (k - 1.0f) * 0.5f,
+            float cx = tile.x + tile.width * 0.5f, cy = tile.y + tile.height * 0.5f;
+            Rectangle g = { cx - tile.width * k * 0.5f, cy - tile.height * k * 0.5f,
                             tile.width * k, tile.height * k };
             Color bg = p->texture.id != 0 ? p->bg : GetColor(0x3A3A3AFF);
-            /* Switch-like press: small bounce (max 1.2x) and a smooth gaussian halo. */
-            DrawSoftShadow(g, MENU_CARD_ROUNDNESS, 16, ga);
+            /* Concentric ripples: each ring shares the tile's centre, starts
+             * later than the one before, and fades as it grows to 1.2x so
+             * no hard edge is left sitting at full size. */
+            const int ripples = 8;
+            for (int i = 0; i < ripples; i++) {
+                float start = (float)i / (float)ripples * 0.55f;
+                float u = (gp - start) / 0.55f;
+                if (u <= 0.0f) continue;
+                if (u > 1.0f) u = 1.0f;
+                float e = 1.0f - (1.0f - u) * (1.0f - u);
+                float rk = 1.0f + 0.2f * e;
+                float rw = tile.width * rk, rh = tile.height * rk;
+                DrawRectangleRounded(
+                    (Rectangle){ cx - rw * 0.5f, cy - rh * 0.5f, rw, rh },
+                    MENU_CARD_ROUNDNESS, 32,
+                    Fade(BLACK, ga * (1.0f - e) * SOFT_SHADOW_PEAK));
+            }
             DrawRectangleRounded(g, MENU_CARD_ROUNDNESS, 16, Fade(bg, ga));
             if (p->texture.id != 0)
                 DrawSystemCardArt(p, g, MENU_CARD_ROUNDNESS * g.width, Fade(WHITE, ga));
