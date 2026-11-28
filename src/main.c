@@ -8805,9 +8805,9 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    /* T / right stick right / C-Right: change order of titles.
+                    /* Right stick right / C-Right: change order of titles.
                      * Keyboard Y / gamepad Y / C-Down: hold (SortY_Update). */
-                    if (canNavigate && !gridLifted && (IsKeyPressed(KEY_T) || padCRight)) {
+                    if (canNavigate && !gridLifted && padCRight) {
                         SortPanel_Open();
                         break;
                     }
